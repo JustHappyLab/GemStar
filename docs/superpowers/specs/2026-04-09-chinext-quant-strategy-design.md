@@ -291,7 +291,10 @@ tushare/
 
 ## 9. 依赖项
 
-### 已有(.vendor)
+### 基础运行时(本地重建，不提交)
+- 依赖清单由 `requirements-vendor.txt` 固定版本
+- 使用 `./scripts/bootstrap_vendor.sh` 在当前机器生成 `.vendor/`
+- `.vendor/` 仅作为本地运行时目录，禁止提交平台专属二进制快照
 - tushare 1.4.29
 - pandas 3.0.2
 - numpy 2.4.4
