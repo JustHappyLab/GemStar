@@ -143,6 +143,14 @@ WANDB_PROJECT=gemstar
 # WANDB_RUN_NAME=gemstar-backtest-20260412
 ```
 
+如果不显式设置 `WANDB_RUN_NAME`，项目会自动生成语义化名称，例如：
+
+```bash
+backtest-20210409_20260409-train20190101-cap-100k-rt6m-20260412-020000
+```
+
+这样在 W&B 里看 run 列表时，能直接看出回测区间、训练起点、资金规模和重训周期。
+
 ### W&B 记录内容
 
 启用后，GemStar 会为每次完整回测创建一个 W&B run，并自动上传：
@@ -151,7 +159,13 @@ WANDB_PROJECT=gemstar
 - 每个滚动训练窗口的起止日期与训练/验证样本数
 - 因样本不足而被跳过的训练窗口
 - 最终回测指标：`cagr`、`sharpe`、`max_drawdown`、`calmar`、`alpha` 等
-- 本地报告路径 `output/backtest_report.md`
+- 量化时序曲线：
+  - 策略 NAV vs 基准 NAV
+  - 累计超额收益
+  - 回撤曲线
+  - 择时仓位曲线
+  - 每日换手率曲线
+- 本地产物路径：`output/backtest_report.md` 和 `output/backtest_curves.csv`
 
 查看方式：
 

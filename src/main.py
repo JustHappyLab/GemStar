@@ -19,8 +19,10 @@ from src.ranker.scorer import compute_composite_score, rank_top_n, DEFAULT_WEIGH
 from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
 from src.tracking.wandb_run import (
+    build_backtest_curve_frame,
     finish_wandb_run,
     init_wandb_run,
+    log_backtest_curves,
     log_backtest_metrics,
     log_timer_window_history,
     log_timer_window_skip,
@@ -170,6 +172,14 @@ def generate_report(metrics, output_dir="output"):
     return path
 
 
+def save_backtest_curves(curve_df: pd.DataFrame, output_dir="output"):
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    path = Path(output_dir) / "backtest_curves.csv"
+    curve_df.to_csv(path, index=False)
+    print(f"[Report] Saved curve data to {path}")
+    return path
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--start", default="20210409")
@@ -217,13 +227,17 @@ def main():
             data["daily_all"]["pre_close"] = data["daily_all"].groupby("ts_code")["close"].shift(1)
         result = run_backtest(data["daily_all"], signals, rankings, args.capital)
 
-        bench = data["index_daily"].set_index("trade_date")["close"]
-        bench_nav = bench / bench.iloc[0] * args.capital
+        bench = data["index_daily"].set_index("trade_date")["close"].sort_index()
+        bench_nav = bench.reindex(result["nav"].index).ffill().bfill()
+        bench_nav = bench_nav / bench_nav.iloc[0] * args.capital
+        curve_df = build_backtest_curve_frame(result["nav"], bench_nav, signals, result["daily_turnover"])
+        curve_path = save_backtest_curves(curve_df)
+        log_backtest_curves(tracker, curve_df)
         metrics = compute_all_metrics(
             result["nav"],
             result["trade_pnls"],
             result["daily_turnover"],
-            bench_nav.reset_index(drop=True),
+            bench_nav,
         )
         report_path = generate_report(metrics)
         log_backtest_metrics(
@@ -232,6 +246,7 @@ def main():
             signal_count=len(signals),
             backtest_days=len(bt_dates),
             report_path=str(report_path),
+            curve_data_path=str(curve_path),
         )
 
         print("\n" + "=" * 50)
