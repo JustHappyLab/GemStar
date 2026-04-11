@@ -27,4 +27,6 @@ def test_train_model_runs():
     y = np.random.randint(0, 3, n).astype(np.int64)
     model, history = train_model(X[:60], y[:60], X[60:], y[60:], epochs=3, patience=5)
     assert isinstance(model, TimerModel)
-    assert len(history['train_loss']) <= 3
+    assert len(history["train_loss"]) <= 3
+    assert len(history["val_acc"]) == len(history["val_loss"])
+    assert all(0.0 <= acc <= 1.0 for acc in history["val_acc"])

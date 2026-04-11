@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 from src.data.fetcher import (
+    _call_with_retry,
     init_tushare,
     fetch_trade_calendar,
     fetch_stock_basic,
@@ -9,6 +10,7 @@ from src.data.fetcher import (
     fetch_daily_basic,
     fetch_fina_indicator,
 )
+from requests.exceptions import ChunkedEncodingError
 
 
 @pytest.fixture
@@ -53,6 +55,20 @@ class TestTradeCalendar:
             fetch_trade_calendar(pro, "20230101", "20230103", cache_dir=str(tmp_path))
             fetch_trade_calendar(pro, "20230101", "20230103", cache_dir=str(tmp_path))
         assert pro.trade_cal.call_count == 1
+
+
+class TestRetryHelper:
+    def test_retries_request_exception_and_succeeds(self):
+        fetch_fn = MagicMock(
+            side_effect=[
+                ChunkedEncodingError("broken"),
+                pd.DataFrame({"cal_date": ["20230102"], "is_open": [1]}),
+            ]
+        )
+        with patch("src.data.fetcher.time.sleep"):
+            result = _call_with_retry(fetch_fn, op_name="daily 20230102")
+        assert len(result) == 1
+        assert fetch_fn.call_count == 2
 
 
 class TestStockBasic:

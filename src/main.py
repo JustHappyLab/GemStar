@@ -18,6 +18,13 @@ from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n, DEFAULT_WEIGHTS
 from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
+from src.tracking.wandb_run import (
+    finish_wandb_run,
+    init_wandb_run,
+    log_backtest_metrics,
+    log_timer_window_history,
+    log_timer_window_skip,
+)
 
 
 def fetch_all_data(pro, start, end, train_start):
@@ -62,7 +69,7 @@ def _get_retrain_dates(trade_dates, train_start, retrain_months):
     return windows
 
 
-def train_and_generate_signals(index_daily, trade_dates, train_start, retrain_months=6):
+def train_and_generate_signals(index_daily, trade_dates, train_start, retrain_months=6, tracker=None):
     print("[Timer] Computing index features...")
     features = compute_index_features(index_daily)
     feature_cols = [c for c in features.columns if c not in ("trade_date", "close")]
@@ -75,14 +82,35 @@ def train_and_generate_signals(index_daily, trade_dates, train_start, retrain_mo
         print(f"[Timer] Window {i+1}/{len(windows)}: train {ts}~{te}, predict {ps}~{pe}")
         train_feat = features[(features["trade_date"] >= ts) & (features["trade_date"] <= te)]
         X_all, y_all, _ = build_sequences_and_labels(train_feat, feature_cols, seq_len=60, horizon=5)
+        window_dates = {
+            "train_start": ts,
+            "train_end": te,
+            "predict_start": ps,
+            "predict_end": pe,
+        }
         if len(X_all) < 200:
             print("  → Insufficient training data, skipping")
+            log_timer_window_skip(
+                tracker,
+                window_index=i + 1,
+                window_dates=window_dates,
+                sample_count=len(X_all),
+                required_samples=200,
+            )
             continue
 
         split = int(len(X_all) * 0.8)
         model, hist = train_model(
             X_all[:split], y_all[:split], X_all[split:], y_all[split:],
             epochs=100, batch_size=64, lr=1e-3, patience=10,
+        )
+        log_timer_window_history(
+            tracker,
+            window_index=i + 1,
+            window_dates=window_dates,
+            history=hist,
+            train_samples=split,
+            val_samples=len(X_all) - split,
         )
         print(f"  → {len(hist['train_loss'])} epochs, val_acc={hist['val_acc'][-1]:.3f}")
 
@@ -139,6 +167,7 @@ def generate_report(metrics, output_dir="output"):
     path = Path(output_dir) / "backtest_report.md"
     path.write_text("\n".join(lines))
     print(f"[Report] Saved to {path}")
+    return path
 
 
 def main():
@@ -149,39 +178,67 @@ def main():
     p.add_argument("--train-start", default="20190101")
     args = p.parse_args()
 
-    pro = init_tushare()
-    data = fetch_all_data(pro, args.start, args.end, args.train_start)
-
-    bt_cal = data["trade_cal"]
-    bt_dates = bt_cal[(bt_cal["cal_date"] >= args.start) & (bt_cal["cal_date"] <= args.end)]["cal_date"].tolist()
-    print(f"[Main] Backtest: {bt_dates[0]}~{bt_dates[-1]}, {len(bt_dates)} days")
-
-    signals = train_and_generate_signals(data["index_daily"], bt_dates, args.train_start)
-    print(f"[Timer] {len(signals)} signals generated")
-
-    print("[Ranker] Computing all factors (vectorized)...")
-    daily_merged = data["daily_all"].merge(
-        data["daily_basic"][["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
-        on=["ts_code", "trade_date"], how="left",
+    tracker = init_wandb_run(
+        {
+            "start": args.start,
+            "end": args.end,
+            "capital": args.capital,
+            "train_start": args.train_start,
+            "retrain_months": 6,
+            "seq_len": 60,
+            "horizon": 5,
+            "min_train_samples": 200,
+        }
     )
-    all_factors = compute_all_factors(daily_merged, data["index_daily"], data["fina_all"])
-    rankings = compute_daily_rankings(all_factors, data["stock_basic"], bt_dates)
 
-    print("[Engine] Running backtest...")
-    if "pre_close" not in data["daily_all"].columns:
-        data["daily_all"]["pre_close"] = data["daily_all"].groupby("ts_code")["close"].shift(1)
-    result = run_backtest(data["daily_all"], signals, rankings, args.capital)
+    try:
+        pro = init_tushare()
+        data = fetch_all_data(pro, args.start, args.end, args.train_start)
 
-    bench = data["index_daily"].set_index("trade_date")["close"]
-    bench_nav = bench / bench.iloc[0] * args.capital
-    metrics = compute_all_metrics(result["nav"], result["trade_pnls"], result["daily_turnover"], bench_nav.reset_index(drop=True))
-    generate_report(metrics)
+        bt_cal = data["trade_cal"]
+        bt_dates = bt_cal[(bt_cal["cal_date"] >= args.start) & (bt_cal["cal_date"] <= args.end)]["cal_date"].tolist()
+        print(f"[Main] Backtest: {bt_dates[0]}~{bt_dates[-1]}, {len(bt_dates)} days")
 
-    print("\n" + "=" * 50)
-    print("BACKTEST COMPLETE")
-    print("=" * 50)
-    for k, v in metrics.items():
-        print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+        signals = train_and_generate_signals(data["index_daily"], bt_dates, args.train_start, tracker=tracker)
+        print(f"[Timer] {len(signals)} signals generated")
+
+        print("[Ranker] Computing all factors (vectorized)...")
+        daily_merged = data["daily_all"].merge(
+            data["daily_basic"][["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
+            on=["ts_code", "trade_date"], how="left",
+        )
+        all_factors = compute_all_factors(daily_merged, data["index_daily"], data["fina_all"])
+        rankings = compute_daily_rankings(all_factors, data["stock_basic"], bt_dates)
+
+        print("[Engine] Running backtest...")
+        if "pre_close" not in data["daily_all"].columns:
+            data["daily_all"]["pre_close"] = data["daily_all"].groupby("ts_code")["close"].shift(1)
+        result = run_backtest(data["daily_all"], signals, rankings, args.capital)
+
+        bench = data["index_daily"].set_index("trade_date")["close"]
+        bench_nav = bench / bench.iloc[0] * args.capital
+        metrics = compute_all_metrics(
+            result["nav"],
+            result["trade_pnls"],
+            result["daily_turnover"],
+            bench_nav.reset_index(drop=True),
+        )
+        report_path = generate_report(metrics)
+        log_backtest_metrics(
+            tracker,
+            metrics=metrics,
+            signal_count=len(signals),
+            backtest_days=len(bt_dates),
+            report_path=str(report_path),
+        )
+
+        print("\n" + "=" * 50)
+        print("BACKTEST COMPLETE")
+        print("=" * 50)
+        for k, v in metrics.items():
+            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    finally:
+        finish_wandb_run(tracker)
 
 
 if __name__ == "__main__":

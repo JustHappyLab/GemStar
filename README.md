@@ -99,6 +99,7 @@ GemStar/
 - Python ≥ 3.13
 - [uv](https://docs.astral.sh/uv/) 包管理器
 - [Tushare Pro](https://tushare.pro/) Token
+- [Weights & Biases](https://wandb.ai/) 账号（可选，用于实验记录）
 
 ### 安装
 
@@ -110,21 +111,53 @@ uv sync
 
 ### 配置
 
-项目提供了 `.env.example` 模板，复制并填入你的 Tushare Token 即可：
+项目提供了 `.env.example` 模板，复制后填入你的 Tushare Token；如果你希望自动把训练和回测指标同步到 W&B，也可以一起填入 `WANDB_API_KEY`：
 
 ```bash
 cp .env.example .env
-# 编辑 .env，将 your_token_here 替换为你的真实 Token
+# 编辑 .env，将占位符替换为你的真实 Token / API Key
 ```
 
 Token 申请地址：https://tushare.pro/register?inv=XXXXXX
 
-`./run.sh` 启动时会自动加载项目根目录的 `.env`。如果你选择直接运行 `uv run python src/main.py`，需要先手动导出环境变量：
+`./run.sh` 启动时会自动加载项目根目录的 `.env`。如果你选择直接运行模块入口，需要先手动导出环境变量：
 
 ```bash
 export TUSHARE_TOKEN=your_token_here
-uv run python src/main.py
+uv run python -m src.main
 ```
+
+如果环境里存在 `WANDB_API_KEY`，项目会自动记录以下信息到 W&B：
+
+- 每个滚动训练窗口的 train/val loss
+- 每个滚动训练窗口的 val accuracy
+- 跳过训练窗口的样本数不足告警
+- 回测汇总指标与报告路径
+
+推荐把下面几个环境变量一起配上，便于在 W&B 里区分不同实验：
+
+```bash
+WANDB_API_KEY=your_wandb_api_key_here
+WANDB_PROJECT=gemstar
+# WANDB_ENTITY=your_team_or_username
+# WANDB_RUN_NAME=gemstar-backtest-20260412
+```
+
+### W&B 记录内容
+
+启用后，GemStar 会为每次完整回测创建一个 W&B run，并自动上传：
+
+- `timer/train_loss`、`timer/val_loss`、`timer/val_acc`
+- 每个滚动训练窗口的起止日期与训练/验证样本数
+- 因样本不足而被跳过的训练窗口
+- 最终回测指标：`cagr`、`sharpe`、`max_drawdown`、`calmar`、`alpha` 等
+- 本地报告路径 `output/backtest_report.md`
+
+查看方式：
+
+- 终端里会显示 W&B run 的同步信息
+- 运行结束后可在 W&B 项目页按 `WANDB_PROJECT` 找到对应 run
+- 本地仍然会保留 Markdown 报告，不依赖 W&B 才能查看结果
 
 ### 运行回测
 

@@ -1,3 +1,24 @@
+"""Timer model training and inference helpers.
+
+CALLING SPEC:
+    model, history = train_model(
+        X_train=np.ndarray[float32] of shape (n_train, seq_len, n_features),
+        y_train=np.ndarray[int64] of shape (n_train,),
+        X_val=np.ndarray[float32] of shape (n_val, seq_len, n_features),
+        y_val=np.ndarray[int64] of shape (n_val,),
+        epochs=int,
+        lr=float,
+        patience=int,
+        batch_size=int,
+    )
+
+    predict_probas(model, X=np.ndarray[float32]) -> np.ndarray[float32]:
+        Returns class probabilities with shape (n_samples, 3).
+
+SIDE EFFECTS:
+    None outside returned PyTorch model state.
+"""
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -43,7 +64,7 @@ def train_model(X_train, y_train, X_val, y_val, epochs=50, lr=1e-3, patience=5, 
     y_v = torch.tensor(y_val, dtype=torch.long)
 
     best_val_loss, wait, best_state = float('inf'), 0, None
-    history = {'train_loss': [], 'val_loss': []}
+    history = {"train_loss": [], "val_loss": [], "val_acc": []}
 
     for epoch in range(epochs):
         model.train()
@@ -62,10 +83,13 @@ def train_model(X_train, y_train, X_val, y_val, epochs=50, lr=1e-3, patience=5, 
 
         model.eval()
         with torch.no_grad():
-            val_loss = criterion(model(X_v), y_v).item()
+            val_logits = model(X_v)
+            val_loss = criterion(val_logits, y_v).item()
+            val_acc = (val_logits.argmax(dim=1) == y_v).float().mean().item()
 
-        history['train_loss'].append(epoch_loss / n_batches)
-        history['val_loss'].append(val_loss)
+        history["train_loss"].append(epoch_loss / n_batches)
+        history["val_loss"].append(val_loss)
+        history["val_acc"].append(val_acc)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
