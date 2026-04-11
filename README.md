@@ -60,6 +60,7 @@ Layer 2: 选股 (StockRank)
 
 ```
 GemStar/
+├── .env.example                # 环境变量模板（复制为 .env 后填入 Token）
 ├── pyproject.toml              # 项目配置 + 依赖管理 (uv)
 ├── run.sh                      # 一键启动
 ├── src/
@@ -109,13 +110,21 @@ uv sync
 
 ### 配置
 
-创建 `.env` 文件：
+项目提供了 `.env.example` 模板，复制并填入你的 Tushare Token 即可：
 
 ```bash
-echo "TUSHARE_TOKEN=your_token_here" > .env
+cp .env.example .env
+# 编辑 .env，将 your_token_here 替换为你的真实 Token
 ```
 
-`./run.sh` 会自动加载项目根目录 `.env`。如果你直接运行 `uv run python src/main.py`，则需要先手动 `export TUSHARE_TOKEN=your_token_here`。
+Token 申请地址：https://tushare.pro/register?inv=XXXXXX
+
+`./run.sh` 启动时会自动加载项目根目录的 `.env`。如果你选择直接运行 `uv run python src/main.py`，需要先手动导出环境变量：
+
+```bash
+export TUSHARE_TOKEN=your_token_here
+uv run python src/main.py
+```
 
 ### 运行回测
 
@@ -129,6 +138,10 @@ echo "TUSHARE_TOKEN=your_token_here" > .env
 # 指定训练数据起始日期
 ./run.sh --train-start 20180101
 ```
+
+首次运行会通过 Tushare API 拉取全部原始数据并缓存到 `data/raw/`（Parquet 格式），耗时取决于你的 Tushare 积分等级和接口限速。后续运行直接读取缓存，速度很快。
+
+回测完成后，绩效报告会输出到 `output/backtest_report.md`。
 
 ### 运行测试
 
