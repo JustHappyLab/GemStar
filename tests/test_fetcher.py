@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 from src.data.fetcher import (
+    init_tushare,
     fetch_trade_calendar,
     fetch_stock_basic,
     fetch_index_daily,
@@ -13,6 +14,23 @@ from src.data.fetcher import (
 @pytest.fixture
 def pro():
     return MagicMock()
+
+
+class TestInitTushare:
+    def test_raises_when_token_missing(self, monkeypatch):
+        monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="TUSHARE_TOKEN"):
+            init_tushare()
+
+    def test_prefers_explicit_token(self, monkeypatch):
+        monkeypatch.setenv("TUSHARE_TOKEN", "env-token")
+        fake_pro = object()
+        with patch("src.data.fetcher.ts.set_token") as set_token, patch(
+            "src.data.fetcher.ts.pro_api", return_value=fake_pro
+        ):
+            pro = init_tushare(" explicit-token ")
+        set_token.assert_called_once_with("explicit-token")
+        assert pro is fake_pro
 
 
 class TestTradeCalendar:

@@ -1,3 +1,11 @@
+"""Tushare data fetch tools.
+
+CALLING SPEC:
+    pro = init_tushare(token: str | None = None) -> ts.pro_api client
+        Reads `TUSHARE_TOKEN` from the explicit argument or environment.
+        Raises ValueError when the token is missing.
+"""
+
 import os
 import time
 from pathlib import Path
@@ -40,8 +48,13 @@ def _split_monthly(start_date: str, end_date: str) -> list[tuple[str, str]]:
 
 
 def init_tushare(token: str | None = None):
-    t = token or os.environ.get("TUSHARE_TOKEN", "")
-    ts.set_token(t)
+    candidate = token if token is not None else os.environ.get("TUSHARE_TOKEN", "")
+    resolved_token = candidate.strip()
+    if not resolved_token:
+        raise ValueError(
+            "TUSHARE_TOKEN is not set. Export it in your shell or create .env and run ./run.sh."
+        )
+    ts.set_token(resolved_token)
     return ts.pro_api()
 
 

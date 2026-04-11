@@ -115,6 +115,8 @@ uv sync
 echo "TUSHARE_TOKEN=your_token_here" > .env
 ```
 
+`./run.sh` 会自动加载项目根目录 `.env`。如果你直接运行 `uv run python src/main.py`，则需要先手动 `export TUSHARE_TOKEN=your_token_here`。
+
 ### 运行回测
 
 ```bash
@@ -131,7 +133,7 @@ echo "TUSHARE_TOKEN=your_token_here" > .env
 ### 运行测试
 
 ```bash
-uv run pytest tests/ -v
+uv run python -m pytest tests/ -v
 ```
 
 ## 回测参数
