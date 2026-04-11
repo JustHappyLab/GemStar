@@ -28,3 +28,14 @@ def test_rank_top_n():
     top = rank_top_n(scored, n=5)
     assert len(top) == 5
     assert top['score'].is_monotonic_decreasing
+
+
+def test_composite_score_handles_missing_and_object_values():
+    df = _make_scored_df()
+    df.loc[0, 'roe'] = None
+    df['revenue_yoy'] = df['revenue_yoy'].astype(object)
+    df.loc[1, 'revenue_yoy'] = '1.25'
+
+    scored = compute_composite_score(df)
+
+    assert scored['score'].dtype.kind == 'f'

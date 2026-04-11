@@ -196,7 +196,9 @@ def main():
         data = fetch_all_data(pro, args.start, args.end, args.train_start)
 
         bt_cal = data["trade_cal"]
-        bt_dates = bt_cal[(bt_cal["cal_date"] >= args.start) & (bt_cal["cal_date"] <= args.end)]["cal_date"].tolist()
+        bt_dates = sorted(
+            bt_cal[(bt_cal["cal_date"] >= args.start) & (bt_cal["cal_date"] <= args.end)]["cal_date"].tolist()
+        )
         print(f"[Main] Backtest: {bt_dates[0]}~{bt_dates[-1]}, {len(bt_dates)} days")
 
         signals = train_and_generate_signals(data["index_daily"], bt_dates, args.train_start, tracker=tracker)

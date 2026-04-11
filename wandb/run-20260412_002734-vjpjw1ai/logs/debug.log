@@ -17,3 +17,8 @@ config: {'start': '20210409', 'end': '20260409', 'capital': 100000.0, 'train_sta
 2026-04-12 00:27:39,355 INFO    MainThread:12520 [wandb_run.py:_redirect():2442] Wrapping output streams.
 2026-04-12 00:27:39,355 INFO    MainThread:12520 [wandb_run.py:_redirect():2465] Redirects installed.
 2026-04-12 00:27:39,357 INFO    MainThread:12520 [wandb_init.py:init():1082] run started, returning control to user process
+2026-04-12 01:05:44,924 INFO    MainThread:12520 [wandb_run.py:_finish():2291] finishing run jiaqianjing/gemstar/vjpjw1ai
+2026-04-12 01:05:44,924 INFO    MainThread:12520 [wandb_run.py:_atexit_cleanup():2490] got exitcode: 0
+2026-04-12 01:05:44,924 INFO    MainThread:12520 [wandb_run.py:_restore():2472] restore
+2026-04-12 01:05:44,924 INFO    MainThread:12520 [wandb_run.py:_restore():2478] restore done
+2026-04-12 01:06:36,539 INFO    MainThread:12520 [wandb_run.py:_footer_sync_info():3868] logging synced files

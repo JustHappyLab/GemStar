@@ -10,7 +10,10 @@ DEFAULT_WEIGHTS = {
 def compute_composite_score(df: pd.DataFrame, weights: dict = None) -> pd.DataFrame:
     w = weights or DEFAULT_WEIGHTS
     result = df.copy()
-    result['score'] = sum(result[col] * weight for col, weight in w.items())
+    score = pd.Series(0.0, index=result.index, dtype=float)
+    for col, weight in w.items():
+        score += pd.to_numeric(result[col], errors='coerce').fillna(0.0) * weight
+    result['score'] = score
     return result
 
 

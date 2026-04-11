@@ -54,6 +54,26 @@ def _call_with_retry(fetch_fn, *args, op_name: str, retries: int = 4, backoff_se
     raise last_error
 
 
+def _normalize_fina_indicator(df: pd.DataFrame) -> pd.DataFrame:
+    expected_cols = [
+        "ts_code",
+        "ann_date",
+        "end_date",
+        "roe",
+        "revenue_yoy",
+        "netprofit_yoy",
+        "grossprofit_margin",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=expected_cols)
+
+    normalized = df.rename(columns={"or_yoy": "revenue_yoy"}).copy()
+    for col in expected_cols:
+        if col not in normalized.columns:
+            normalized[col] = None
+    return normalized[expected_cols]
+
+
 def _split_monthly(start_date: str, end_date: str) -> list[tuple[str, str]]:
     starts = pd.date_range(start_date, end_date, freq="MS")
     ends = (starts + pd.offsets.MonthEnd(0)).strftime("%Y%m%d")
@@ -195,16 +215,18 @@ def fetch_fina_indicator(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.D
     name = f"fina_{ts_code.replace('.', '_')}"
     cached = _read_cache(cache_dir, name)
     if cached is not None:
-        return cached
-    cols = ["ts_code", "ann_date", "end_date", "roe", "revenue_yoy", "netprofit_yoy", "grossprofit_margin"]
+        normalized_cached = _normalize_fina_indicator(cached)
+        if "revenue_yoy" in normalized_cached.columns and normalized_cached["revenue_yoy"].notna().any():
+            return normalized_cached
+
+    fetch_cols = ["ts_code", "ann_date", "end_date", "roe", "or_yoy", "netprofit_yoy", "grossprofit_margin"]
     df = _call_with_retry(
         pro.fina_indicator,
         ts_code=ts_code,
-        fields=",".join(cols),
+        fields=",".join(fetch_cols),
         op_name=f"fina_indicator {ts_code}",
     )
-    if df is None or df.empty:
-        df = pd.DataFrame(columns=cols)
+    df = _normalize_fina_indicator(df)
     _write_cache(df, cache_dir, name)
     _rate_limit()
     return df

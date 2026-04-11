@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from src.ranker.factors import compute_all_factors
+from pandas.api.types import is_string_dtype
 
 FACTOR_COLS = ['momentum_20d', 'pe_inverse', 'pb_inverse', 'roe',
                'revenue_yoy', 'netprofit_yoy', 'turnover_20d', 'rel_strength_20d']
@@ -39,3 +40,25 @@ def test_compute_all_factors_has_ts_code_and_date():
     result = compute_all_factors(daily, index_daily, fina)
     assert 'ts_code' in result.columns
     assert 'trade_date' in result.columns
+
+
+def test_compute_all_factors_normalizes_string_dates_for_asof_merge():
+    daily, index_daily, fina = _make_data()
+    daily["trade_date"] = daily["trade_date"].dt.strftime("%Y%m%d")
+    index_daily["trade_date"] = index_daily["trade_date"].dt.strftime("%Y%m%d")
+    fina["ann_date"] = fina["ann_date"].dt.strftime("%Y%m%d")
+
+    result = compute_all_factors(daily, index_daily, fina)
+
+    assert is_string_dtype(result["trade_date"])
+    assert result["revenue_yoy"].notna().any()
+
+
+def test_compute_all_factors_handles_missing_announcement_dates():
+    daily, index_daily, fina = _make_data()
+    fina.loc[0, "ann_date"] = pd.NaT
+
+    result = compute_all_factors(daily, index_daily, fina)
+
+    assert len(result) == 50
+    assert "revenue_yoy" in result.columns

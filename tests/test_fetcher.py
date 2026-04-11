@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from src.data.fetcher import (
     _call_with_retry,
+    _normalize_fina_indicator,
     init_tushare,
     fetch_trade_calendar,
     fetch_stock_basic,
@@ -71,6 +72,22 @@ class TestRetryHelper:
         assert fetch_fn.call_count == 2
 
 
+class TestFinaNormalization:
+    def test_renames_or_yoy_to_revenue_yoy(self):
+        df = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "ann_date": ["20240101"],
+            "end_date": ["20231231"],
+            "roe": [12.0],
+            "or_yoy": [18.5],
+            "netprofit_yoy": [8.0],
+            "grossprofit_margin": [21.0],
+        })
+        normalized = _normalize_fina_indicator(df)
+        assert "revenue_yoy" in normalized.columns
+        assert normalized.loc[0, "revenue_yoy"] == 18.5
+
+
 class TestStockBasic:
     def test_filters_chinext(self, pro, tmp_path):
         pro.stock_basic.return_value = pd.DataFrame({
@@ -111,7 +128,39 @@ class TestDailyBasic:
 class TestFinaIndicator:
     def test_columns(self, pro, tmp_path):
         expected_cols = ["ts_code", "ann_date", "end_date", "roe", "revenue_yoy", "netprofit_yoy", "grossprofit_margin"]
-        pro.fina_indicator.return_value = pd.DataFrame({c: ["x"] for c in expected_cols})
+        pro.fina_indicator.return_value = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "ann_date": ["20240101"],
+            "end_date": ["20231231"],
+            "roe": [12.0],
+            "or_yoy": [18.5],
+            "netprofit_yoy": [8.0],
+            "grossprofit_margin": [21.0],
+        })
         with patch("src.data.fetcher._rate_limit"):
             df = fetch_fina_indicator(pro, "300001.SZ", cache_dir=str(tmp_path))
         assert list(df.columns) == expected_cols
+
+    def test_refetches_legacy_cache_without_revenue_yoy(self, pro, tmp_path):
+        legacy = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "ann_date": ["20240101"],
+            "end_date": ["20231231"],
+            "roe": [12.0],
+            "netprofit_yoy": [8.0],
+            "grossprofit_margin": [21.0],
+        })
+        legacy.to_parquet(tmp_path / "fina_300001_SZ.parquet", index=False)
+        pro.fina_indicator.return_value = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "ann_date": ["20240101"],
+            "end_date": ["20231231"],
+            "roe": [12.0],
+            "or_yoy": [18.5],
+            "netprofit_yoy": [8.0],
+            "grossprofit_margin": [21.0],
+        })
+        with patch("src.data.fetcher._rate_limit"):
+            df = fetch_fina_indicator(pro, "300001.SZ", cache_dir=str(tmp_path))
+        assert df.loc[0, "revenue_yoy"] == 18.5
+        assert pro.fina_indicator.call_count == 1
