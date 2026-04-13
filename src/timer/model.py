@@ -26,6 +26,14 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
+def _build_class_weights(y_train: np.ndarray, class_count: int = 3) -> torch.Tensor:
+    counts = np.bincount(y_train, minlength=class_count).astype(np.float32)
+    non_zero = counts > 0
+    weights = np.ones(class_count, dtype=np.float32)
+    weights[non_zero] = counts.sum() / (class_count * counts[non_zero])
+    return torch.tensor(weights, dtype=torch.float32)
+
+
 class TimerModel(nn.Module):
     def __init__(self, n_features, dropout=0.3):
         super().__init__()
@@ -56,7 +64,7 @@ def train_model(X_train, y_train, X_val, y_val, epochs=50, lr=1e-3, patience=5, 
     model = TimerModel(n_features)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=_build_class_weights(y_train))
 
     X_t = torch.tensor(X_train, dtype=torch.float32)
     y_t = torch.tensor(y_train, dtype=torch.long)

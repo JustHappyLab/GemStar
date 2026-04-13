@@ -1,3 +1,21 @@
+"""Cross-sectional factor construction for daily stock ranking.
+
+CALLING SPEC:
+    factors = compute_all_factors(
+        daily_merged=pd.DataFrame,
+        index_daily=pd.DataFrame,
+        fina_all=pd.DataFrame,
+    ) -> pd.DataFrame
+        Returns factor rows by `ts_code` and `trade_date`.
+        All market-derived factors are lagged by one trading day so a
+        ranking used on trade date `t` only depends on information
+        available by the close of `t-1`.
+
+SIDE EFFECTS:
+    None.
+"""
+
+import numpy as np
 import pandas as pd
 
 
@@ -8,8 +26,8 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
     g = df.groupby('ts_code')
 
     df['momentum_20d'] = g['close'].pct_change(20)
-    df['pe_inverse'] = df['pe_ttm'].apply(lambda x: 1.0 / x if x > 0 else None)
-    df['pb_inverse'] = df['pb'].apply(lambda x: 1.0 / x if x > 0 else None)
+    df['pe_inverse'] = np.where(df['pe_ttm'] > 0, 1.0 / df['pe_ttm'], np.nan)
+    df['pb_inverse'] = np.where(df['pb'] > 0, 1.0 / df['pb'], np.nan)
     df['turnover_20d'] = g['turnover_rate'].transform(lambda x: x.rolling(20).mean())
 
     # Index 20d return
@@ -25,10 +43,12 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
 
     # Financial factors via merge_asof per stock
     if not fina_all.empty:
-        fina = fina_all[['ts_code', 'ann_date', 'roe', 'revenue_yoy', 'netprofit_yoy']].copy()
+        fina = fina_all[['ts_code', 'ann_date', 'end_date', 'roe', 'revenue_yoy', 'netprofit_yoy']].copy()
         fina['ann_date'] = pd.to_datetime(fina['ann_date'])
+        fina['end_date'] = pd.to_datetime(fina['end_date'], errors='coerce')
         fina = fina.dropna(subset=['ann_date'])
-        fina = fina.sort_values(['ts_code', 'ann_date'])
+        fina = fina.sort_values(['ts_code', 'ann_date', 'end_date'])
+        fina = fina.drop_duplicates(['ts_code', 'ann_date'], keep='last')
         df = df.sort_values(['ts_code', 'trade_date'])
 
         parts = []
@@ -46,14 +66,24 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
                     right_on='ann_date',
                     direction='backward',
                 )
-                merged.drop(columns='ann_date', inplace=True, errors='ignore')
+                merged.drop(columns=['ann_date', 'end_date'], inplace=True, errors='ignore')
             parts.append(merged)
         df = pd.concat(parts, ignore_index=True)
     else:
         for c in ['roe', 'revenue_yoy', 'netprofit_yoy']:
             df[c] = None
 
+    market_factor_cols = [
+        'momentum_20d',
+        'pe_inverse',
+        'pb_inverse',
+        'turnover_20d',
+        'rel_strength_20d',
+    ]
+    fundamental_factor_cols = ['roe', 'revenue_yoy', 'netprofit_yoy']
+    factor_cols = market_factor_cols + fundamental_factor_cols
+    df[market_factor_cols] = df.groupby('ts_code')[market_factor_cols].shift(1)
+
     df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
-    cols = ['ts_code', 'trade_date', 'momentum_20d', 'pe_inverse', 'pb_inverse',
-            'roe', 'revenue_yoy', 'netprofit_yoy', 'turnover_20d', 'rel_strength_20d']
+    cols = ['ts_code', 'trade_date', *factor_cols]
     return df[cols]

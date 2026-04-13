@@ -39,3 +39,25 @@ def test_zero_position():
 
     assert all(v == pytest.approx(100000) for v in result["nav"])
     assert len(result["trades"]) == 0
+
+
+def test_trade_calendar_can_extend_beyond_signal_dates():
+    daily_df = _make_daily_df()
+    signals = pd.DataFrame({"trade_date": DATES[:3], "position": [1.0, 1.0, 1.0]})
+    rankings = {d: STOCKS for d in DATES}
+
+    result = run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=DATES)
+
+    assert list(result["nav"].index) == DATES
+    assert len(result["daily_turnover"]) == len(DATES)
+
+
+def test_trade_pnls_use_realized_round_trip_pnl():
+    daily_df = _make_daily_df()
+    signals = pd.DataFrame({"trade_date": DATES[:2], "position": [1.0, 0.0]})
+    rankings = {d: [STOCKS[0]] for d in DATES}
+
+    result = run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=DATES[:2])
+
+    assert len(result["trade_pnls"]) == 1
+    assert result["trade_pnls"].iloc[0] < 0

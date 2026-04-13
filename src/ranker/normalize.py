@@ -6,7 +6,11 @@ def winsorize_mad(values: pd.Series, n_mad: float = 3.0) -> pd.Series:
     median = values.median()
     mad = (values - median).abs().median()
     if mad == 0:
-        return values.copy()
+        lower = values.quantile(0.01)
+        upper = values.quantile(0.99)
+        if pd.isna(lower) or pd.isna(upper) or lower == upper:
+            return values.copy()
+        return values.clip(lower=lower, upper=upper)
     limit = n_mad * mad * 1.4826
     return values.clip(lower=median - limit, upper=median + limit)
 

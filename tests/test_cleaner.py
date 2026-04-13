@@ -1,6 +1,12 @@
 import pandas as pd
 import numpy as np
-from src.data.cleaner import filter_st, filter_new_stocks, filter_suspended, fill_missing_cross_section
+from src.data.cleaner import (
+    fill_missing_cross_section,
+    filter_active_stocks,
+    filter_new_stocks,
+    filter_st,
+    filter_suspended,
+)
 
 
 class TestFilterST:
@@ -16,9 +22,26 @@ class TestFilterNewStocks:
             "ts_code": ["old", "new"],
             "name": ["A", "B"],
             "list_date": ["20230101", "20230320"],
+            "delist_date": ["", ""],
         })
         result = filter_new_stocks(df, "20230401", min_days=60)
         assert list(result["ts_code"]) == ["old"]
+
+
+class TestFilterActiveStocks:
+    def test_filters_future_listings_and_past_delistings(self):
+        df = pd.DataFrame(
+            {
+                "ts_code": ["active", "future", "gone"],
+                "name": ["A", "B", "C"],
+                "list_date": ["20220101", "20250101", "20200101"],
+                "delist_date": ["", "", "20231231"],
+            }
+        )
+
+        result = filter_active_stocks(df, "20240102")
+
+        assert list(result["ts_code"]) == ["active"]
 
 
 class TestFilterSuspended:

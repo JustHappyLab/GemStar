@@ -54,6 +54,8 @@ from time import strftime
 
 import pandas as pd
 
+from src.engine.metrics import calc_turnover_ratio_series
+
 
 def _load_wandb(api_key_present: bool):
     try:
@@ -113,38 +115,50 @@ def build_backtest_curve_frame(
     benchmark_nav: pd.Series,
     signals: pd.DataFrame,
     daily_turnover: pd.Series,
+    daily_exposure: pd.Series,
+    initial_capital: float,
 ) -> pd.DataFrame:
     nav_series = nav.sort_index().astype(float)
-    benchmark_series = benchmark_nav.sort_index().reindex(nav_series.index).ffill().bfill().astype(float)
-    position_series = (
+    trade_date_index = pd.to_datetime(pd.Index(nav_series.index).astype(str), format="%Y%m%d", errors="coerce")
+    if trade_date_index.isna().any():
+        trade_date_index = pd.to_datetime(pd.Index(nav_series.index), errors="coerce")
+    benchmark_series = benchmark_nav.sort_index().reindex(nav_series.index).ffill().astype(float)
+    if benchmark_series.isna().any():
+        raise ValueError("benchmark_nav is missing leading values after alignment; refusing to backfill future data")
+    target_position_series = (
         signals.set_index("trade_date")["position"]
         .reindex(nav_series.index)
         .ffill()
         .fillna(0.0)
         .astype(float)
     )
+    realized_exposure_series = daily_exposure.reindex(nav_series.index).fillna(0.0).astype(float)
     turnover_series = daily_turnover.reindex(nav_series.index).fillna(0.0).astype(float)
 
     curve_df = pd.DataFrame(
         {
-            "trade_date": nav_series.index.astype(str),
+            "trade_date": trade_date_index.strftime("%Y-%m-%d"),
             "day_index": range(1, len(nav_series) + 1),
             "strategy_nav": nav_series.values,
             "benchmark_nav": benchmark_series.values,
-            "position": position_series.values,
+            "position": realized_exposure_series.values,
+            "target_position": target_position_series.values,
             "traded_notional": turnover_series.values,
         }
     )
     curve_df["strategy_nav_norm"] = curve_df["strategy_nav"] / curve_df["strategy_nav"].iloc[0]
     curve_df["benchmark_nav_norm"] = curve_df["benchmark_nav"] / curve_df["benchmark_nav"].iloc[0]
-    curve_df["excess_nav"] = curve_df["strategy_nav_norm"] - curve_df["benchmark_nav_norm"]
+    curve_df["excess_nav"] = (
+        curve_df["strategy_nav_norm"] / curve_df["benchmark_nav_norm"].replace(0.0, pd.NA)
+    ).fillna(1.0) - 1.0
     curve_df["drawdown"] = curve_df["strategy_nav"] / curve_df["strategy_nav"].cummax() - 1.0
     curve_df["strategy_daily_return"] = curve_df["strategy_nav"].pct_change().fillna(0.0)
     curve_df["benchmark_daily_return"] = curve_df["benchmark_nav"].pct_change().fillna(0.0)
     curve_df["daily_excess_return"] = curve_df["strategy_daily_return"] - curve_df["benchmark_daily_return"]
 
-    prior_nav = curve_df["strategy_nav"].shift(1).fillna(curve_df["strategy_nav"])
-    curve_df["turnover_ratio"] = (curve_df["traded_notional"] / prior_nav.replace(0.0, pd.NA)).fillna(0.0)
+    curve_df["turnover_ratio"] = calc_turnover_ratio_series(
+        curve_df["strategy_nav"], curve_df["traded_notional"], initial_capital
+    )
     return curve_df
 
 
@@ -248,6 +262,17 @@ def log_backtest_curves(run, curve_df: pd.DataFrame) -> None:
         return
 
     wandb = _load_wandb(api_key_present=False)
+    equity_curve_df = pd.concat(
+        [
+            curve_df[["trade_date", "strategy_nav_norm"]]
+            .rename(columns={"strategy_nav_norm": "nav"})
+            .assign(series="Strategy"),
+            curve_df[["trade_date", "benchmark_nav_norm"]]
+            .rename(columns={"benchmark_nav_norm": "nav"})
+            .assign(series="Benchmark"),
+        ],
+        ignore_index=True,
+    )
     table_cols = [
         "trade_date",
         "day_index",
@@ -256,6 +281,7 @@ def log_backtest_curves(run, curve_df: pd.DataFrame) -> None:
         "excess_nav",
         "drawdown",
         "position",
+        "target_position",
         "turnover_ratio",
         "traded_notional",
         "strategy_daily_return",
@@ -263,69 +289,38 @@ def log_backtest_curves(run, curve_df: pd.DataFrame) -> None:
         "daily_excess_return",
     ]
     table = wandb.Table(dataframe=curve_df[table_cols])
-    x_values = curve_df["day_index"].tolist()
+    equity_table = wandb.Table(dataframe=equity_curve_df)
 
     run.log(
         {
             "backtest/curve_table": table,
-            "backtest/charts/equity_curve": wandb.plot.line_series(
-                xs=x_values,
-                ys=[
-                    curve_df["strategy_nav_norm"].tolist(),
-                    curve_df["benchmark_nav_norm"].tolist(),
-                ],
-                keys=["strategy_nav_norm", "benchmark_nav_norm"],
-                title="Strategy vs Benchmark NAV",
-                xname="backtest_day",
+            "backtest/charts/equity_curve": wandb.plot.line(
+                equity_table,
+                "trade_date",
+                "nav",
+                stroke="series",
+                title="Normalized NAV: Strategy vs ChiNext Benchmark",
             ),
             "backtest/charts/excess_curve": wandb.plot.line(
                 table,
-                "day_index",
+                "trade_date",
                 "excess_nav",
-                title="Cumulative Excess Return",
+                title="Relative Outperformance vs Benchmark",
             ),
             "backtest/charts/drawdown_curve": wandb.plot.line(
                 table,
-                "day_index",
+                "trade_date",
                 "drawdown",
-                title="Strategy Drawdown",
+                title="Drawdown Curve",
             ),
             "backtest/charts/position_curve": wandb.plot.line(
                 table,
-                "day_index",
+                "trade_date",
                 "position",
-                title="Timer Position",
-            ),
-            "backtest/charts/turnover_curve": wandb.plot.line(
-                table,
-                "day_index",
-                "turnover_ratio",
-                title="Daily Turnover Ratio",
+                title="Realized Exposure Over Time",
             ),
         }
     )
-
-    step_base = 1_000_000
-    series_cols = [
-        "strategy_nav_norm",
-        "benchmark_nav_norm",
-        "excess_nav",
-        "drawdown",
-        "position",
-        "turnover_ratio",
-        "traded_notional",
-        "strategy_daily_return",
-        "benchmark_daily_return",
-        "daily_excess_return",
-    ]
-    for row in curve_df.to_dict(orient="records"):
-        payload = {
-            "backtest/series/trade_date": row["trade_date"],
-            "backtest/series/day_index": row["day_index"],
-        }
-        for col in series_cols:
-            payload[f"backtest/series/{col}"] = row[col]
-        run.log(payload, step=step_base + int(row["day_index"]))
 
 
 def finish_wandb_run(run) -> None:

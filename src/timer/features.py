@@ -1,3 +1,33 @@
+"""Index feature engineering and sequence builders.
+
+CALLING SPEC:
+    features = compute_index_features(df=pd.DataFrame) -> pd.DataFrame
+        Input columns: trade_date, close, high, low, vol
+        Output columns: trade_date, close, engineered features without NaN rows
+
+    X, y, dates = build_sequences_and_labels(
+        features_df=pd.DataFrame,
+        feature_cols=list[str],
+        seq_len=int,
+        horizon=int,
+        thresholds=tuple[float, float],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]
+        Builds supervised training samples.
+
+    X_pred, pred_dates = build_prediction_sequences(
+        features_df=pd.DataFrame,
+        feature_cols=list[str],
+        predict_start=str,
+        predict_end=str,
+        seq_len=int,
+    ) -> tuple[np.ndarray, np.ndarray]
+        Builds one inference sequence for every trade date in the prediction window,
+        using the preceding `seq_len` days as context.
+
+SIDE EFFECTS:
+    None.
+"""
+
 import numpy as np
 import pandas as pd
 
@@ -70,3 +100,23 @@ def build_sequences_and_labels(features_df, feature_cols, seq_len=60, horizon=5,
         d_out.append(dates[i])
 
     return np.array(X, dtype=np.float32), np.array(y, dtype=np.int64), np.array(d_out)
+
+
+def build_prediction_sequences(features_df, feature_cols, predict_start, predict_end, seq_len=60):
+    ordered = features_df.sort_values("trade_date").reset_index(drop=True)
+    feat = ordered[feature_cols].values
+    dates = ordered["trade_date"].astype(str).values
+
+    X, d_out = [], []
+    for i in range(seq_len, len(ordered)):
+        trade_date = dates[i]
+        if trade_date < predict_start or trade_date > predict_end:
+            continue
+        X.append(feat[i - seq_len:i])
+        d_out.append(trade_date)
+
+    if not X:
+        empty = np.empty((0, seq_len, len(feature_cols)), dtype=np.float32)
+        return empty, np.array([], dtype=object)
+
+    return np.array(X, dtype=np.float32), np.array(d_out, dtype=object)

@@ -23,11 +23,7 @@ class FakeWandb:
     class plot:
         @staticmethod
         def line(table, x, y, stroke=None, title="", split_table=False):
-            return {"kind": "line", "x": x, "y": y, "title": title}
-
-        @staticmethod
-        def line_series(xs, ys, keys=None, title="", xname="x", split_table=False):
-            return {"kind": "line_series", "keys": keys, "title": title, "xname": xname}
+            return {"kind": "line", "x": x, "y": y, "stroke": stroke, "title": title}
 
     def __init__(self):
         self.login_calls = []
@@ -134,12 +130,27 @@ def test_build_backtest_curve_frame_and_log_curves(monkeypatch):
         }
     )
     daily_turnover = pd.Series([0.0, 1200.0, 900.0], index=["20240102", "20240103", "20240104"])
+    daily_exposure = pd.Series([0.0, 0.45, 0.8], index=["20240102", "20240103", "20240104"])
 
-    curve_df = wandb_run.build_backtest_curve_frame(nav, benchmark_nav, signals, daily_turnover)
+    curve_df = wandb_run.build_backtest_curve_frame(
+        nav,
+        benchmark_nav,
+        signals,
+        daily_turnover,
+        daily_exposure,
+        initial_capital=100000.0,
+    )
     run = FakeRun()
     wandb_run.log_backtest_curves(run, curve_df)
 
     assert "strategy_nav_norm" in curve_df.columns
     assert "drawdown" in curve_df.columns
     assert "turnover_ratio" in curve_df.columns
-    assert len(run.logged) == 4
+    assert "target_position" in curve_df.columns
+    assert curve_df.loc[0, "trade_date"] == "2024-01-02"
+    assert curve_df.loc[1, "position"] == 0.45
+    assert len(run.logged) == 1
+    chart_payload = run.logged[0][0]
+    assert chart_payload["backtest/charts/equity_curve"]["kind"] == "line"
+    assert chart_payload["backtest/charts/equity_curve"]["stroke"] == "series"
+    assert "backtest/charts/turnover_curve" not in chart_payload

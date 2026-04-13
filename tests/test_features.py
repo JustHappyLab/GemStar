@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
-from src.timer.features import compute_index_features, build_sequences_and_labels
+from src.timer.features import (
+    build_prediction_sequences,
+    build_sequences_and_labels,
+    compute_index_features,
+)
 
 
 def make_synthetic(n=200):
@@ -42,3 +46,24 @@ def test_build_sequences_shapes():
     assert X.shape[1] == 20
     assert X.shape[2] == len(feature_cols)
     assert set(np.unique(y)).issubset({0, 1, 2})
+
+
+def test_build_prediction_sequences_uses_pre_window_history():
+    df = make_synthetic(n=260)
+    feat = compute_index_features(df)
+    feature_cols = [c for c in feat.columns if c not in ('trade_date', 'close')]
+
+    predict_start = feat["trade_date"].iloc[80]
+    predict_end = feat["trade_date"].iloc[100]
+    X_pred, pred_dates = build_prediction_sequences(
+        feat,
+        feature_cols,
+        predict_start=predict_start,
+        predict_end=predict_end,
+        seq_len=20,
+    )
+
+    assert len(pred_dates) == 21
+    assert pred_dates[0] == predict_start
+    assert pred_dates[-1] == predict_end
+    assert X_pred.shape == (21, 20, len(feature_cols))

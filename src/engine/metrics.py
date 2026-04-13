@@ -1,3 +1,21 @@
+"""Performance metrics for the backtest engine.
+
+CALLING SPEC:
+    metrics = compute_all_metrics(
+        nav=pd.Series,
+        trade_pnls=pd.Series,
+        daily_turnover=pd.Series,
+        benchmark_nav=pd.Series,
+        initial_capital=float,
+        rf_annual=float,
+    ) -> dict[str, float | int | str]
+        Returns portfolio-level performance metrics using realized trade PnL
+        and capital-normalized turnover.
+
+SIDE EFFECTS:
+    None.
+"""
+
 import numpy as np
 import pandas as pd
 
@@ -8,9 +26,14 @@ def calc_cagr(nav: pd.Series, trading_days_per_year: int = 243) -> float:
 
 
 def calc_sharpe(daily_returns: pd.Series, rf_annual: float = 0.025, trading_days_per_year: int = 243) -> float:
+    if daily_returns.empty:
+        return float("nan")
     rf_daily = rf_annual / trading_days_per_year
     excess = daily_returns - rf_daily
-    return excess.mean() / excess.std() * np.sqrt(trading_days_per_year)
+    volatility = excess.std()
+    if pd.isna(volatility) or volatility == 0:
+        return 0.0
+    return excess.mean() / volatility * np.sqrt(trading_days_per_year)
 
 
 def calc_max_drawdown(nav: pd.Series) -> tuple[float, object, object]:
@@ -26,30 +49,48 @@ def calc_calmar(cagr: float, max_dd: float) -> float:
 
 
 def calc_win_rate(trade_pnls: pd.Series) -> float:
+    if trade_pnls.empty:
+        return float("nan")
     return (trade_pnls > 0).sum() / len(trade_pnls)
 
 
 def calc_profit_factor(trade_pnls: pd.Series) -> float:
+    if trade_pnls.empty:
+        return float("nan")
     gains = trade_pnls[trade_pnls > 0].sum()
     losses = -trade_pnls[trade_pnls < 0].sum()
-    return gains / losses if losses != 0 else float('inf')
+    if losses == 0:
+        return float("inf") if gains > 0 else float("nan")
+    return gains / losses
 
 
-def calc_annual_turnover(daily_turnover: pd.Series, trading_days_per_year: int = 243) -> float:
-    return daily_turnover.mean() * trading_days_per_year
+def calc_turnover_ratio_series(nav: pd.Series, daily_turnover: pd.Series, initial_capital: float) -> pd.Series:
+    prior_nav = nav.shift(1).fillna(float(initial_capital))
+    denominator = prior_nav.replace(0.0, np.nan)
+    return (daily_turnover.astype(float) / denominator).fillna(0.0)
 
 
-def compute_all_metrics(nav: pd.Series, trade_pnls: pd.Series, daily_turnover: pd.Series,
-                        benchmark_nav: pd.Series, rf_annual: float = 0.025) -> dict:
+def calc_annual_turnover(turnover_ratio: pd.Series, trading_days_per_year: int = 243) -> float:
+    if turnover_ratio.empty:
+        return float("nan")
+    return turnover_ratio.mean() * trading_days_per_year
+
+
+def compute_all_metrics(
+    nav: pd.Series,
+    trade_pnls: pd.Series,
+    daily_turnover: pd.Series,
+    benchmark_nav: pd.Series,
+    initial_capital: float,
+    rf_annual: float = 0.025,
+) -> dict:
     daily_returns = nav.pct_change().dropna()
-    bench_returns = benchmark_nav.pct_change().dropna()
-
+    turnover_ratio = calc_turnover_ratio_series(nav, daily_turnover, initial_capital)
     cagr = calc_cagr(nav)
     mdd, peak_idx, trough_idx = calc_max_drawdown(nav)
     bench_cagr = calc_cagr(benchmark_nav)
     alpha = cagr - bench_cagr
 
-    # longest drawdown duration in days
     cummax = nav.cummax()
     in_dd = nav < cummax
     groups = (~in_dd).cumsum()
@@ -64,7 +105,8 @@ def compute_all_metrics(nav: pd.Series, trade_pnls: pd.Series, daily_turnover: p
         'calmar': calc_calmar(cagr, mdd),
         'win_rate': calc_win_rate(trade_pnls),
         'profit_factor': calc_profit_factor(trade_pnls),
-        'annual_turnover': calc_annual_turnover(daily_turnover),
+        'completed_trades': int(len(trade_pnls)),
+        'annual_turnover_ratio': calc_annual_turnover(turnover_ratio),
         'alpha': alpha,
         'longest_drawdown_days': int(longest_dd_days),
     }
