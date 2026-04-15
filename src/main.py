@@ -4,10 +4,10 @@ CALLING SPEC:
     uv run python -m src.main --start=YYYYMMDD --end=YYYYMMDD --train-start=YYYYMMDD --capital=float
         Fetches data, trains the timer model on rolling windows, runs the daily backtest,
         writes `output/backtest_report.md` and `output/backtest_curves.csv`,
-        and logs a compact W&B backtest dashboard when configured.
+        and logs a compact SwanLab backtest dashboard when configured.
 
 SIDE EFFECTS:
-    Network I/O to Tushare and W&B.
+    Network I/O to Tushare and SwanLab.
     Writes report artifacts under `output/`.
 """
 import argparse
@@ -35,10 +35,10 @@ from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n, DEFAULT_WEIGHTS
 from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
-from src.tracking.wandb_run import (
+from src.tracking.swanlab_run import (
     build_backtest_curve_frame,
-    finish_wandb_run,
-    init_wandb_run,
+    finish_swanlab_run,
+    init_swanlab_run,
     log_backtest_curves,
     log_backtest_metrics,
     log_timer_window_history,
@@ -258,7 +258,7 @@ def main():
     p.add_argument("--train-start", default="20190101")
     args = p.parse_args()
 
-    tracker = init_wandb_run(
+    tracker = init_swanlab_run(
         {
             "start": args.start,
             "end": args.end,
@@ -340,7 +340,7 @@ def main():
         for k, v in metrics.items():
             print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
     finally:
-        finish_wandb_run(tracker)
+        finish_swanlab_run(tracker)
 
 
 if __name__ == "__main__":

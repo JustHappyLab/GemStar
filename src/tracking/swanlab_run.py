@@ -1,9 +1,9 @@
-"""Weights & Biases tracking helpers.
+"""SwanLab tracking helpers.
 
 CALLING SPEC:
-    run = init_wandb_run(run_config=dict[str, object], job_type="backtest") -> object | None
-        Returns an initialized W&B run when `WANDB_API_KEY` is present.
-        Returns `None` when W&B is not configured.
+    run = init_swanlab_run(run_config=dict[str, object], job_type="backtest") -> object | None
+        Returns an initialized SwanLab run when `SWANLAB_API_KEY` is present.
+        Returns `None` when SwanLab is not configured.
 
     log_timer_window_history(
         run,
@@ -40,10 +40,10 @@ CALLING SPEC:
 
     log_backtest_curves(run, curve_df) -> None
 
-    finish_wandb_run(run) -> None
+    finish_swanlab_run(run) -> None
 
 SIDE EFFECTS:
-    Network calls to Weights & Biases when enabled.
+    Network calls to SwanLab when enabled.
 """
 
 from __future__ import annotations
@@ -57,13 +57,13 @@ import pandas as pd
 from src.engine.metrics import calc_turnover_ratio_series
 
 
-def _load_wandb(api_key_present: bool):
+def _load_swanlab(api_key_present: bool):
     try:
-        return import_module("wandb")
+        return import_module("swanlab")
     except ImportError as exc:
         if api_key_present:
             raise RuntimeError(
-                "WANDB_API_KEY is set but the `wandb` package is not installed. Run `uv sync` first."
+                "SWANLAB_API_KEY is set but the `swanlab` package is not installed. Run `uv sync` first."
             ) from exc
         return None
 
@@ -92,18 +92,17 @@ def _default_run_name(run_config: dict[str, object], job_type: str) -> str:
     return f"{job_type}-{start}_{end}-train{train_start}-{capital}-{retrain_tag}-{timestamp}"
 
 
-def init_wandb_run(run_config: dict[str, object], job_type: str = "backtest"):
-    api_key = os.environ.get("WANDB_API_KEY", "").strip()
+def init_swanlab_run(run_config: dict[str, object], job_type: str = "backtest"):
+    api_key = os.environ.get("SWANLAB_API_KEY", "").strip()
     if not api_key:
         return None
 
-    wandb = _load_wandb(api_key_present=True)
-    wandb.login(key=api_key)
-    run_name = os.environ.get("WANDB_RUN_NAME") or _default_run_name(run_config, job_type)
-    return wandb.init(
-        project=os.environ.get("WANDB_PROJECT", "gemstar"),
-        entity=os.environ.get("WANDB_ENTITY") or None,
-        name=run_name,
+    swanlab = _load_swanlab(api_key_present=True)
+    exp_name = os.environ.get("SWANLAB_EXP_NAME") or _default_run_name(run_config, job_type)
+    return swanlab.init(
+        project=os.environ.get("SWANLAB_PROJ_NAME", "gemstar"),
+        workspace=os.environ.get("SWANLAB_WORKSPACE") or None,
+        experiment_name=exp_name,
         job_type=job_type,
         tags=["chinext", "timer", "backtest"],
         config=run_config,
@@ -246,13 +245,9 @@ def log_backtest_metrics(
     payload = {
         "backtest/signal_count": signal_count,
         "backtest/days": backtest_days,
-        "backtest/report_path": report_path,
     }
-    if curve_data_path is not None:
-        payload["backtest/curve_data_path"] = curve_data_path
     for key, value in metrics.items():
         payload[f"backtest/{key}"] = value
-        run.summary[f"backtest/{key}"] = value
 
     run.log(payload)
 
@@ -261,68 +256,19 @@ def log_backtest_curves(run, curve_df: pd.DataFrame) -> None:
     if run is None or curve_df.empty:
         return
 
-    wandb = _load_wandb(api_key_present=False)
-    equity_curve_df = pd.concat(
-        [
-            curve_df[["trade_date", "strategy_nav_norm"]]
-            .rename(columns={"strategy_nav_norm": "nav"})
-            .assign(series="Strategy"),
-            curve_df[["trade_date", "benchmark_nav_norm"]]
-            .rename(columns={"benchmark_nav_norm": "nav"})
-            .assign(series="Benchmark"),
-        ],
-        ignore_index=True,
-    )
-    table_cols = [
-        "trade_date",
-        "day_index",
-        "strategy_nav_norm",
-        "benchmark_nav_norm",
-        "excess_nav",
-        "drawdown",
-        "position",
-        "target_position",
-        "turnover_ratio",
-        "traded_notional",
-        "strategy_daily_return",
-        "benchmark_daily_return",
-        "daily_excess_return",
-    ]
-    table = wandb.Table(dataframe=curve_df[table_cols])
-    equity_table = wandb.Table(dataframe=equity_curve_df)
-
-    run.log(
-        {
-            "backtest/curve_table": table,
-            "backtest/charts/equity_curve": wandb.plot.line(
-                equity_table,
-                "trade_date",
-                "nav",
-                stroke="series",
-                title="Normalized NAV: Strategy vs ChiNext Benchmark",
-            ),
-            "backtest/charts/excess_curve": wandb.plot.line(
-                table,
-                "trade_date",
-                "excess_nav",
-                title="Relative Outperformance vs Benchmark",
-            ),
-            "backtest/charts/drawdown_curve": wandb.plot.line(
-                table,
-                "trade_date",
-                "drawdown",
-                title="Drawdown Curve",
-            ),
-            "backtest/charts/position_curve": wandb.plot.line(
-                table,
-                "trade_date",
-                "position",
-                title="Realized Exposure Over Time",
-            ),
-        }
-    )
+    for _, row in curve_df.iterrows():
+        run.log(
+            {
+                "backtest/strategy_nav_norm": row["strategy_nav_norm"],
+                "backtest/benchmark_nav_norm": row["benchmark_nav_norm"],
+                "backtest/excess_nav": row["excess_nav"],
+                "backtest/drawdown": row["drawdown"],
+                "backtest/position": row["position"],
+            },
+            step=int(row["day_index"]),
+        )
 
 
-def finish_wandb_run(run) -> None:
+def finish_swanlab_run(run) -> None:
     if run is not None:
         run.finish()

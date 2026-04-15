@@ -99,7 +99,7 @@ GemStar/
 - Python ≥ 3.13
 - [uv](https://docs.astral.sh/uv/) 包管理器
 - [Tushare Pro](https://tushare.pro/) Token
-- [Weights & Biases](https://wandb.ai/) 账号（可选，用于实验记录）
+- [SwanLab](https://swanlab.cn/) 账号（可选，用于实验记录）
 
 ### 安装
 
@@ -111,7 +111,7 @@ uv sync
 
 ### 配置
 
-项目提供了 `.env.example` 模板，复制后填入你的 Tushare Token；如果你希望自动把训练和回测指标同步到 W&B，也可以一起填入 `WANDB_API_KEY`：
+项目提供了 `.env.example` 模板，复制后填入你的 Tushare Token；如果你希望自动把训练和回测指标同步到 SwanLab，也可以一起填入 `SWANLAB_API_KEY`：
 
 ```bash
 cp .env.example .env
@@ -127,52 +127,52 @@ export TUSHARE_TOKEN=your_token_here
 uv run python -m src.main
 ```
 
-如果环境里存在 `WANDB_API_KEY`，项目会自动记录以下信息到 W&B：
+如果环境里存在 `SWANLAB_API_KEY`，项目会自动记录以下信息到 SwanLab：
 
 - 每个滚动训练窗口的 train/val loss
 - 每个滚动训练窗口的 val accuracy
 - 跳过训练窗口的样本数不足告警
 - 回测汇总指标与报告路径
 
-推荐把下面几个环境变量一起配上，便于在 W&B 里区分不同实验：
+推荐把下面几个环境变量一起配上，便于在 SwanLab 里区分不同实验：
 
 ```bash
-WANDB_API_KEY=your_wandb_api_key_here
-WANDB_PROJECT=gemstar
-# WANDB_ENTITY=your_team_or_username
-# WANDB_RUN_NAME=gemstar-backtest-20260412
+SWANLAB_API_KEY=your_swanlab_api_key_here
+SWANLAB_PROJ_NAME=gemstar
+# SWANLAB_WORKSPACE=your_team_or_username
+# SWANLAB_EXP_NAME=gemstar-backtest-20260412
 ```
 
-如果不显式设置 `WANDB_RUN_NAME`，项目会自动生成语义化名称，例如：
+如果不显式设置 `SWANLAB_EXP_NAME`，项目会自动生成语义化名称，例如：
 
 ```bash
 backtest-20210409_20260409-train20190101-cap-100k-rt6m-20260412-020000
 ```
 
-这样在 W&B 里看 run 列表时，能直接看出回测区间、训练起点、资金规模和重训周期。
+这样在 SwanLab 里看实验列表时，能直接看出回测区间、训练起点、资金规模和重训周期。
 
-### W&B 记录内容
+### SwanLab 记录内容
 
-启用后，GemStar 会为每次完整回测创建一个 W&B run，并自动上传：
+启用后，GemStar 会为每次完整回测创建一个 SwanLab 实验，并自动上传：
 
 - `timer/train_loss`、`timer/val_loss`、`timer/val_acc`
 - 每个滚动训练窗口的起止日期与训练/验证样本数
 - 因样本不足而被跳过的训练窗口
 - 最终回测指标：`cagr`、`sharpe`、`max_drawdown`、`calmar`、`alpha` 等
-- 量化时序曲线：
-  - 策略 NAV vs 基准 NAV
+- 量化时序曲线（按 day_index 步进记录）：
+  - 策略归一化 NAV vs 基准归一化 NAV
   - 相对基准超额表现
   - 回撤曲线
   - 资金暴露/择时仓位曲线
 - 本地产物路径：`output/backtest_report.md` 和 `output/backtest_curves.csv`
 
-这些 W&B 图表默认使用 `trade_date` 作为横轴；策略和基准净值曲线使用归一化净值（起点都为 `1.0`），超额曲线使用相对基准的累计跑赢比例，只保留这 4 张最有解释力的回测图，不再额外刷出按日序列杂图。
+SwanLab 会自动为每个 metric key 生成折线图，策略和基准净值曲线使用归一化净值（起点都为 `1.0`），超额曲线使用相对基准的累计跑赢比例。
 
 查看方式：
 
-- 终端里会显示 W&B run 的同步信息
-- 运行结束后可在 W&B 项目页按 `WANDB_PROJECT` 找到对应 run
-- 本地仍然会保留 Markdown 报告，不依赖 W&B 才能查看结果
+- 终端里会显示 SwanLab 实验的同步信息
+- 运行结束后可在 SwanLab 项目页按 `SWANLAB_PROJ_NAME` 找到对应实验
+- 本地仍然会保留 Markdown 报告，不依赖 SwanLab 才能查看结果
 
 ### 运行回测
 
