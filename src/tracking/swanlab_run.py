@@ -99,14 +99,27 @@ def init_swanlab_run(run_config: dict[str, object], job_type: str = "backtest"):
 
     swanlab = _load_swanlab(api_key_present=True)
     exp_name = os.environ.get("SWANLAB_EXP_NAME") or _default_run_name(run_config, job_type)
-    return swanlab.init(
-        project=os.environ.get("SWANLAB_PROJ_NAME", "gemstar"),
-        workspace=os.environ.get("SWANLAB_WORKSPACE") or None,
-        experiment_name=exp_name,
-        job_type=job_type,
-        tags=["chinext", "timer", "backtest"],
-        config=run_config,
-    )
+    workspace = os.environ.get("SWANLAB_WORKSPACE") or None
+    try:
+        return swanlab.init(
+            project=os.environ.get("SWANLAB_PROJ_NAME", "gemstar"),
+            workspace=workspace,
+            experiment_name=exp_name,
+            job_type=job_type,
+            tags=["chinext", "timer", "backtest"],
+            config=run_config,
+        )
+    except (ValueError, Exception) as exc:
+        if workspace and "not found" in str(exc).lower():
+            print(f"[SwanLab] Workspace '{workspace}' not found, falling back to personal space")
+            return swanlab.init(
+                project=os.environ.get("SWANLAB_PROJ_NAME", "gemstar"),
+                experiment_name=exp_name,
+                job_type=job_type,
+                tags=["chinext", "timer", "backtest"],
+                config=run_config,
+            )
+        raise
 
 
 def build_backtest_curve_frame(
