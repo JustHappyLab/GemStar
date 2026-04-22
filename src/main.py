@@ -256,6 +256,7 @@ def main():
     p.add_argument("--end", default="20260409")
     p.add_argument("--capital", type=float, default=100000)
     p.add_argument("--train-start", default="20190101")
+    p.add_argument("--cost-multiplier", type=float, default=1.0, help="Scale all transaction costs (0=free, 2=double)")
     args = p.parse_args()
 
     tracker = init_swanlab_run(
@@ -300,7 +301,7 @@ def main():
         print("[Engine] Running backtest...")
         if "pre_close" not in data["daily_all"].columns:
             data["daily_all"]["pre_close"] = data["daily_all"].groupby("ts_code")["close"].shift(1)
-        result = run_backtest(data["daily_all"], signals, rankings, args.capital, trade_dates=bt_dates)
+        result = run_backtest(data["daily_all"], signals, rankings, args.capital, trade_dates=bt_dates, cost_multiplier=args.cost_multiplier)
 
         bench = data["index_daily"].set_index("trade_date")["close"].sort_index()
         bench_nav = bench.reindex(result["nav"].index).ffill()
