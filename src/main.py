@@ -20,6 +20,7 @@ import pandas as pd
 from src.data.fetcher import (
     init_tushare, fetch_trade_calendar, fetch_stock_basic,
     fetch_index_daily, fetch_daily_all, fetch_daily_basic, fetch_fina_indicator,
+    fetch_adj_factor,
 )
 from src.data.cleaner import filter_active_stocks, filter_new_stocks, filter_st, filter_suspended
 from src.timer.features import (
@@ -68,8 +69,10 @@ def fetch_all_data(pro, start, end, train_start):
         if len(df) > 0:
             fina_frames.append(df)
     fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
+    print("[Data] Fetching adj factors...")
+    adj_factor = fetch_adj_factor(pro, train_start, end)
     return dict(trade_cal=trade_cal, stock_basic=stock_basic, index_daily=index_daily,
-                daily_all=daily_all, daily_basic=daily_basic, fina_all=fina_all)
+                daily_all=daily_all, daily_basic=daily_basic, fina_all=fina_all, adj_factor=adj_factor)
 
 
 def _get_retrain_dates(trade_dates, train_start, retrain_months):
@@ -300,7 +303,20 @@ def main():
         print("[Engine] Running backtest...")
         if "pre_close" not in data["daily_all"].columns:
             data["daily_all"]["pre_close"] = data["daily_all"].groupby("ts_code")["close"].shift(1)
-        result = run_backtest(data["daily_all"], signals, rankings, args.capital, trade_dates=bt_dates)
+
+        # Apply ex-rights adjustment (hfq) to price columns
+        bt_daily = data["daily_all"].copy()
+        adj = data["adj_factor"]
+        if not adj.empty:
+            bt_daily = bt_daily.merge(adj, on=["ts_code", "trade_date"], how="left")
+            bt_daily["adj_factor"] = bt_daily["adj_factor"].fillna(1.0)
+            for col in ["open", "close", "high", "low", "pre_close"]:
+                bt_daily[col] = bt_daily[col] * bt_daily["adj_factor"]
+            print(f"[Engine] Applied hfq adjustment ({len(adj)} adj_factor rows)")
+        else:
+            print("[Engine] Warning: no adj_factor data, using raw prices")
+
+        result = run_backtest(bt_daily, signals, rankings, args.capital, trade_dates=bt_dates)
 
         bench = data["index_daily"].set_index("trade_date")["close"].sort_index()
         bench_nav = bench.reindex(result["nav"].index).ffill()

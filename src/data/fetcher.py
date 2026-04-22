@@ -211,6 +211,27 @@ def fetch_daily_basic(pro, start_date: str, end_date: str, cache_dir: str = "dat
     return df
 
 
+def fetch_adj_factor(pro, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    name = f"adj_factor_{start_date}_{end_date}"
+    cached = _read_cache(cache_dir, name)
+    if cached is not None:
+        return cached
+    frames = []
+    for ms, me in _split_monthly(start_date, end_date):
+        chunk = _call_with_retry(
+            pro.adj_factor,
+            start_date=ms,
+            end_date=me,
+            op_name=f"adj_factor {ms}~{me}",
+        )
+        if chunk is not None and not chunk.empty:
+            frames.append(chunk[["ts_code", "trade_date", "adj_factor"]])
+        _rate_limit()
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["ts_code", "trade_date", "adj_factor"])
+    _write_cache(df, cache_dir, name)
+    return df
+
+
 def fetch_fina_indicator(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"fina_{ts_code.replace('.', '_')}"
     cached = _read_cache(cache_dir, name)
