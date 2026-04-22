@@ -35,6 +35,8 @@ from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n, DEFAULT_WEIGHTS
 from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
+from src.engine.metrics import auto_segments, compute_segment_metrics
+from src.ranker.ic import compute_daily_rank_ic, summarize_ic
 from src.tracking.swanlab_run import (
     build_backtest_curve_frame,
     finish_swanlab_run,
@@ -227,7 +229,7 @@ def compute_daily_rankings(all_factors_df, stock_basic, daily_df, trade_dates):
     return rankings
 
 
-def generate_report(metrics, output_dir="output"):
+def generate_report(metrics, output_dir="output", ic_summary=None):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     lines = ["# ChiNext Quant Strategy Backtest Report\n", "| Metric | Value |", "|--------|-------|"]
     for k, v in metrics.items():
@@ -236,6 +238,14 @@ def generate_report(metrics, output_dir="output"):
         else:
             fmt = str(v)
         lines.append(f"| {k} | {fmt} |")
+    if ic_summary is not None and not ic_summary.empty:
+        lines.append("\n## Factor IC Analysis\n")
+        lines.append("| Factor | IC Mean | IC Std | IC IR | IC>0 Rate |")
+        lines.append("|--------|---------|--------|-------|-----------|")
+        for _, row in ic_summary.iterrows():
+            def _f(v):
+                return f"{v:.4f}" if pd.notna(v) else "N/A"
+            lines.append(f"| {row['factor']} | {_f(row['IC_mean'])} | {_f(row['IC_std'])} | {_f(row['IC_IR'])} | {_f(row['IC_positive_rate'])} |")
     path = Path(output_dir) / "backtest_report.md"
     path.write_text("\n".join(lines))
     print(f"[Report] Saved to {path}")
@@ -273,6 +283,7 @@ def main():
 
     try:
         pro = init_tushare()
+        ic_summary = None
         data = fetch_all_data(pro, args.start, args.end, args.train_start)
 
         bt_cal = data["trade_cal"]
@@ -296,6 +307,12 @@ def main():
         )
         all_factors = compute_all_factors(daily_merged, data["index_daily"], data["fina_all"])
         rankings = compute_daily_rankings(all_factors, data["stock_basic"], data["daily_all"], bt_dates)
+
+        print("[Ranker] Computing factor IC...")
+        factor_cols = [c for c in all_factors.columns if c not in ("ts_code", "trade_date")]
+        ic_df = compute_daily_rank_ic(all_factors, data["daily_all"], factor_cols)
+        ic_summary = summarize_ic(ic_df)
+        print(ic_summary.to_string(index=False))
 
         print("[Engine] Running backtest...")
         if "pre_close" not in data["daily_all"].columns:
@@ -324,7 +341,7 @@ def main():
             bench_nav,
             args.capital,
         )
-        report_path = generate_report(metrics)
+        report_path = generate_report(metrics, ic_summary=ic_summary)
         log_backtest_metrics(
             tracker,
             metrics=metrics,
