@@ -110,3 +110,44 @@ def compute_all_metrics(
         'alpha': alpha,
         'longest_drawdown_days': int(longest_dd_days),
     }
+
+
+def auto_segments(start: str, end: str) -> list[tuple[str, str]]:
+    """Split a date range into ~1-year segments."""
+    cur = pd.Timestamp(start)
+    end_ts = pd.Timestamp(end)
+    segs = []
+    while cur < end_ts:
+        seg_end = min(cur + pd.DateOffset(years=1) - pd.Timedelta(days=1), end_ts)
+        segs.append((cur.strftime("%Y%m%d"), seg_end.strftime("%Y%m%d")))
+        cur = cur + pd.DateOffset(years=1)
+    return segs
+
+
+def compute_segment_metrics(
+    nav: pd.Series,
+    benchmark_nav: pd.Series,
+    segments: list[tuple[str, str]],
+    rf_annual: float = 0.025,
+) -> list[dict]:
+    """Compute key metrics for each (start, end) date segment."""
+    results = []
+    for seg_start, seg_end in segments:
+        mask = (nav.index >= seg_start) & (nav.index <= seg_end)
+        seg_nav = nav[mask]
+        if len(seg_nav) < 2:
+            continue
+        seg_bench = benchmark_nav.reindex(seg_nav.index).ffill()
+        daily_ret = seg_nav.pct_change().dropna()
+        cagr = calc_cagr(seg_nav)
+        mdd, _, _ = calc_max_drawdown(seg_nav)
+        bench_cagr = calc_cagr(seg_bench) if len(seg_bench) >= 2 else 0.0
+        results.append({
+            "segment": f"{seg_start}~{seg_end}",
+            "days": len(seg_nav),
+            "cagr": cagr,
+            "sharpe": calc_sharpe(daily_ret, rf_annual),
+            "max_drawdown": mdd,
+            "alpha": cagr - bench_cagr,
+        })
+    return results
