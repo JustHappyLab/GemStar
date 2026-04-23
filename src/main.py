@@ -49,6 +49,17 @@ from src.tracking.swanlab_run import (
 )
 
 
+
+def _ma_crossover_signals(index_daily, trade_dates, short=20, long=60):
+    """Simple MA crossover timer: position=1.0 when MA_short > MA_long, else 0.0."""
+    idx = index_daily.sort_values("trade_date").copy()
+    idx["trade_date"] = idx["trade_date"].astype(str)
+    idx["ma_short"] = idx["close"].rolling(short).mean()
+    idx["ma_long"] = idx["close"].rolling(long).mean()
+    idx["position"] = (idx["ma_short"] > idx["ma_long"]).astype(float)
+    sig = idx[["trade_date", "position"]].dropna()
+    return align_signals_to_calendar(sig, trade_dates, default_position=0.0), 0
+
 def fetch_all_data(pro, start, end, train_start):
     print(f"[Data] Fetching calendar {train_start}~{end}...")
     trade_cal = fetch_trade_calendar(pro, train_start, end)
@@ -294,6 +305,9 @@ def main():
     p.add_argument("--train-start", default="20190101")
     p.add_argument("--no-timer", action="store_true", help="Ablation: fix position to 100%%, skip LSTM training")
     p.add_argument("--no-ranker", action="store_true", help="Ablation: random Top-5 selection each day")
+    p.add_argument("--cost-multiplier", type=float, default=1.0, help="Scale all transaction costs (0=free, 2=double)")
+    p.add_argument("--timer-mode", choices=["lstm", "ma", "full"], default="lstm",
+                   help="Timer strategy: lstm (default), ma (MA20/60 crossover), full (always 100%%)")
     args = p.parse_args()
 
     tracker = init_swanlab_run(
@@ -323,10 +337,14 @@ def main():
         print(f"[Main] Backtest: {bt_dates[0]}~{bt_dates[-1]}, {len(bt_dates)} days")
 
         # --- Timer ---
-        if args.no_timer:
+        if args.no_timer or args.timer_mode == "full":
             print("[Timer] Ablation: fixed 100% position")
             signals = pd.DataFrame({"trade_date": bt_dates, "position": 1.0})
             raw_signal_count = 0
+        elif args.timer_mode == "ma":
+            print("[Timer] Mode: MA20/60 crossover")
+            signals, raw_signal_count = _ma_crossover_signals(data["index_daily"], bt_dates)
+            print(f"[Timer] {len(signals)} days aligned")
         else:
             signals, raw_signal_count = train_and_generate_signals(
                 data["index_daily"],
@@ -371,7 +389,7 @@ def main():
         else:
             print("[Engine] Warning: no adj_factor data, using raw prices")
 
-        result = run_backtest(bt_daily, signals, rankings, args.capital, trade_dates=bt_dates)
+        result = run_backtest(bt_daily, signals, rankings, args.capital, trade_dates=bt_dates, cost_multiplier=args.cost_multiplier)
 
         bench = data["index_daily"].set_index("trade_date")["close"].sort_index()
         bench_nav = bench.reindex(result["nav"].index).ffill()

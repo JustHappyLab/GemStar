@@ -78,10 +78,10 @@ def _cap_shares_by_volume(shares: int, vol: float, volume_limit_pct: float) -> i
     return min(shares, max_shares)
 
 
-def _fit_buy_shares_to_cash(price: float, desired_shares: int, cash: float, trade_date: str) -> tuple[int, float]:
+def _fit_buy_shares_to_cash(price: float, desired_shares: int, cash: float, trade_date: str, cost_multiplier: float = 1.0) -> tuple[int, float]:
     shares = desired_shares
     while shares > 0:
-        cost = calc_trade_cost(price, shares, "buy", trade_date)
+        cost = calc_trade_cost(price, shares, "buy", trade_date, cost_multiplier)
         needed = price * shares + cost
         if needed <= cash:
             return shares, cost
@@ -89,7 +89,7 @@ def _fit_buy_shares_to_cash(price: float, desired_shares: int, cash: float, trad
     return 0, 0.0
 
 
-def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=None, volume_limit_pct=0.25) -> dict:
+def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=None, volume_limit_pct=0.25, cost_multiplier=1.0) -> dict:
     """Day-by-day backtest."""
     dates = sorted(signals["trade_date"].astype(str).unique()) if trade_dates is None else list(trade_dates)
     sig_map = signals.assign(trade_date=signals["trade_date"].astype(str)).set_index("trade_date")["position"].to_dict()
@@ -135,7 +135,7 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
                 if sell_shares == 0:
                     continue
                 fill_price = apply_slippage(open_prices.get(code, 0), "sell")
-                cost = calc_trade_cost(fill_price, sell_shares, "sell", date)
+                cost = calc_trade_cost(fill_price, sell_shares, "sell", date, cost_multiplier)
                 cash += fill_price * sell_shares - cost
                 day_turnover += fill_price * sell_shares
                 cycle_realized_pnl[code] = cycle_realized_pnl.get(code, 0.0) + _realize_sell_pnl(
@@ -160,7 +160,7 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
                 if buy_shares == 0:
                     continue
                 fill_price = apply_slippage(open_prices.get(code, 0), "buy")
-                buy_shares, cost = _fit_buy_shares_to_cash(fill_price, buy_shares, cash, date)
+                buy_shares, cost = _fit_buy_shares_to_cash(fill_price, buy_shares, cash, date, cost_multiplier)
                 if buy_shares == 0:
                     continue
                 needed = fill_price * buy_shares + cost
