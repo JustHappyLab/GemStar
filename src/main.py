@@ -194,6 +194,21 @@ def train_and_generate_signals(index_daily, trade_dates, train_start, retrain_mo
     return aligned, raw_signal_count
 
 
+
+def _random_daily_rankings(stock_basic, daily_df, trade_dates, n=5, seed=42):
+    """Ablation baseline: random Top-N from eligible stocks each day."""
+    rng = np.random.default_rng(seed)
+    rankings: dict[str, list[str]] = {}
+    for date in trade_dates:
+        eligible = filter_st(stock_basic)
+        eligible = filter_active_stocks(eligible, date)
+        eligible = filter_new_stocks(eligible, date, min_days=60)
+        tradable = filter_suspended(daily_df[daily_df["trade_date"] == date])
+        codes = list(set(eligible["ts_code"]) & set(tradable["ts_code"]))
+        pick = min(n, len(codes))
+        rankings[date] = list(rng.choice(codes, size=pick, replace=False)) if pick > 0 else []
+    return rankings
+
 def compute_daily_rankings(all_factors_df, stock_basic, daily_df, trade_dates):
     print("[Ranker] Computing daily rankings...")
     factor_cols = [c for c in all_factors_df.columns if c not in ("ts_code", "trade_date")]
@@ -259,6 +274,8 @@ def main():
     p.add_argument("--end", default="20260409")
     p.add_argument("--capital", type=float, default=100000)
     p.add_argument("--train-start", default="20190101")
+    p.add_argument("--no-timer", action="store_true", help="Ablation: fix position to 100%%, skip LSTM training")
+    p.add_argument("--no-ranker", action="store_true", help="Ablation: random Top-5 selection each day")
     args = p.parse_args()
 
     tracker = init_swanlab_run(
@@ -271,6 +288,8 @@ def main():
             "seq_len": 60,
             "horizon": 5,
             "min_train_samples": 200,
+            "no_timer": args.no_timer,
+            "no_ranker": args.no_ranker,
         }
     )
 
@@ -284,21 +303,32 @@ def main():
         )
         print(f"[Main] Backtest: {bt_dates[0]}~{bt_dates[-1]}, {len(bt_dates)} days")
 
-        signals, raw_signal_count = train_and_generate_signals(
-            data["index_daily"],
-            bt_dates,
-            args.train_start,
-            tracker=tracker,
-        )
-        print(f"[Timer] {raw_signal_count} raw signals generated, {len(signals)} days aligned")
+        # --- Timer ---
+        if args.no_timer:
+            print("[Timer] Ablation: fixed 100% position")
+            signals = pd.DataFrame({"trade_date": bt_dates, "position": 1.0})
+            raw_signal_count = 0
+        else:
+            signals, raw_signal_count = train_and_generate_signals(
+                data["index_daily"],
+                bt_dates,
+                args.train_start,
+                tracker=tracker,
+            )
+            print(f"[Timer] {raw_signal_count} raw signals generated, {len(signals)} days aligned")
 
-        print("[Ranker] Computing all factors (vectorized)...")
-        daily_merged = data["daily_all"].merge(
-            data["daily_basic"][["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
-            on=["ts_code", "trade_date"], how="left",
-        )
-        all_factors = compute_all_factors(daily_merged, data["index_daily"], data["fina_all"])
-        rankings = compute_daily_rankings(all_factors, data["stock_basic"], data["daily_all"], bt_dates)
+        # --- Ranker ---
+        if args.no_ranker:
+            print("[Ranker] Ablation: random Top-5 per day")
+            rankings = _random_daily_rankings(data["stock_basic"], data["daily_all"], bt_dates)
+        else:
+            print("[Ranker] Computing all factors (vectorized)...")
+            daily_merged = data["daily_all"].merge(
+                data["daily_basic"][["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
+                on=["ts_code", "trade_date"], how="left",
+            )
+            all_factors = compute_all_factors(daily_merged, data["index_daily"], data["fina_all"])
+            rankings = compute_daily_rankings(all_factors, data["stock_basic"], data["daily_all"], bt_dates)
 
         print("[Engine] Running backtest...")
         if "pre_close" not in data["daily_all"].columns:
