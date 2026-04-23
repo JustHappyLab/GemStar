@@ -24,7 +24,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.data.fetcher import init_tushare, fetch_trade_calendar, fetch_daily_all, fetch_daily_basic
+from src.data.fetcher import init_tushare, fetch_trade_calendar, fetch_daily_all
 from src.data.cleaner import filter_suspended
 from src.engine.backtest import run_backtest
 from src.engine.metrics import calc_cagr, calc_sharpe, calc_max_drawdown
@@ -36,16 +36,16 @@ END = "20241231"
 CAPITAL = 100_000.0
 
 
-def _get_top5_by_mcap(daily_basic_df, date, eligible_codes):
-    """Pick top-5 stocks by total market value on a given date."""
-    day = daily_basic_df[
-        (daily_basic_df["trade_date"] == date) &
-        (daily_basic_df["ts_code"].isin(eligible_codes))
+def _get_top5_by_mcap(daily_df, date, eligible_codes):
+    """Pick top-5 stocks by trading amount (proxy for market cap) on a given date."""
+    day = daily_df[
+        (daily_df["trade_date"] == date) &
+        (daily_df["ts_code"].isin(eligible_codes))
     ].copy()
-    if day.empty:
+    if day.empty or "amount" not in day.columns:
         return []
-    day = day.dropna(subset=["total_mv"])
-    return day.nlargest(5, "total_mv")["ts_code"].tolist()
+    day = day.dropna(subset=["amount"])
+    return day.nlargest(5, "amount")["ts_code"].tolist()
 
 
 def _is_first_trading_day_of_month(date, prev_date):
@@ -54,8 +54,8 @@ def _is_first_trading_day_of_month(date, prev_date):
     return date[:6] != prev_date[:6]
 
 
-def build_rankings(trade_dates, daily_df, daily_basic_df, index_members):
-    """Monthly rebalance: top-5 by market cap among index members."""
+def build_rankings(trade_dates, daily_df, index_members):
+    """Monthly rebalance: top-5 by trading amount among index members."""
     rankings = {}
     prev_date = None
     current_top5 = []
@@ -64,7 +64,7 @@ def build_rankings(trade_dates, daily_df, daily_basic_df, index_members):
         if _is_first_trading_day_of_month(date, prev_date):
             tradable = filter_suspended(daily_df[daily_df["trade_date"] == date])
             eligible = set(index_members) & set(tradable["ts_code"])
-            top5 = _get_top5_by_mcap(daily_basic_df, date, eligible)
+            top5 = _get_top5_by_mcap(daily_df, date, eligible)
             if top5:
                 current_top5 = top5
         rankings[date] = current_top5
@@ -73,25 +73,26 @@ def build_rankings(trade_dates, daily_df, daily_basic_df, index_members):
     return rankings
 
 
-def run_gemstar(pro):
+def run_gemstar(pro, jq_holdings=None):
     print(f"[CrossVal] Fetching data {START}~{END}...")
     trade_cal = fetch_trade_calendar(pro, START, END)
     trade_dates = sorted(trade_cal["cal_date"].tolist())
     print(f"  → {len(trade_dates)} trading days")
 
     daily_all = fetch_daily_all(pro, START, END)
-    daily_basic = fetch_daily_basic(pro, START, END)
-
-    # Use 399006.SZ constituent approximation: all 300xxx/301xxx stocks
-    chinext_codes = daily_all[daily_all["ts_code"].str.match(r"^30[01]")]["ts_code"].unique().tolist()
-    print(f"  → {len(chinext_codes)} ChiNext stocks in data")
 
     if "pre_close" not in daily_all.columns:
         daily_all["pre_close"] = daily_all.groupby("ts_code")["close"].shift(1)
         daily_all["pre_close"] = daily_all["pre_close"].fillna(daily_all["open"])
 
-    print("[CrossVal] Building monthly rankings (top-5 by market cap)...")
-    rankings = build_rankings(trade_dates, daily_all, daily_basic, chinext_codes)
+    if jq_holdings:
+        print("[CrossVal] Using JoinQuant holdings as rankings (exact replication)")
+        rankings = {d: jq_holdings.get(d, []) for d in trade_dates}
+    else:
+        chinext_codes = daily_all[daily_all["ts_code"].str.match(r"^30[01]")]["ts_code"].unique().tolist()
+        print(f"  → {len(chinext_codes)} ChiNext stocks in data")
+        print("[CrossVal] Building monthly rankings (top-5 by amount)...")
+        rankings = build_rankings(trade_dates, daily_all, chinext_codes)
 
     # Full position, no timing
     signals = pd.DataFrame({"trade_date": trade_dates, "position": 1.0})
@@ -121,66 +122,48 @@ def run_gemstar(pro):
     return nav
 
 
+def _parse_jq_holdings(path):
+    """Extract daily stock holdings from JoinQuant position CSV."""
+    raw = pd.read_csv(path, encoding="gbk", header=None, skiprows=1)
+    stocks = raw[(raw[2] != "Cash") & raw[2].notna()].copy()
+    stocks["code"] = stocks[2].str.extract(r"\(([^)]+)\)")
+    stocks["code"] = stocks["code"].str.replace(".XSHE", ".SZ")
+    stocks["date"] = stocks[0].astype(str).str.replace("-", "")
+    return stocks.groupby("date")["code"].apply(list).to_dict()
+
+
+def _parse_jq_position_csv(path):
+    """Parse JoinQuant '持仓&收益' CSV (GBK encoded).
+
+    Format: 17 columns (header has 16), col 0=date, col 2=标的, col 15=total_asset.
+    Stock rows have total asset; Cash rows don't. Take first stock row per date.
+    """
+    raw = pd.read_csv(path, encoding="gbk", header=None, skiprows=1)
+    stock_rows = raw[raw[2] != "Cash"]
+    daily = stock_rows.groupby(0)[15].first().sort_index()
+    daily.index = daily.index.astype(str).str.replace("-", "")
+    daily.index.name = "trade_date"
+    daily.name = "nav"
+    return daily.astype(float)
+
+
 def compare(gemstar_nav, jq_csv_path):
     """Compare GemStar NAV against JoinQuant exported NAV."""
-    jq = pd.read_csv(jq_csv_path)
+    jq_nav = _parse_jq_position_csv(jq_csv_path)
+    print(f"\n[Compare] JoinQuant: {len(jq_nav)} days, {jq_nav.index[0]}~{jq_nav.index[-1]}")
+    print(f"[Compare] GemStar:   {len(gemstar_nav)} days, {gemstar_nav.index[0]}~{gemstar_nav.index[-1]}")
 
-    # JoinQuant CSV typically has columns: date, returns, benchmark_returns, or nav
-    # Adapt column names as needed
-    print(f"\n[Compare] JoinQuant CSV columns: {list(jq.columns)}")
-    print(f"[Compare] JoinQuant rows: {len(jq)}")
-    print(f"[Compare] GemStar days:   {len(gemstar_nav)}")
-
-    # Try to find a date and nav/returns column
-    date_col = None
-    for c in jq.columns:
-        if "date" in c.lower() or "日期" in c:
-            date_col = c
-            break
-
-    if date_col is None:
-        print("[Compare] Cannot find date column in JoinQuant CSV. Columns:", list(jq.columns))
-        print("[Compare] Please manually align the data.")
-        return
-
-    jq[date_col] = jq[date_col].astype(str).str.replace("-", "")
-
-    # Check if there's a NAV or returns column
-    nav_col = None
-    for c in jq.columns:
-        if "nav" in c.lower() or "净值" in c.lower() or "value" in c.lower():
-            nav_col = c
-            break
-
-    ret_col = None
-    for c in jq.columns:
-        if "return" in c.lower() or "收益" in c.lower():
-            ret_col = c
-            break
-
-    if nav_col:
-        jq_nav = jq.set_index(date_col)[nav_col].astype(float)
-        # Normalize to same starting capital
-        jq_nav = jq_nav / jq_nav.iloc[0] * CAPITAL
-    elif ret_col:
-        jq_returns = jq.set_index(date_col)[ret_col].astype(float)
-        jq_nav = (1 + jq_returns).cumprod() * CAPITAL
-    else:
-        print("[Compare] Cannot find NAV or returns column. Columns:", list(jq.columns))
-        return
-
-    # Align dates
     common = gemstar_nav.index.intersection(jq_nav.index)
     print(f"[Compare] Common trading days: {len(common)}")
 
     if len(common) == 0:
-        print("[Compare] No overlapping dates found. Check date format.")
+        print("[Compare] No overlapping dates. Check date format.")
         return
 
     gs = gemstar_nav.loc[common]
-    jq_aligned = jq_nav.loc[common]
+    jq = jq_nav.loc[common]
 
-    diff = (gs - jq_aligned) / jq_aligned * 100  # percentage diff
+    diff = (gs - jq) / jq * 100  # percentage diff
 
     print(f"\n{'='*50}")
     print("NAV Difference (GemStar vs JoinQuant)")
@@ -189,16 +172,21 @@ def compare(gemstar_nav, jq_csv_path):
     print(f"  Max diff:     {diff.abs().max():.4f}%")
     print(f"  Std diff:     {diff.std():.4f}%")
     print(f"  Final GS NAV: {gs.iloc[-1]:.2f}")
-    print(f"  Final JQ NAV: {jq_aligned.iloc[-1]:.2f}")
+    print(f"  Final JQ NAV: {jq.iloc[-1]:.2f}")
     print(f"  Final diff:   {diff.iloc[-1]:.4f}%")
 
     if diff.abs().max() < 5.0:
         print("\n  ✅ Max diff < 5% — engine is reasonably consistent with JoinQuant")
     else:
         print("\n  ⚠️  Max diff >= 5% — investigate divergence points")
+        # Show top 5 divergence dates
+        worst = diff.abs().nlargest(5)
+        print("\n  Top 5 divergence dates:")
+        for d, v in worst.items():
+            print(f"    {d}: GS={gs.loc[d]:.2f}  JQ={jq.loc[d]:.2f}  diff={diff.loc[d]:.2f}%")
 
     # Save diff for analysis
-    diff_df = pd.DataFrame({"gemstar": gs, "joinquant": jq_aligned, "diff_pct": diff})
+    diff_df = pd.DataFrame({"gemstar": gs, "joinquant": jq, "diff_pct": diff})
     diff_path = Path("output/crossval_diff.csv")
     diff_df.to_csv(diff_path)
     print(f"  Saved diff to {diff_path}")
@@ -210,7 +198,12 @@ def main():
     args = p.parse_args()
 
     pro = init_tushare()
-    nav = run_gemstar(pro)
+
+    jq_holdings = None
+    if args.compare:
+        jq_holdings = _parse_jq_holdings(args.compare)
+
+    nav = run_gemstar(pro, jq_holdings=jq_holdings)
 
     if args.compare:
         compare(nav, args.compare)
