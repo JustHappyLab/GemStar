@@ -7,10 +7,12 @@ CALLING SPEC:
         rankings=dict[str, list[str]],
         initial_capital=float,
         trade_dates=list[str] | None,
+        volume_limit_pct=float,
     ) -> dict
         daily_df columns: ts_code, trade_date, open, close, high, low, pre_close, vol
         signals columns: trade_date, position
         rankings maps trade_date -> ranked stock codes
+        volume_limit_pct: max fraction of daily volume per trade (default 0.25)
 
         Returns:
             nav: pd.Series indexed by trade_date
@@ -27,7 +29,7 @@ SIDE EFFECTS:
 import pandas as pd
 
 from src.portfolio.allocator import check_limit_up_down, compute_target_shares
-from src.portfolio.cost import calc_trade_cost
+from src.portfolio.cost import apply_slippage, calc_trade_cost
 
 
 def _record_buy_lot(open_lots: dict[str, list[dict[str, float]]], code: str, shares: int, price: float, cost: float) -> None:
@@ -68,6 +70,14 @@ def _realize_sell_pnl(
     return net_sell_proceeds - basis_cost
 
 
+def _cap_shares_by_volume(shares: int, vol: float, volume_limit_pct: float) -> int:
+    """Round down to 100-lot aligned volume cap."""
+    if vol <= 0 or volume_limit_pct <= 0:
+        return shares
+    max_shares = int(vol * volume_limit_pct // 100) * 100
+    return min(shares, max_shares)
+
+
 def _fit_buy_shares_to_cash(price: float, desired_shares: int, cash: float, trade_date: str) -> tuple[int, float]:
     shares = desired_shares
     while shares > 0:
@@ -79,7 +89,7 @@ def _fit_buy_shares_to_cash(price: float, desired_shares: int, cash: float, trad
     return 0, 0.0
 
 
-def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=None) -> dict:
+def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_dates=None, volume_limit_pct=0.25) -> dict:
     """Day-by-day backtest."""
     dates = sorted(signals["trade_date"].astype(str).unique()) if trade_dates is None else list(trade_dates)
     sig_map = signals.assign(trade_date=signals["trade_date"].astype(str)).set_index("trade_date")["position"].to_dict()
@@ -98,6 +108,7 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
         day_data = daily_grouped.get(date, pd.DataFrame())
         open_prices = dict(zip(day_data["ts_code"], day_data["open"]))
         close_prices = dict(zip(day_data["ts_code"], day_data["close"]))
+        volumes = dict(zip(day_data["ts_code"], day_data["vol"]))
 
         # holdings value at open
         holdings_value = sum(open_prices.get(c, 0) * s for c, s in holdings.items())
@@ -120,23 +131,22 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
                 if info.get("limit_down"):
                     continue
                 sell_shares = held - target_shares
-                price = open_prices.get(code, 0)
-                cost = calc_trade_cost(price, sell_shares, "sell", date)
-                cash += price * sell_shares - cost
-                day_turnover += price * sell_shares
+                sell_shares = _cap_shares_by_volume(sell_shares, volumes.get(code, 0), volume_limit_pct)
+                if sell_shares == 0:
+                    continue
+                fill_price = apply_slippage(open_prices.get(code, 0), "sell")
+                cost = calc_trade_cost(fill_price, sell_shares, "sell", date)
+                cash += fill_price * sell_shares - cost
+                day_turnover += fill_price * sell_shares
                 cycle_realized_pnl[code] = cycle_realized_pnl.get(code, 0.0) + _realize_sell_pnl(
-                    open_lots,
-                    code,
-                    sell_shares,
-                    price,
-                    cost,
+                    open_lots, code, sell_shares, fill_price, cost,
                 )
-                holdings[code] = target_shares
-                if target_shares == 0:
+                holdings[code] = held - sell_shares
+                if holdings[code] == 0:
                     del holdings[code]
                     realized_pnls.append(cycle_realized_pnl.pop(code, 0.0))
                 trades.append({"date": date, "code": code, "dir": "sell",
-                               "shares": sell_shares, "price": price, "cost": cost})
+                               "shares": sell_shares, "price": fill_price, "cost": cost})
 
         # buy
         for code, tgt in target.items():
@@ -146,19 +156,22 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
                 if info.get("limit_up"):
                     continue
                 buy_shares = tgt - held
-                price = open_prices.get(code, 0)
-                buy_shares, cost = _fit_buy_shares_to_cash(price, buy_shares, cash, date)
+                buy_shares = _cap_shares_by_volume(buy_shares, volumes.get(code, 0), volume_limit_pct)
                 if buy_shares == 0:
                     continue
-                needed = price * buy_shares + cost
+                fill_price = apply_slippage(open_prices.get(code, 0), "buy")
+                buy_shares, cost = _fit_buy_shares_to_cash(fill_price, buy_shares, cash, date)
+                if buy_shares == 0:
+                    continue
+                needed = fill_price * buy_shares + cost
                 cash -= needed
-                day_turnover += price * buy_shares
+                day_turnover += fill_price * buy_shares
                 if held == 0 and code not in cycle_realized_pnl:
                     cycle_realized_pnl[code] = 0.0
                 holdings[code] = held + buy_shares
-                _record_buy_lot(open_lots, code, buy_shares, price, cost)
+                _record_buy_lot(open_lots, code, buy_shares, fill_price, cost)
                 trades.append({"date": date, "code": code, "dir": "buy",
-                               "shares": buy_shares, "price": price, "cost": cost})
+                               "shares": buy_shares, "price": fill_price, "cost": cost})
 
         # mark to close
         holdings_value_close = sum(close_prices.get(c, 0) * s for c, s in holdings.items())
