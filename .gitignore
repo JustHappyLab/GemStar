@@ -8,3 +8,6 @@ data/features/
 output/
 swanlog/
 wandb/
+.DS_Store
+*.zip
+.claude/
