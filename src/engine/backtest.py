@@ -169,6 +169,15 @@ def run_backtest(daily_df, signals, rankings, initial_capital=100000, trade_date
         exposure_list.append({"date": date, "exposure": exposure})
         daily_log.append({"date": date, "cash": cash, "holdings": dict(holdings), "nav": nav, "exposure": exposure})
 
+    # Mark remaining positions to last close and flush as realized PnL
+    if dates:
+        last_data = daily_grouped.get(dates[-1], pd.DataFrame())
+        last_close = dict(zip(last_data["ts_code"], last_data["close"]))
+        for code, shares in holdings.items():
+            price = last_close.get(code, 0)
+            unrealized = _realize_sell_pnl(open_lots, code, shares, price, 0.0)
+            realized_pnls.append(cycle_realized_pnl.pop(code, 0.0) + unrealized)
+
     nav_series = pd.Series({r["date"]: r["nav"] for r in nav_list})
     turnover_series = pd.Series({r["date"]: r["turnover"] for r in turnover_list})
     exposure_series = pd.Series({r["date"]: r["exposure"] for r in exposure_list})
