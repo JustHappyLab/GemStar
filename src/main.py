@@ -36,6 +36,7 @@ from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n, DEFAULT_WEIGHTS
 from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
+from src.engine.metrics import auto_segments, compute_segment_metrics
 from src.tracking.swanlab_run import (
     build_backtest_curve_frame,
     finish_swanlab_run,
@@ -245,7 +246,7 @@ def compute_daily_rankings(all_factors_df, stock_basic, daily_df, trade_dates):
     return rankings
 
 
-def generate_report(metrics, output_dir="output"):
+def generate_report(metrics, output_dir="output", segment_metrics=None):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     lines = ["# ChiNext Quant Strategy Backtest Report\n", "| Metric | Value |", "|--------|-------|"]
     for k, v in metrics.items():
@@ -254,6 +255,14 @@ def generate_report(metrics, output_dir="output"):
         else:
             fmt = str(v)
         lines.append(f"| {k} | {fmt} |")
+    if segment_metrics:
+        lines.append("\n## Segment Breakdown\n")
+        lines.append("| Segment | Days | CAGR | Sharpe | MaxDD | Alpha |")
+        lines.append("|---------|------|------|--------|-------|-------|")
+        for s in segment_metrics:
+            lines.append(
+                f"| {s['segment']} | {s['days']} | {s['cagr']:.4f} | {s['sharpe']:.4f} | {s['max_drawdown']:.4f} | {s['alpha']:.4f} |"
+            )
     path = Path(output_dir) / "backtest_report.md"
     path.write_text("\n".join(lines))
     print(f"[Report] Saved to {path}")
@@ -370,7 +379,9 @@ def main():
             bench_nav,
             args.capital,
         )
-        report_path = generate_report(metrics)
+        segments = auto_segments(args.start, args.end)
+        seg_metrics = compute_segment_metrics(result["nav"], bench_nav, segments)
+        report_path = generate_report(metrics, segment_metrics=seg_metrics)
         log_backtest_metrics(
             tracker,
             metrics=metrics,
