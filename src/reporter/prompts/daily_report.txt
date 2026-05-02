@@ -1,0 +1,23 @@
+# GemStar Daily Report — {report_date}
+
+**Run ID:** {run_id}
+
+## Market Summary
+
+{market_summary}
+
+## Leaderboard
+
+{leaderboard}
+
+## Signals
+
+{signals_summary}
+
+## Factor Notes
+
+{factor_notes}
+
+## Health: {health_status}
+
+{health_notes}
