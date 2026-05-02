@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "last_updated": "2026-05-03",
+  "active": [
+    {
+      "name": "roe",
+      "source": "financial_statements",
+      "computation": "Return on equity from latest financial report",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "revenue_yoy",
+      "source": "financial_statements",
+      "computation": "Year-over-year revenue growth rate",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "netprofit_yoy",
+      "source": "financial_statements",
+      "computation": "Year-over-year net profit growth rate",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "pe_inverse",
+      "source": "market_data",
+      "computation": "Inverse of trailing P/E ratio (1/pe_ttm)",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "pb_inverse",
+      "source": "market_data",
+      "computation": "Inverse of price-to-book ratio (1/pb)",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "momentum_20d",
+      "source": "market_data",
+      "computation": "20-day close price percentage change",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "turnover_20d",
+      "source": "market_data",
+      "computation": "20-day rolling mean of turnover rate",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    },
+    {
+      "name": "rel_strength_20d",
+      "source": "market_data",
+      "computation": "Stock 20d return minus index 20d return",
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "chinext",
+      "status": "active"
+    }
+  ],
+  "watchlist": [],
+  "retired": [],
+  "candidates": []
+}
