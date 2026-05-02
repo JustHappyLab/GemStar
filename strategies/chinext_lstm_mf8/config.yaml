@@ -1,0 +1,43 @@
+version: StrategyConfigV1
+name: chinext_lstm_mf8
+hypothesis: "ChiNext LSTM timer with multi-factor ranker (8 factors, equal-ish weights)"
+universe: chinext
+
+timer:
+  mode: lstm
+  seq_len: 60
+  horizon: 5
+  retrain_months: 6
+  epochs: 100
+  batch_size: 64
+  lr: 0.001
+  patience: 10
+
+factors:
+  - factor_id: roe
+    weight: 0.15
+  - factor_id: revenue_yoy
+    weight: 0.15
+  - factor_id: netprofit_yoy
+    weight: 0.10
+  - factor_id: pe_inverse
+    weight: 0.10
+  - factor_id: pb_inverse
+    weight: 0.10
+  - factor_id: momentum_20d
+    weight: 0.15
+  - factor_id: turnover_20d
+    weight: 0.10
+  - factor_id: rel_strength_20d
+    weight: 0.15
+
+top_n: 5
+rebalance: daily
+
+backtest:
+  start: "20210409"
+  end: "20260409"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0
