@@ -4,6 +4,8 @@ CALLING SPEC:
     pro = init_tushare(token: str | None = None) -> ts.pro_api client
         Reads `TUSHARE_TOKEN` from the explicit argument or environment.
         Raises ValueError when the token is missing.
+    fetch_income, fetch_balancesheet, fetch_cashflow, fetch_disclosure_date,
+    fetch_forecast, fetch_express — PIT-friendly financial data fetchers.
 """
 
 import os
@@ -251,3 +253,48 @@ def fetch_fina_indicator(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.D
     _write_cache(df, cache_dir, name)
     _rate_limit()
     return df
+
+
+def _fetch_by_ts_code(pro, ts_code: str, api_name: str, cache_dir: str) -> pd.DataFrame:
+    """Shared helper for single-stock Tushare API fetches with caching."""
+    name = f"{api_name}_{ts_code.replace('.', '_')}"
+    cached = _read_cache(cache_dir, name)
+    if cached is not None:
+        return cached
+    fetch_fn = getattr(pro, api_name)
+    df = _call_with_retry(fetch_fn, ts_code=ts_code, op_name=f"{api_name} {ts_code}")
+    if df is None:
+        df = pd.DataFrame()
+    _write_cache(df, cache_dir, name)
+    _rate_limit()
+    return df
+
+
+def fetch_income(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch income statement for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "income", cache_dir)
+
+
+def fetch_balancesheet(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch balance sheet for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "balancesheet", cache_dir)
+
+
+def fetch_cashflow(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch cash flow statement for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "cashflow", cache_dir)
+
+
+def fetch_disclosure_date(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch disclosure dates for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "disclosure_date", cache_dir)
+
+
+def fetch_forecast(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch earnings forecast for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "forecast", cache_dir)
+
+
+def fetch_express(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch earnings express report for a single stock."""
+    return _fetch_by_ts_code(pro, ts_code, "express", cache_dir)
