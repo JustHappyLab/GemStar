@@ -44,6 +44,47 @@ roles/*.yaml          skills/*/             src/llm/providers/
 
 用户可通过修改 `roles/*.yaml` 中的 `provider` 字段切换 LLM 后端，无需改代码。
 
+#### 角色配置
+
+| 角色 | Provider | Skills | 需要批准 |
+|------|----------|--------|----------|
+| macro_analyst | api | analyze_market | 否 |
+| event_scanner | api | scan_events | 否 |
+| research_analyst | api | generate_tickets | 否 |
+| strategy_architect | api | draft_strategy | 否 |
+| reviewer | api | review_verdict | 否 |
+| engineer | claude_code | write_code, fix_bug | 是 |
+| bugfix | claude_code | fix_bug | 是 |
+
+#### Skill 目录
+
+每个 skill 目录包含三个文件：
+
+| 文件 | 用途 |
+|------|------|
+| `prompt.txt` | LLM 系统提示词 |
+| `sop.md` | 标准操作流程文档（供人阅读） |
+| `schema.json` | 输出 JSON schema（用于校验 LLM 输出） |
+
+| Skill | 用途 |
+|-------|------|
+| analyze_market | 评估市场宏观状态（regime + style bias） |
+| scan_events | 扫描近期市场事件信号 |
+| generate_tickets | 从市场上下文生成研究 ticket |
+| draft_strategy | 从 research ticket 草拟策略 YAML |
+| review_verdict | 生成回测评审意见（解释 + 风险 + 置信度） |
+| write_code | 代码编写（engineer 角色使用） |
+| fix_bug | Bug 修复（engineer/bugfix 角色使用） |
+
+#### Provider 实现
+
+| Provider | 后端 | 说明 |
+|----------|------|------|
+| api | Anthropic API | 直接调用 Claude API，适合批量自动化 |
+| claude_code | Claude Code CLI | 子进程调用，适合需要文件操作的任务 |
+| gemini_cli | Gemini CLI | 子进程调用 Google Gemini |
+| codex_cli | Codex CLI | 子进程调用 OpenAI Codex |
+
 ### 事件流
 
 所有 Role 执行通过 `RoleEvent` 产生可观测事件（started/completed/failed），支持执行监控和调试。
