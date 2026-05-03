@@ -149,6 +149,7 @@ GemStar/
 - Python >= 3.13
 - [uv](https://docs.astral.sh/uv/) 包管理器
 - [Tushare Pro](https://tushare.pro/) Token
+- LLM Provider（按需，见下方配置）
 
 ### 安装
 
@@ -162,18 +163,39 @@ uv sync
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 TUSHARE_TOKEN
+# 编辑 .env，填入必要 token
 
 # 初始化项目（生成 gemstar.yaml + state.db）
 gemstar init
 ```
 
-可选配置 SwanLab 实验记录（独立回测工具使用）：
+#### 环境变量
 
-```bash
-SWANLAB_API_KEY=your_key
-SWANLAB_PROJ_NAME=gemstar
-```
+| 变量 | 必需 | 说明 |
+|------|------|------|
+| `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
+| `ANTHROPIC_API_KEY` | 否 | Anthropic API key，`api` provider 使用 |
+| `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
+
+#### LLM Provider 配置
+
+不同角色使用不同的 LLM 后端，需安装对应 CLI 工具：
+
+| Provider | 后端 | 安装方式 | 认证 |
+|----------|------|----------|------|
+| `api` | Anthropic API | `pip install anthropic` | `ANTHROPIC_API_KEY` 环境变量 |
+| `claude_code` | Claude Code CLI | `npm i -g @anthropic-ai/claude-code` | `claude` 登录后自动认证 |
+| `gemini_cli` | Gemini CLI | `npm i -g @google/gemini-cli` | `gemini` 登录后自动认证 |
+| `codex_cli` | Codex CLI | `npm i -g @openai/codex` | `OPENAI_API_KEY` 环境变量 |
+
+默认角色配置（`roles/*.yaml`）：
+
+| 角色 | Provider | 说明 |
+|------|----------|------|
+| macro_analyst, event_scanner, research_analyst, strategy_architect, reviewer | `api` | 需要 `ANTHROPIC_API_KEY` |
+| engineer, bugfix | `claude_code` | 需要安装并登录 Claude Code CLI |
+
+只需配置你实际使用的 provider。例如，只跑不带 LLM 的 pipeline（`gemstar run`），则只需 Tushare token。启用 LLM 策略生成（`gemstar run --llm`）则需额外配置对应 provider。
 
 ### CLI 命令
 
