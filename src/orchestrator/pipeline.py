@@ -36,13 +36,18 @@ import pandas as pd
 from src.data_quality.gate import DataQualityReport, run_data_quality_gate
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
+from src.llm.client import LLMClient
 from src.orchestrator.artifact_store import write_artifact
 from src.orchestrator.fsm_daily import DailyFSM
 from src.orchestrator.run_manifest import finalize_run, start_run
+from src.research.analyst import generate_tickets
 from src.reporter.builder import build_report
 from src.reporter.builder import DailyReportV1, ReportStrategyEntry
+from src.scanner.event_scanner import scan_events
+from src.scanner.macro_analyst import analyze_market_regime
 from src.schemas.metrics import BacktestResultV1
 from src.schemas.verdict import VerdictV1
+from src.strategies.architect import draft_strategy
 from src.strategies.runner import run_strategy_from_yaml
 from src.strategies.validator import validate_strategy
 
@@ -57,6 +62,8 @@ def run_daily_pipeline(
     ic_df: pd.DataFrame | None = None,
     signals: pd.DataFrame | None = None,
     rankings: dict[str, list[str]] | None = None,
+    index_df: pd.DataFrame | None = None,
+    llm_available: bool = False,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
 ) -> dict:
@@ -82,6 +89,11 @@ def run_daily_pipeline(
         Position signal DataFrame (trade_date, position).  If None, backtesting is skipped.
     rankings : dict, optional
         trade_date → ranked stock codes mapping.  If None, backtesting is skipped.
+    index_df : pd.DataFrame, optional
+        ChiNext index daily data for MacroAnalyst.  If None, LLM ideation is skipped.
+    llm_available : bool
+        If True, run LLM-based strategy ideation (MacroAnalyst, EventScanner,
+        ResearchAnalyst, StrategyArchitect).  Requires ANTHROPIC_API_KEY.
     db_path : str
         Path to SQLite state database.
     artifacts_dir : str
@@ -101,6 +113,9 @@ def run_daily_pipeline(
         "run_status": "running",
         "quality_report": None,
         "factor_health": None,
+        "regime": None,
+        "events": [],
+        "tickets": [],
         "backtest_results": [],
         "verdicts": [],
         "report": None,
@@ -144,8 +159,41 @@ def run_daily_pipeline(
             result["factor_health"] = factor_health
             write_artifact(run_id, "factor_health_report", factor_health.model_dump(), base_dir=artifacts_dir, step_id="factor_monitoring")
 
-        # --- STRATEGY_VALIDATION ---
+        # --- STRATEGY_IDEATION ---
         fsm.transition("strategy_ideation")
+        daily_df = data.get("daily", pd.DataFrame())
+        regime = None
+        events = []
+        tickets = []
+
+        if llm_available and index_df is not None and not daily_df.empty:
+            llm = LLMClient()
+            try:
+                regime = analyze_market_regime(daily_df, index_df, reference_date, llm)
+                write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
+
+                events = scan_events(data, reference_date, llm)
+                write_artifact(run_id, "event_signals", [e.model_dump() for e in events], base_dir=artifacts_dir, step_id="strategy_ideation")
+
+                tickets = generate_tickets(regime, events, factor_health, pool_path, llm)
+                write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
+
+                for ticket in tickets:
+                    if ticket.status != "draft":
+                        continue
+                    try:
+                        draft_path = draft_strategy([ticket], pool_path, reference_date, llm, output_dir=str(Path(artifacts_dir) / run_id / "drafts"))
+                        strategies.append(draft_path)
+                    except Exception:
+                        pass  # skip failed drafts; existing strategies still proceed
+            except Exception:
+                pass  # LLM ideation is best-effort; pipeline continues with existing strategies
+
+        result["regime"] = regime
+        result["events"] = events
+        result["tickets"] = tickets
+
+        # --- STRATEGY_VALIDATION ---
         fsm.transition("strategy_validation")
 
         valid_strategies: list[tuple[Path, VerdictV1]] = []
