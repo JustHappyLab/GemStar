@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "chinext-quant"
 version = "0.1.0"
@@ -14,11 +18,20 @@ dependencies = [
     "pydantic>=2.5",
     "anthropic>=0.40",
     "python-dotenv>=1.0",
+    "typer>=0.15",
+    "pyyaml>=6.0",
+    "rich>=13.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[project.scripts]
+gemstar = "src.cli.app:app"
+
 [dependency-groups]
 dev = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

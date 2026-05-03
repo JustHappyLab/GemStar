@@ -56,26 +56,20 @@ roles/*.yaml          skills/*/             src/llm/providers/
 GemStar/
 ├── .env.example                # 环境变量模板
 ├── pyproject.toml              # 项目配置 + 依赖管理 (uv)
+├── gemstar.yaml                # 项目配置（gemstar init 生成）
 ├── tools/                      # 附属工具
 │   ├── backtest.py             # 独立回测 CLI（数据→训练→回测→报告）
 │   └── tracking/               # SwanLab 实验追踪
 ├── roles/                      # Role YAML 配置（7 个角色）
-│   ├── macro_analyst.yaml
-│   ├── event_scanner.yaml
-│   ├── research_analyst.yaml
-│   ├── strategy_architect.yaml
-│   ├── reviewer.yaml
-│   ├── engineer.yaml
-│   └── bugfix.yaml
 ├── skills/                     # Skill 目录（7 个 skill，各含 prompt.txt + sop.md + schema.json）
-│   ├── analyze_market/
-│   ├── scan_events/
-│   ├── generate_tickets/
-│   ├── draft_strategy/
-│   ├── review_verdict/
-│   ├── write_code/
-│   └── fix_bug/
+├── strategies/                 # 策略 YAML 配置
+├── factors/                    # 因子池 (pool.json)
 ├── src/
+│   ├── cli/                    # CLI 入口
+│   │   ├── app.py              # typer app + 全局 --output 选项
+│   │   ├── config.py           # GemStarConfig + YAML loader
+│   │   ├── output.py           # table / json 统一输出
+│   │   └── commands/           # 子命令（init/run/fetch/status/history/roles/strategies/factors）
 │   ├── data/                   # Tushare 数据拉取 + 清洗
 │   ├── timer/                  # LSTM 择时（特征 / 模型 / 信号）
 │   ├── ranker/                 # 多因子选股（因子 / 标准化 / 打分）
@@ -128,32 +122,41 @@ uv sync
 ```bash
 cp .env.example .env
 # 编辑 .env，填入 TUSHARE_TOKEN
+
+# 初始化项目（生成 gemstar.yaml + state.db）
+gemstar init
 ```
 
-可选配置 SwanLab 实验记录：
+### CLI 命令
 
 ```bash
-SWANLAB_API_KEY=your_key
-SWANLAB_PROJ_NAME=gemstar
+# 启动当日 pipeline（核心命令）
+gemstar run --date 20260503
+
+# 启用 LLM 策略生成
+gemstar run --date 20260503 --llm
+
+# 指定策略
+gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
+
+# 拉取数据
+gemstar fetch --start 20240101 --end 20260503
+
+# 查看运行状态（JSON 输出，供 QClaw 解析）
+gemstar -o json status
+
+# 列出历史运行
+gemstar history
+
+# 查看可用角色 / 策略 / 因子
+gemstar roles
+gemstar strategies
+gemstar factors
 ```
 
-### 运行 Pipeline
+所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
 
-```python
-from src.orchestrator.pipeline import run_daily_pipeline
-
-result = run_daily_pipeline(
-    run_id="20260503-001",
-    data=data_dict,           # Tushare DataFrame 映射
-    strategies=[Path("...")], # 策略 YAML 路径
-    pool_path=Path("factors/pool.json"),
-    reference_date="20260503",
-    benchmark_nav=benchmark_series,
-    llm_available=True,       # 启用 LLM 策略生成
-)
-```
-
-首次运行会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
+首次运行 `gemstar run` 会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
 
 ### 运行测试
 
