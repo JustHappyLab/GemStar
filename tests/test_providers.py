@@ -133,7 +133,7 @@ class TestClaudeCodeProvider:
         provider.execute("task", context={"system": "sys prompt"})
 
         cmd = mock_run.call_args[0][0]
-        prompt_arg = cmd[cmd.index("--prompt") + 1]
+        prompt_arg = cmd[cmd.index("-p") + 1]
         assert "sys prompt" in prompt_arg
         assert "task" in prompt_arg
 

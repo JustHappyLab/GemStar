@@ -221,7 +221,7 @@ def test_pipeline_aborts_on_missing_core_data():
             artifacts_dir=str(Path(tmpdir) / "artifacts"),
         )
 
-        assert result["run_status"] == "failed"
+        assert result["run_status"] == "manual_attention"
         assert result["quality_report"].mode == "abort"
 
 
