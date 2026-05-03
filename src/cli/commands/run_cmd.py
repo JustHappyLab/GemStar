@@ -81,6 +81,7 @@ def run_cmd(
     benchmark_nav = benchmark_nav / benchmark_nav.iloc[0] * 100000  # normalized
 
     # --- Run pipeline ---
+    role_overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()} if config.roles else None
     console.print(f"[cyan]Running pipeline[/cyan] ({len(strat_paths)} strategies)...")
     result = run_daily_pipeline(
         run_id=run_id,
@@ -91,6 +92,7 @@ def run_cmd(
         benchmark_nav=benchmark_nav,
         index_df=index_daily,
         llm_available=llm or config.llm.available,
+        role_overrides=role_overrides,
         db_path=config.db_path,
         artifacts_dir=config.artifacts_dir,
     )

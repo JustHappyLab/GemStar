@@ -70,6 +70,7 @@ def run_daily_pipeline(
     index_df: pd.DataFrame | None = None,
     llm_available: bool = False,
     registry: RoleRegistry | None = None,
+    role_overrides: dict[str, dict] | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
 ) -> dict:
@@ -103,6 +104,8 @@ def run_daily_pipeline(
     registry : RoleRegistry, optional
         Role registry for provider dispatch.  If None and llm_available=True,
         a default registry is created.
+    role_overrides : dict, optional
+        Per-role config overrides from gemstar.yaml (e.g. {"engineer": {"provider": "gemini_cli"}}).
     db_path : str
         Path to SQLite state database.
     artifacts_dir : str
@@ -135,7 +138,7 @@ def run_daily_pipeline(
     }
 
     # Resolve registry once for all LLM stages
-    _reg = registry or RoleRegistry() if llm_available else None
+    _reg = registry or (RoleRegistry(overrides=role_overrides) if llm_available else None)
 
     try:
         # --- COLLECTING ---

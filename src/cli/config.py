@@ -16,18 +16,45 @@ _CONFIG_SEARCH = [
 ]
 
 _DEFAULT_TEMPLATE = """\
-# GemStar configuration
-tushare_token: ${TUSHARE_TOKEN}
-benchmark: 399006.SZ
-pool_path: factors/pool.json
-db_path: state.db
-artifacts_dir: artifacts
-data_cache_dir: data/raw
+# GemStar 配置文件
+# 运行 gemstar init 自动生成，按需修改
 
+# ─── 数据源 ───────────────────────────────────────────────
+tushare_token: ${TUSHARE_TOKEN}     # Tushare Pro API token（必需）
+benchmark: 399006.SZ                # 基准指数（创业板指）
+data_cache_dir: data/raw            # 数据缓存目录（Parquet）
+
+# ─── 路径 ─────────────────────────────────────────────────
+pool_path: factors/pool.json        # 因子池
+db_path: state.db                   # 状态数据库
+artifacts_dir: artifacts            # 产物目录
+
+# ─── LLM 配置 ─────────────────────────────────────────────
+# 控制 pipeline 是否启用 LLM 策略生成阶段
+# gemstar run --llm 可临时覆盖
 llm:
-  available: false
-  provider: api
+  available: false                  # true = 默认启用 LLM
+  provider: api                     # 默认 provider（api / claude_code / gemini_cli / codex_cli）
 
+# ─── 角色 Provider 覆盖 ───────────────────────────────────
+# 按角色切换 LLM 后端，无需改 roles/*.yaml
+# 可选值: api, claude_code, gemini_cli, codex_cli
+# 未列出的角色使用 roles/*.yaml 中的默认配置
+#
+# 安装与认证:
+#   api          → pip install anthropic         → ANTHROPIC_API_KEY
+#   claude_code  → npm i -g @anthropic-ai/claude-code → claude 登录
+#   gemini_cli   → npm i -g @google/gemini-cli   → gemini 登录
+#   codex_cli    → npm i -g @openai/codex        → OPENAI_API_KEY
+roles: {}
+#  engineer:
+#    provider: gemini_cli          # 工程师角色改用 Gemini
+#  bugfix:
+#    provider: codex_cli           # Bug 修复改用 Codex
+#  macro_analyst:
+#    provider: claude_code         # 宏观分析改用 Claude Code
+
+# ─── 策略 ─────────────────────────────────────────────────
 strategies:
   - strategies/chinext_lstm_mf8/config.yaml
 """
@@ -40,6 +67,10 @@ class LLMConfig(BaseModel):
     provider: str = "api"
 
 
+class RoleOverride(BaseModel):
+    provider: str | None = None
+
+
 class GemStarConfig(BaseModel):
     tushare_token: str = ""
     benchmark: str = "399006.SZ"
@@ -48,6 +79,7 @@ class GemStarConfig(BaseModel):
     artifacts_dir: str = "artifacts"
     data_cache_dir: str = "data/raw"
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    roles: dict[str, RoleOverride] = Field(default_factory=dict)
     strategies: list[str] = Field(default_factory=list)
 
 

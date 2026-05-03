@@ -75,6 +75,7 @@ class RoleRegistry:
         roles_dir: str | Path = "roles",
         skills_dir: str | Path = "skills",
         event_callback: Callable[[RoleEvent], None] | None = None,
+        overrides: dict[str, dict] | None = None,
     ) -> None:
         self._roles_dir = Path(roles_dir)
         self._skills_dir = Path(skills_dir)
@@ -82,8 +83,10 @@ class RoleRegistry:
         self._roles: dict[str, RoleConfig] = {}
         self._skills: dict[str, SkillContent] = {}
         self._providers: dict[str, AgentProvider] = {}
+        self._overrides = overrides or {}
 
         self._load_roles()
+        self._apply_overrides()
         self._load_skills()
 
     def _load_roles(self) -> None:
@@ -95,6 +98,13 @@ class RoleRegistry:
             if data and "name" in data:
                 config = RoleConfig(**data)
                 self._roles[config.name] = config
+
+    def _apply_overrides(self) -> None:
+        """Apply gemstar.yaml role overrides to loaded role configs."""
+        for role_name, override in self._overrides.items():
+            if role_name in self._roles and "provider" in override:
+                role = self._roles[role_name]
+                self._roles[role_name] = role.model_copy(update={"provider": override["provider"]})
 
     def _load_skills(self) -> None:
         """Load all skill directories from skills_dir."""
