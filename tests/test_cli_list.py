@@ -156,3 +156,68 @@ def test_factors_no_pool_file(tmp_path, monkeypatch):
     result = runner.invoke(app, ["factors"])
     assert result.exit_code == 0
     assert "No factor pool found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Role provider validation
+# ---------------------------------------------------------------------------
+
+def test_engineer_role_rejects_api_provider(tmp_path):
+    """RoleRegistry raises ValueError when a filesystem role uses 'api' provider."""
+    import yaml
+    from src.roles.registry import RoleRegistry
+
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    roles_dir.joinpath("engineer.yaml").write_text(yaml.dump({
+        "name": "engineer",
+        "provider": "api",
+        "skills": ["write_code"],
+    }))
+
+    import pytest
+    with pytest.raises(ValueError, match="requires file system access"):
+        RoleRegistry(roles_dir=roles_dir, skills_dir=tmp_path / "skills")
+
+
+def test_override_rejects_api_for_engineer(tmp_path):
+    """RoleRegistry raises ValueError when override sets 'api' for a filesystem role."""
+    import yaml
+    from src.roles.registry import RoleRegistry
+
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    roles_dir.joinpath("engineer.yaml").write_text(yaml.dump({
+        "name": "engineer",
+        "provider": "claude_code",
+        "skills": ["write_code"],
+    }))
+
+    import pytest
+    with pytest.raises(ValueError, match="requires file system access"):
+        RoleRegistry(
+            roles_dir=roles_dir,
+            skills_dir=tmp_path / "skills",
+            overrides={"engineer": {"provider": "api"}},
+        )
+
+
+def test_engineer_accepts_cli_providers(tmp_path):
+    """RoleRegistry accepts CLI providers for filesystem roles."""
+    import yaml
+    from src.roles.registry import RoleRegistry
+
+    for provider in ("claude_code", "gemini_cli", "codex_cli"):
+        roles_dir = tmp_path / "roles"
+        if roles_dir.exists():
+            import shutil
+            shutil.rmtree(roles_dir)
+        roles_dir.mkdir()
+        roles_dir.joinpath("engineer.yaml").write_text(yaml.dump({
+            "name": "engineer",
+            "provider": provider,
+            "skills": ["write_code"],
+        }))
+        # Should not raise
+        reg = RoleRegistry(roles_dir=roles_dir, skills_dir=tmp_path / "skills")
+        assert reg.get_role("engineer").provider == provider

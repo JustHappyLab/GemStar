@@ -181,21 +181,38 @@ gemstar init
 
 不同角色使用不同的 LLM 后端，需安装对应 CLI 工具：
 
-| Provider | 后端 | 安装方式 | 认证 |
-|----------|------|----------|------|
-| `api` | Anthropic API | `pip install anthropic` | `ANTHROPIC_API_KEY` 环境变量 |
-| `claude_code` | Claude Code CLI | `npm i -g @anthropic-ai/claude-code` | `claude` 登录后自动认证 |
-| `gemini_cli` | Gemini CLI | `npm i -g @google/gemini-cli` | `gemini` 登录后自动认证 |
-| `codex_cli` | Codex CLI | `npm i -g @openai/codex` | `OPENAI_API_KEY` 环境变量 |
+| Provider | 后端 | 安装方式 | 认证 | 文件系统 |
+|----------|------|----------|------|----------|
+| `api` | Anthropic API | `pip install anthropic` | `ANTHROPIC_API_KEY` 环境变量 | 否 |
+| `claude_code` | Claude Code CLI | `npm i -g @anthropic-ai/claude-code` | `claude` 登录后自动认证 | 是 |
+| `gemini_cli` | Gemini CLI | `npm i -g @google/gemini-cli` | `gemini` 登录后自动认证 | 是 |
+| `codex_cli` | Codex CLI | `npm i -g @openai/codex` | `OPENAI_API_KEY` 环境变量 | 是 |
 
 默认角色配置（`roles/*.yaml`）：
 
-| 角色 | Provider | 说明 |
-|------|----------|------|
-| macro_analyst, event_scanner, research_analyst, strategy_architect, reviewer | `api` | 需要 `ANTHROPIC_API_KEY` |
-| engineer, bugfix | `claude_code` | 需要安装并登录 Claude Code CLI |
+| 角色 | 默认 Provider | 可切换到 | 说明 |
+|------|--------------|----------|------|
+| macro_analyst | `api` | 任意 | 市场宏观分析（返回 JSON） |
+| event_scanner | `api` | 任意 | 事件扫描（返回 JSON） |
+| research_analyst | `api` | 任意 | 研究工单生成（返回 JSON） |
+| strategy_architect | `api` | 任意 | 策略草稿（返回 YAML） |
+| reviewer | `api` | 任意 | 回测评审（返回 JSON） |
+| engineer | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | 代码编写（需写文件） |
+| bugfix | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | Bug 修复（需写文件） |
 
-只需配置你实际使用的 provider。例如，只跑不带 LLM 的 pipeline（`gemstar run`），则只需 Tushare token。启用 LLM 策略生成（`gemstar run --llm`）则需额外配置对应 provider。
+**Provider 约束**：`engineer` 和 `bugfix` 角色需要写文件到磁盘，只能使用 CLI 类 provider（`claude_code` / `gemini_cli` / `codex_cli`）。配置为 `api` 会报错。分析类角色无此限制，4 个 provider 均可使用。
+
+在 `gemstar.yaml` 中覆盖角色 provider：
+
+```yaml
+roles:
+  engineer:
+    provider: gemini_cli      # 工程师改用 Gemini
+  macro_analyst:
+    provider: claude_code     # 宏观分析改用 Claude Code
+```
+
+只需配置你实际使用的 provider。只跑不带 LLM 的 pipeline（`gemstar run`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm`）则需额外配置对应 provider。
 
 ### CLI 命令
 

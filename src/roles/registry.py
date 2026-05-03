@@ -42,6 +42,10 @@ _PROVIDER_MAP: dict[str, type[AgentProvider]] = {
     "codex_cli": CodexCliProvider,
 }
 
+# Roles that write files to disk — must use a CLI provider (not `api`).
+_FILESYSTEM_ROLES = frozenset({"engineer", "bugfix"})
+_TEXT_ONLY_PROVIDERS = frozenset({"api"})
+
 
 def _read_or_default(path: Path, default: str = "") -> str:
     """Read a file, returning default if it doesn't exist."""
@@ -49,6 +53,16 @@ def _read_or_default(path: Path, default: str = "") -> str:
         return path.read_text()
     except FileNotFoundError:
         return default
+
+
+def _validate_role_provider(role_name: str, provider: str) -> None:
+    """Raise ValueError if a filesystem role is assigned a text-only provider."""
+    if role_name in _FILESYSTEM_ROLES and provider in _TEXT_ONLY_PROVIDERS:
+        cli_providers = sorted(set(_PROVIDER_MAP) - _TEXT_ONLY_PROVIDERS)
+        raise ValueError(
+            f"Role '{role_name}' requires file system access and cannot use "
+            f"provider '{provider}'. Use a CLI provider: {cli_providers}"
+        )
 
 
 class SkillContent:
@@ -97,14 +111,17 @@ class RoleRegistry:
             data = yaml.safe_load(path.read_text())
             if data and "name" in data:
                 config = RoleConfig(**data)
+                _validate_role_provider(config.name, config.provider)
                 self._roles[config.name] = config
 
     def _apply_overrides(self) -> None:
         """Apply gemstar.yaml role overrides to loaded role configs."""
         for role_name, override in self._overrides.items():
             if role_name in self._roles and "provider" in override:
+                provider = override["provider"]
+                _validate_role_provider(role_name, provider)
                 role = self._roles[role_name]
-                self._roles[role_name] = role.model_copy(update={"provider": override["provider"]})
+                self._roles[role_name] = role.model_copy(update={"provider": provider})
 
     def _load_skills(self) -> None:
         """Load all skill directories from skills_dir."""
