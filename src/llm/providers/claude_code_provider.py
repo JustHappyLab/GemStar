@@ -34,7 +34,7 @@ class ClaudeCodeProvider(BaseCliProvider):
             "--model", self._model,
             "--permission-mode", self._permission_mode,
             "--output-format", "json",
-            "--prompt", full_prompt,
+            "-p", full_prompt,
         ]
 
     def parse_output(self, stdout: str) -> str:
