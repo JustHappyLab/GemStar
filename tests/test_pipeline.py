@@ -515,3 +515,43 @@ def test_pipeline_runs_reviewer_with_llm():
         assert note.strategy_id == "test_strat"
         assert note.confidence == 0.9
         assert "硬门" in note.verdict_summary
+
+
+def test_pipeline_creates_incident_on_failure():
+    """Pipeline creates an IncidentV1 when an exception occurs during execution."""
+    from src.ops.classifier import VALID_CATEGORIES
+
+    valid_severities = ("low", "medium", "high", "critical")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        strategy_path = _make_strategy_yaml(tmpdir)
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        benchmark_nav = _make_benchmark_nav(dates)
+
+        db_path = str(Path(tmpdir) / "test.db")
+        artifacts_dir = str(Path(tmpdir) / "artifacts")
+
+        # Force the quality gate to raise so the except block fires
+        with patch(
+            "src.orchestrator.pipeline.run_data_quality_gate",
+            side_effect=RuntimeError("simulated quality gate crash"),
+        ):
+            result = run_daily_pipeline(
+                run_id="run_test_incident",
+                data=data,
+                strategies=[strategy_path],
+                pool_path=pool_path,
+                reference_date="20220301",
+                benchmark_nav=benchmark_nav,
+                db_path=db_path,
+                artifacts_dir=artifacts_dir,
+            )
+
+        assert result["run_status"] == "failed"
+        assert result["incident"] is not None
+        assert result["incident"].state == "classified"
+        assert result["incident"].category in VALID_CATEGORIES
+        assert result["incident"].severity in valid_severities
+        assert "simulated quality gate crash" in result["incident"].error_message

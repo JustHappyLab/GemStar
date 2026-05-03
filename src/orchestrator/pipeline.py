@@ -119,6 +119,7 @@ def run_daily_pipeline(
         "events": [],
         "tickets": [],
         "review_notes": [],
+        "incident": None,
         "backtest_results": [],
         "verdicts": [],
         "report": None,
@@ -281,6 +282,18 @@ def run_daily_pipeline(
                 pass
         result["run_status"] = "failed"
         result["error"] = str(exc)
+
+        # Classify and record incident
+        from src.ops.classifier import classify_failure
+        incident = classify_failure(
+            error=exc,
+            step_id=fsm.current(),
+            context={"module": "pipeline", "run_id": run_id},
+            run_id=run_id,
+        )
+        result["incident"] = incident
+        write_artifact(run_id, "incident", incident.model_dump(), base_dir=artifacts_dir, step_id="failed")
+
         finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
 
     return result
