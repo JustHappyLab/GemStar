@@ -41,6 +41,7 @@ from src.cli.commands.fetch_cmd import fetch_cmd  # noqa: E402
 from src.cli.commands.status_cmd import status_cmd  # noqa: E402
 from src.cli.commands.history_cmd import history_cmd  # noqa: E402
 from src.cli.commands.list_cmd import roles_cmd, strategies_cmd, factors_cmd  # noqa: E402
+from src.cli.commands.daemon_cmd import daemon_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -50,3 +51,4 @@ app.command("history")(history_cmd)
 app.command("roles")(roles_cmd)
 app.command("strategies")(strategies_cmd)
 app.command("factors")(factors_cmd)
+app.command("daemon")(daemon_cmd)
