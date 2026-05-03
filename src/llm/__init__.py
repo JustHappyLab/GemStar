@@ -1,14 +1,14 @@
-"""LLM client and sanitizer package.
+"""LLM client package.
 
 CALLING SPEC:
     src.llm.client   — Anthropic SDK wrapper with policy enforcement and retry.
-    src.llm.sanitizer — External text sanitizer for injection / markup stripping.
+    src.llm.adapter  — AgentProvider → LLMClient.generate() bridge.
+    src.llm.providers — AgentProvider ABC and implementations.
 
 SIDE EFFECTS:
     client makes HTTP calls to the Anthropic API.
 """
 
 from src.llm.client import LLMClient
-from src.llm.sanitizer import sanitize
 
-__all__ = ["LLMClient", "sanitize"]
+__all__ = ["LLMClient"]

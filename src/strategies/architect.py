@@ -19,8 +19,7 @@ from src.llm.client import LLMClient
 from src.schemas.research import ResearchTicketV1
 from src.schemas.strategy import StrategyConfigV1
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "draft_strategy" / "prompt.txt"
-_SYSTEM_PROMPT = _PROMPT_PATH.read_text()
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "draft_strategy" / "prompt.txt").read_text()
 
 
 def _build_user_prompt(

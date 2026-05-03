@@ -63,6 +63,22 @@ GemStar/
 ├── .env.example                # 环境变量模板（复制为 .env 后填入 Token）
 ├── pyproject.toml              # 项目配置 + 依赖管理 (uv)
 ├── run.sh                      # 一键启动
+├── roles/                      # Role YAML 配置（用户可修改 provider/skills）
+│   ├── macro_analyst.yaml
+│   ├── event_scanner.yaml
+│   ├── research_analyst.yaml
+│   ├── strategy_architect.yaml
+│   ├── reviewer.yaml
+│   ├── engineer.yaml
+│   └── bugfix.yaml
+├── skills/                     # Skill 目录（sop.md + prompt.txt + schema.json）
+│   ├── analyze_market/
+│   ├── scan_events/
+│   ├── generate_tickets/
+│   ├── draft_strategy/
+│   ├── review_verdict/
+│   ├── write_code/
+│   └── fix_bug/
 ├── src/
 │   ├── data/
 │   │   ├── fetcher.py          # Tushare 数据拉取 + Parquet 缓存
@@ -81,8 +97,25 @@ GemStar/
 │   ├── engine/
 │   │   ├── backtest.py         # 逐日回测引擎
 │   │   └── metrics.py          # 绩效指标 (CAGR/Sharpe/MaxDD/Calmar...)
+│   ├── llm/
+│   │   ├── client.py           # Anthropic SDK wrapper
+│   │   ├── adapter.py          # AgentProvider → LLMClient 桥接
+│   │   └── providers/          # Provider 抽象层
+│   │       ├── base.py         # AgentProvider ABC + BaseCliProvider
+│   │       ├── api_provider.py # Anthropic API
+│   │       ├── claude_code_provider.py
+│   │       ├── gemini_cli_provider.py
+│   │       └── codex_cli_provider.py
+│   ├── roles/
+│   │   ├── config.py           # RoleConfig schema
+│   │   ├── registry.py         # RoleRegistry（加载 YAML + skill → 执行）
+│   │   └── events.py           # RoleEvent 事件流
+│   ├── orchestrator/
+│   │   ├── pipeline.py         # 日频 pipeline 编排
+│   │   ├── fsm_daily.py        # Daily FSM (14 states)
+│   │   └── fsm_incident.py     # Incident FSM (7 states)
 │   └── main.py                 # 编排器：数据→训练→回测→报告
-├── tests/                      # 43 个单元测试
+├── tests/                      # 299 个单元测试
 ├── data/
 │   ├── raw/                    # Tushare 原始数据缓存 (Parquet)
 │   └── features/               # 处理后的特征数据
@@ -91,6 +124,25 @@ GemStar/
     ├── plans/                  # 实施计划
     └── specs/                  # 设计规格文档
 ```
+
+## 多 Agent 架构
+
+GemStar V2 采用 **Role / Provider / Skill** 三层架构，支持多 LLM 后端：
+
+```
+roles/*.yaml        skills/*/           src/llm/providers/
+├── provider: api   ├── prompt.txt      ├── api_provider.py
+├── skills:         ├── sop.md          ├── claude_code_provider.py
+│   - analyze_      └── schema.json     ├── gemini_cli_provider.py
+│     market                            └── codex_cli_provider.py
+└── approval: true
+```
+
+- **Role** — YAML 配置，定义使用哪个 provider、加载哪些 skill、是否需要人工批准
+- **Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），多个 role 可共享
+- **Provider** — 统一的 agent 执行接口（API / Claude Code / Gemini CLI / Codex CLI）
+
+用户可通过修改 `roles/*.yaml` 中的 `provider` 字段切换 LLM 后端，无需改代码。
 
 ## 快速开始
 

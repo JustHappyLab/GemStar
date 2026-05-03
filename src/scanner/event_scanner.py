@@ -13,14 +13,12 @@ import json
 import re
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from src.llm.client import LLMClient
 from src.schemas.signal import SignalEventV1
 
-_PROMPT_PATH = Path(__file__).resolve().parents[2] / "skills" / "scan_events" / "prompt.txt"
-_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(__file__).resolve().parents[2] / "skills" / "scan_events" / "prompt.txt").read_text(encoding="utf-8")
 
 
 def _detect_earnings_surprise(data: dict[str, pd.DataFrame]) -> str:

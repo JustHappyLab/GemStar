@@ -17,8 +17,7 @@ from src.schemas.factor import FactorHealthReportV1, FactorPoolV1
 from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "generate_tickets" / "prompt.txt"
-_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "generate_tickets" / "prompt.txt").read_text(encoding="utf-8")
 
 
 def generate_tickets(

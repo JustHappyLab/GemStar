@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from src.llm.client import LLMClient
@@ -20,8 +19,7 @@ from src.schemas.signal import MarketRegimeV1
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "analyze_market" / "prompt.txt"
-_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "analyze_market" / "prompt.txt").read_text(encoding="utf-8")
 
 
 def _compute_user_prompt(
