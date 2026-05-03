@@ -157,9 +157,9 @@ def run_daily_pipeline(
         write_artifact(run_id, "data_quality_report", dq_report.model_dump(), base_dir=artifacts_dir, step_id="quality_checking")
 
         if dq_report.mode == "abort":
-            fsm.transition("failed")
-            result["run_status"] = "failed"
-            finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
+            fsm.transition("manual_attention")
+            result["run_status"] = "manual_attention"
+            finalize_run(run_id, "manual_attention", db_path=db_path, artifacts_dir=artifacts_dir)
             return result
 
         if dq_report.mode == "degraded":
@@ -186,7 +186,8 @@ def run_daily_pipeline(
         tickets = []
 
         if llm_available and _reg is not None and index_df is not None and not daily_df.empty:
-            llm = LLMAdapter(_reg.get_provider("api"))
+            provider_name = _reg.get_role("macro_analyst").provider
+            llm = LLMAdapter(_reg.get_provider(provider_name))
             try:
                 regime = analyze_market_regime(daily_df, index_df, reference_date, llm)
                 write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
@@ -254,7 +255,8 @@ def run_daily_pipeline(
         review_notes: list[ReviewNotesV1] = []
         if llm_available and _reg is not None and verdicts:
             try:
-                llm = LLMAdapter(_reg.get_provider("api"))
+                provider_name = _reg.get_role("reviewer").provider
+                llm = LLMAdapter(_reg.get_provider(provider_name))
                 for bt_result, verdict in zip(backtest_results, verdicts):
                     try:
                         notes = review_verdict(bt_result, verdict, factor_health, llm)

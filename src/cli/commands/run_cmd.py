@@ -60,7 +60,7 @@ def run_cmd(
 
     data = dict(
         trade_cal=trade_cal, stock_basic=stock_basic, index_daily=index_daily,
-        daily_all=daily_all, daily_basic=daily_basic, fina_all=fina_all, adj_factor=adj_factor,
+        daily=daily_all, daily_basic=daily_basic, fina_indicator=fina_all, adj_factor=adj_factor,
     )
 
     # --- Resolve strategies ---
