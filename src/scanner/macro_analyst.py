@@ -20,7 +20,8 @@ from src.schemas.signal import MarketRegimeV1
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "macro_analyst.txt"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "analyze_market" / "prompt.txt"
+_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _compute_user_prompt(
@@ -86,22 +87,5 @@ def analyze_market_regime(
         ValueError: If JSON parsing fails after all retries.
     """
     user_prompt = _compute_user_prompt(daily_df, index_df, reference_date)
-    system_prompt = _PROMPT_PATH.read_text(encoding="utf-8")
-
-    last_exc: Exception | None = None
-    for attempt in range(1, llm_client._max_retries + 1):
-        try:
-            response = llm_client.generate(user_prompt, system=system_prompt)
-            return MarketRegimeV1.model_validate_json(response)
-        except (ValueError, KeyError) as exc:
-            last_exc = exc
-            logger.warning(
-                "Attempt %d/%d failed validation: %s",
-                attempt,
-                llm_client._max_retries,
-                exc,
-            )
-
-    raise ValueError(
-        f"Failed after {llm_client._max_retries} retries: {last_exc}"
-    ) from last_exc
+    response = llm_client.generate(user_prompt, system=_SYSTEM_PROMPT)
+    return MarketRegimeV1.model_validate_json(response)

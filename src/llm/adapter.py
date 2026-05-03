@@ -20,9 +20,8 @@ class LLMAdapter:
     to work with any provider without code changes.
     """
 
-    def __init__(self, provider: AgentProvider, max_retries: int = 3) -> None:
+    def __init__(self, provider: AgentProvider) -> None:
         self._provider = provider
-        self._max_retries = max_retries
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         """Generate a text response, matching LLMClient.generate() signature."""

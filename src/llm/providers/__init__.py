@@ -1,4 +1,4 @@
-from src.llm.providers.base import AgentProvider, AgentResult
+from src.llm.providers.base import AgentProvider, AgentResult, BaseCliProvider
 from src.llm.providers.api_provider import APIProvider
 from src.llm.providers.claude_code_provider import ClaudeCodeProvider
 from src.llm.providers.codex_cli_provider import CodexCliProvider
@@ -8,6 +8,7 @@ __all__ = [
     "AgentProvider",
     "AgentResult",
     "APIProvider",
+    "BaseCliProvider",
     "ClaudeCodeProvider",
     "CodexCliProvider",
     "GeminiCliProvider",

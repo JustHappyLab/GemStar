@@ -11,16 +11,11 @@ SIDE EFFECTS:
 from __future__ import annotations
 
 import json
-import logging
-import subprocess
-import time
 
-from src.llm.providers.base import AgentProvider, AgentResult
-
-logger = logging.getLogger(__name__)
+from src.llm.providers.base import BaseCliProvider
 
 
-class ClaudeCodeProvider(AgentProvider):
+class ClaudeCodeProvider(BaseCliProvider):
     """Runs tasks via the `claude` CLI in non-interactive mode."""
 
     def __init__(
@@ -29,16 +24,12 @@ class ClaudeCodeProvider(AgentProvider):
         permission_mode: str = "auto",
         timeout: int = 300,
     ) -> None:
+        super().__init__(provider_name="claude_code", timeout=timeout)
         self._model = model
         self._permission_mode = permission_mode
-        self._timeout = timeout
 
-    def execute(self, task: str, context: dict | None = None) -> AgentResult:
-        """Spawn `claude` CLI and parse JSON output."""
-        system = (context or {}).get("system", "")
-        full_prompt = f"{system}\n\n{task}" if system else task
-
-        cmd = [
+    def build_command(self, full_prompt: str) -> list[str]:
+        return [
             "claude",
             "--model", self._model,
             "--permission-mode", self._permission_mode,
@@ -46,30 +37,9 @@ class ClaudeCodeProvider(AgentProvider):
             "--prompt", full_prompt,
         ]
 
-        start = time.monotonic()
-        logger.info("ClaudeCode: executing task (%d chars)", len(full_prompt))
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=self._timeout,
-        )
-        elapsed = time.monotonic() - start
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"claude CLI exited {result.returncode}: {result.stderr}"
-            )
-
+    def parse_output(self, stdout: str) -> str:
         try:
-            data = json.loads(result.stdout)
-            output = data.get("result", result.stdout)
+            data = json.loads(stdout)
+            return data.get("result", stdout)
         except json.JSONDecodeError:
-            output = result.stdout
-
-        return AgentResult(
-            output=output,
-            duration_seconds=elapsed,
-            provider="claude_code",
-        )
+            return stdout

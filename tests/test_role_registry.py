@@ -153,7 +153,7 @@ class TestRoleRegistryExecute:
         reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
 
         mock_result = AgentResult(output='{"regime": "bullish"}', provider="api", duration_seconds=1.0)
-        with patch.object(reg, "_get_provider") as mock_get:
+        with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
             mock_provider.execute.return_value = mock_result
             mock_get.return_value = mock_provider
@@ -176,7 +176,7 @@ class TestRoleRegistryExecute:
         )
 
         mock_result = AgentResult(output="ok", provider="api", duration_seconds=0.5)
-        with patch.object(reg, "_get_provider") as mock_get:
+        with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
             mock_provider.execute.return_value = mock_result
             mock_get.return_value = mock_provider
@@ -196,7 +196,7 @@ class TestRoleRegistryExecute:
             event_callback=lambda e: events.append(e),
         )
 
-        with patch.object(reg, "_get_provider") as mock_get:
+        with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
             mock_provider.execute.side_effect = RuntimeError("API down")
             mock_get.return_value = mock_provider

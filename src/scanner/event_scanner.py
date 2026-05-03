@@ -19,7 +19,8 @@ import pandas as pd
 from src.llm.client import LLMClient
 from src.schemas.signal import SignalEventV1
 
-_PROMPT_PATH = Path(__file__).resolve().parents[1] / "llm" / "prompts" / "event_scanner.txt"
+_PROMPT_PATH = Path(__file__).resolve().parents[2] / "skills" / "scan_events" / "prompt.txt"
+_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def _detect_earnings_surprise(data: dict[str, pd.DataFrame]) -> str:
@@ -121,7 +122,7 @@ def scan_events(
     data_summary = "\n".join(summary_parts)
     user_prompt = f"Reference date: {reference_date}\n\nDetected quantitative signals:\n{data_summary}"
 
-    system_prompt = _PROMPT_PATH.read_text(encoding="utf-8").strip()
+    system_prompt = _SYSTEM_PROMPT
     raw = llm_client.generate(user_prompt, system=system_prompt)
 
     text = raw.strip()

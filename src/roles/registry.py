@@ -4,6 +4,7 @@ CALLING SPEC:
     RoleRegistry(roles_dir="roles", skills_dir="skills")
         .execute_role(name, context) -> AgentResult
         .get_role(name) -> RoleConfig
+        .get_provider(name) -> AgentProvider
         .list_roles() -> list[str]
 
 SIDE EFFECTS:
@@ -16,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -42,20 +43,28 @@ _PROVIDER_MAP: dict[str, type[AgentProvider]] = {
 }
 
 
+def _read_or_default(path: Path, default: str = "") -> str:
+    """Read a file, returning default if it doesn't exist."""
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return default
+
+
 class SkillContent:
     """Loaded content of a single skill directory."""
 
     def __init__(self, name: str, skill_dir: Path) -> None:
         self.name = name
-        self.sop = (skill_dir / "sop.md").read_text() if (skill_dir / "sop.md").exists() else ""
-        self.prompt = (
-            (skill_dir / "prompt.txt").read_text() if (skill_dir / "prompt.txt").exists() else ""
-        )
+        self.sop = _read_or_default(skill_dir / "sop.md")
+        self.prompt = _read_or_default(skill_dir / "prompt.txt")
         self.schema_ref: str | None = None
-        schema_path = skill_dir / "schema.json"
-        if schema_path.exists():
-            data = json.loads(schema_path.read_text())
-            self.schema_ref = data.get("schema_ref")
+        schema_raw = _read_or_default(skill_dir / "schema.json")
+        if schema_raw:
+            try:
+                self.schema_ref = json.loads(schema_raw).get("schema_ref")
+            except json.JSONDecodeError:
+                logger.warning("Malformed schema.json in skill '%s'", name)
 
 
 class RoleRegistry:
@@ -65,7 +74,7 @@ class RoleRegistry:
         self,
         roles_dir: str | Path = "roles",
         skills_dir: str | Path = "skills",
-        event_callback: "Callable[[RoleEvent], None] | None" = None,
+        event_callback: Callable[[RoleEvent], None] | None = None,
     ) -> None:
         self._roles_dir = Path(roles_dir)
         self._skills_dir = Path(skills_dir)
@@ -95,7 +104,7 @@ class RoleRegistry:
             if path.is_dir():
                 self._skills[path.name] = SkillContent(path.name, path)
 
-    def _get_provider(self, provider_name: str) -> AgentProvider:
+    def get_provider(self, provider_name: str) -> AgentProvider:
         """Get or create a provider instance (lazy init)."""
         if provider_name not in self._providers:
             cls = _PROVIDER_MAP.get(provider_name)
@@ -131,7 +140,7 @@ class RoleRegistry:
             AgentResult from the provider.
         """
         role = self.get_role(name)
-        provider = self._get_provider(role.provider)
+        provider = self.get_provider(role.provider)
 
         # Compose system prompt from all skills
         skill_prompts = []
@@ -145,11 +154,12 @@ class RoleRegistry:
         ctx = dict(context or {})
         task = ctx.pop("task", "")
 
+        now = datetime.now(tz=timezone.utc)
         self._emit(RoleEvent(
             role_name=name,
             event_type="started",
             message=f"Executing role '{name}' with provider '{role.provider}'",
-            timestamp=datetime.now(),
+            timestamp=now,
         ))
 
         try:
@@ -160,7 +170,7 @@ class RoleRegistry:
                 role_name=name,
                 event_type="completed",
                 message=f"Role '{name}' completed in {result.duration_seconds:.1f}s",
-                timestamp=datetime.now(),
+                timestamp=datetime.now(tz=timezone.utc),
             ))
             return result
 
@@ -169,6 +179,6 @@ class RoleRegistry:
                 role_name=name,
                 event_type="failed",
                 message=f"Role '{name}' failed",
-                timestamp=datetime.now(),
+                timestamp=datetime.now(tz=timezone.utc),
             ))
             raise

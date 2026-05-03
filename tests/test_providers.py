@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.providers.base import AgentProvider, AgentResult
+from src.llm.providers.base import AgentProvider, AgentResult, BaseCliProvider
 from src.llm.providers.api_provider import APIProvider
 from src.llm.providers.claude_code_provider import ClaudeCodeProvider
 from src.llm.providers.gemini_cli_provider import GeminiCliProvider
@@ -51,84 +51,40 @@ class TestAgentResult:
 
 
 class TestAPIProvider:
-    def _make_mock_response(self, text: str = '{"regime": "bullish"}'):
-        mock_block = MagicMock()
-        mock_block.type = "text"
-        mock_block.text = text
-
-        mock_usage = MagicMock()
-        mock_usage.input_tokens = 50
-        mock_usage.output_tokens = 30
-
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
-        mock_response.usage = mock_usage
-        return mock_response
-
-    @patch("src.llm.providers.api_provider.anthropic.Anthropic")
-    def test_execute_returns_result(self, mock_anthropic_cls):
+    @patch("src.llm.providers.api_provider.LLMClient")
+    def test_execute_returns_result(self, mock_llm_cls):
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = self._make_mock_response()
-        mock_anthropic_cls.return_value = mock_client
+        mock_client.generate.return_value = '{"regime": "bullish"}'
+        mock_llm_cls.return_value = mock_client
 
         provider = APIProvider()
         result = provider.execute("evaluate market", context={"system": "you are a analyst"})
 
         assert isinstance(result, AgentResult)
         assert result.output == '{"regime": "bullish"}'
-        assert result.token_usage == 80
         assert result.provider == "api"
         assert result.duration_seconds >= 0
+        mock_client.generate.assert_called_once_with("evaluate market", system="you are a analyst")
 
-    @patch("src.llm.providers.api_provider.anthropic.Anthropic")
-    def test_execute_without_system(self, mock_anthropic_cls):
+    @patch("src.llm.providers.api_provider.LLMClient")
+    def test_execute_without_system(self, mock_llm_cls):
         mock_client = MagicMock()
-        mock_client.messages.create.return_value = self._make_mock_response()
-        mock_anthropic_cls.return_value = mock_client
+        mock_client.generate.return_value = "ok"
+        mock_llm_cls.return_value = mock_client
 
         provider = APIProvider()
         result = provider.execute("hello")
-        assert result.output == '{"regime": "bullish"}'
-
-        call_kwargs = mock_client.messages.create.call_args[1]
-        assert "system" not in call_kwargs
-
-    @patch("src.llm.providers.api_provider.anthropic.Anthropic")
-    def test_execute_retries_on_failure(self, mock_anthropic_cls):
-        mock_client = MagicMock()
-        bad_block = MagicMock()
-        bad_block.type = "tool_use"  # no text block
-
-        good_block = MagicMock()
-        good_block.type = "text"
-        good_block.text = "ok"
-
-        mock_usage = MagicMock()
-        mock_usage.input_tokens = 10
-        mock_usage.output_tokens = 5
-
-        mock_client.messages.create.side_effect = [
-            MagicMock(content=[bad_block], usage=mock_usage),
-            MagicMock(content=[good_block], usage=mock_usage),
-        ]
-        mock_anthropic_cls.return_value = mock_client
-
-        provider = APIProvider(max_retries=3)
-        result = provider.execute("test")
         assert result.output == "ok"
+        mock_client.generate.assert_called_once_with("hello", system=None)
 
-    @patch("src.llm.providers.api_provider.anthropic.Anthropic")
-    def test_execute_raises_after_max_retries(self, mock_anthropic_cls):
+    @patch("src.llm.providers.api_provider.LLMClient")
+    def test_execute_propagates_error(self, mock_llm_cls):
         mock_client = MagicMock()
-        bad_block = MagicMock()
-        bad_block.type = "tool_use"
-        mock_client.messages.create.return_value = MagicMock(
-            content=[bad_block], usage=MagicMock(input_tokens=0, output_tokens=0)
-        )
-        mock_anthropic_cls.return_value = mock_client
+        mock_client.generate.side_effect = ValueError("API failed")
+        mock_llm_cls.return_value = mock_client
 
-        provider = APIProvider(max_retries=2)
-        with pytest.raises(ValueError, match="Failed after 2 retries"):
+        provider = APIProvider()
+        with pytest.raises(ValueError, match="API failed"):
             provider.execute("test")
 
 
@@ -138,7 +94,7 @@ class TestAPIProvider:
 
 
 class TestClaudeCodeProvider:
-    @patch("src.llm.providers.claude_code_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_json_output(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -152,7 +108,7 @@ class TestClaudeCodeProvider:
         assert result.provider == "claude_code"
         assert result.duration_seconds >= 0
 
-    @patch("src.llm.providers.claude_code_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_raw_output_fallback(self, mock_run):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -163,14 +119,14 @@ class TestClaudeCodeProvider:
         result = provider.execute("test")
         assert result.output == "raw text output"
 
-    @patch("src.llm.providers.claude_code_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_raises_on_nonzero_exit(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error msg")
         provider = ClaudeCodeProvider()
         with pytest.raises(RuntimeError, match="exited 1"):
             provider.execute("test")
 
-    @patch("src.llm.providers.claude_code_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_includes_system_in_prompt(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         provider = ClaudeCodeProvider()
@@ -188,7 +144,7 @@ class TestClaudeCodeProvider:
 
 
 class TestGeminiCliProvider:
-    @patch("src.llm.providers.gemini_cli_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="gemini result", stderr="")
         provider = GeminiCliProvider()
@@ -197,11 +153,11 @@ class TestGeminiCliProvider:
         assert result.output == "gemini result"
         assert result.provider == "gemini_cli"
 
-    @patch("src.llm.providers.gemini_cli_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_raises_on_failure(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="bad")
         provider = GeminiCliProvider()
-        with pytest.raises(RuntimeError, match="gemini CLI exited 1"):
+        with pytest.raises(RuntimeError, match="gemini_cli exited 1"):
             provider.execute("test")
 
 
@@ -211,7 +167,7 @@ class TestGeminiCliProvider:
 
 
 class TestCodexCliProvider:
-    @patch("src.llm.providers.codex_cli_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="codex result", stderr="")
         provider = CodexCliProvider()
@@ -220,11 +176,11 @@ class TestCodexCliProvider:
         assert result.output == "codex result"
         assert result.provider == "codex_cli"
 
-    @patch("src.llm.providers.codex_cli_provider.subprocess.run")
+    @patch("src.llm.providers.base.subprocess.run")
     def test_execute_raises_on_failure(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="bad")
         provider = CodexCliProvider()
-        with pytest.raises(RuntimeError, match="codex CLI exited 1"):
+        with pytest.raises(RuntimeError, match="codex_cli exited 1"):
             provider.execute("test")
 
 
@@ -243,3 +199,6 @@ class TestProviderABC:
         assert issubclass(ClaudeCodeProvider, AgentProvider)
         assert issubclass(GeminiCliProvider, AgentProvider)
         assert issubclass(CodexCliProvider, AgentProvider)
+        assert issubclass(ClaudeCodeProvider, BaseCliProvider)
+        assert issubclass(GeminiCliProvider, BaseCliProvider)
+        assert issubclass(CodexCliProvider, BaseCliProvider)

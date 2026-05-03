@@ -19,7 +19,8 @@ from src.llm.client import LLMClient
 from src.schemas.research import ResearchTicketV1
 from src.schemas.strategy import StrategyConfigV1
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "strategy_architect.txt"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "draft_strategy" / "prompt.txt"
+_SYSTEM_PROMPT = _PROMPT_PATH.read_text()
 
 
 def _build_user_prompt(
@@ -68,7 +69,7 @@ def draft_strategy(
     """
     pool = FactorPoolV1.load(pool_path)
     user_prompt = _build_user_prompt(tickets, pool, reference_date)
-    system_prompt = _PROMPT_PATH.read_text()
+    system_prompt = _SYSTEM_PROMPT
 
     response = llm_client.generate(user_prompt, system=system_prompt)
     try:
