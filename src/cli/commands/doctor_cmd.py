@@ -28,31 +28,43 @@ def _cli_available(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
-def _cli_auth_check(cmd: str, args: list[str], env_key: str | None = None) -> tuple[bool, str]:
+def _cli_auth_check(cmd: str, auth_cmd: list[str] | None = None) -> tuple[bool, str]:
     """Try running a CLI to verify it's installed and authenticated.
+
+    Args:
+        cmd: CLI binary name (for PATH check).
+        auth_cmd: Full command to verify auth. If None, just checks --version.
 
     Returns (ok, detail).
     """
     if not _cli_available(cmd):
         return False, f"{cmd} not found on PATH"
 
-    # For codex, just check OPENAI_API_KEY — no need to spawn codex
-    if env_key:
-        if not os.environ.get(env_key):
-            return False, f"{env_key} not set"
-        return True, f"{cmd} available, {env_key} set"
-
-    # For claude/gemini, try a quick --version or --help
+    check_cmd = auth_cmd or [cmd, "--version"]
     try:
         result = subprocess.run(
-            [cmd, *args],
+            check_cmd,
             capture_output=True,
             text=True,
             timeout=10,
         )
-        if result.returncode == 0:
-            return True, f"{cmd} available"
-        return False, f"{cmd} exited {result.returncode}: {result.stderr.strip()[:200]}"
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode != 0:
+            return False, f"exit {result.returncode}: {output[:200]}"
+
+        # Parse JSON auth status (claude returns {"loggedIn": true, ...})
+        try:
+            data = json.loads(output)
+            if "loggedIn" in data:
+                if data["loggedIn"]:
+                    method = data.get("authMethod", "unknown")
+                    return True, f"logged in ({method})"
+                return False, "not logged in"
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Plain text output — take first line
+        return True, output.split("\n")[0][:120]
     except FileNotFoundError:
         return False, f"{cmd} not found"
     except subprocess.TimeoutExpired:
@@ -152,12 +164,12 @@ def doctor_cmd() -> None:
 
     # ── 9. LLM provider CLIs ───────────────────────────────────
     cli_checks = [
-        ("claude CLI", "claude", ["--version"], None),
-        ("codex CLI", "codex", ["--version"], None),
-        ("gemini CLI", "gemini", ["--version"], None),
+        ("claude CLI", "claude", ["claude", "auth", "status"]),
+        ("codex CLI", "codex", ["codex", "login", "status"]),
+        ("gemini CLI", "gemini", None),  # no auth status command
     ]
-    for label, cmd, args, env_key in cli_checks:
-        ok, detail = _cli_auth_check(cmd, args, env_key)
+    for label, cmd, auth_cmd in cli_checks:
+        ok, detail = _cli_auth_check(cmd, auth_cmd)
         checks.append(_check(label, ok, detail))
 
     # ── 10. Data cache directory ────────────────────────────────
