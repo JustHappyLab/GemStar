@@ -71,6 +71,7 @@ def run_daily_pipeline(
     llm_available: bool = False,
     registry: RoleRegistry | None = None,
     role_overrides: dict[str, dict] | None = None,
+    llm_base_url: str | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
 ) -> dict:
@@ -138,7 +139,7 @@ def run_daily_pipeline(
     }
 
     # Resolve registry once for all LLM stages
-    _reg = registry or (RoleRegistry(overrides=role_overrides) if llm_available else None)
+    _reg = registry or (RoleRegistry(overrides=role_overrides, base_url=llm_base_url) if llm_available else None)
 
     try:
         # --- COLLECTING ---

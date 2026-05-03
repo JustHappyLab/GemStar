@@ -93,6 +93,7 @@ def run_cmd(
         index_df=index_daily,
         llm_available=llm or config.llm.available,
         role_overrides=role_overrides,
+        llm_base_url=config.llm.base_url,
         db_path=config.db_path,
         artifacts_dir=config.artifacts_dir,
     )

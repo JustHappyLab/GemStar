@@ -35,6 +35,7 @@ artifacts_dir: artifacts            # 产物目录
 llm:
   available: false                  # true = 默认启用 LLM
   provider: api                     # 默认 provider（api / claude_code / gemini_cli / codex_cli）
+  base_url: null                    # Anthropic API 代理地址（中国大陆用户设置，如 https://your-proxy.com/v1）
 
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
 # 按角色切换 LLM 后端，无需改 roles/*.yaml
@@ -65,6 +66,7 @@ _ENV_RE = re.compile(r"\$\{(\w+)}")
 class LLMConfig(BaseModel):
     available: bool = False
     provider: str = "api"
+    base_url: str | None = None
 
 
 class RoleOverride(BaseModel):

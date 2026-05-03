@@ -33,10 +33,11 @@ class LLMClient:
         model: str = "claude-sonnet-4-20250514",
         max_retries: int = 3,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> None:
         self._model = model
         self._max_retries = max_retries
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         """Generate a text response from the model.

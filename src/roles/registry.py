@@ -90,6 +90,7 @@ class RoleRegistry:
         skills_dir: str | Path = "skills",
         event_callback: Callable[[RoleEvent], None] | None = None,
         overrides: dict[str, dict] | None = None,
+        base_url: str | None = None,
     ) -> None:
         self._roles_dir = Path(roles_dir)
         self._skills_dir = Path(skills_dir)
@@ -98,6 +99,7 @@ class RoleRegistry:
         self._skills: dict[str, SkillContent] = {}
         self._providers: dict[str, AgentProvider] = {}
         self._overrides = overrides or {}
+        self._base_url = base_url
 
         self._load_roles()
         self._apply_overrides()
@@ -137,7 +139,10 @@ class RoleRegistry:
             cls = _PROVIDER_MAP.get(provider_name)
             if cls is None:
                 raise ValueError(f"Unknown provider: {provider_name}")
-            self._providers[provider_name] = cls()
+            kwargs = {}
+            if provider_name == "api" and self._base_url:
+                kwargs["base_url"] = self._base_url
+            self._providers[provider_name] = cls(**kwargs)
         return self._providers[provider_name]
 
     def _emit(self, event: RoleEvent) -> None:

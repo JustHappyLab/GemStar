@@ -175,6 +175,7 @@ gemstar init
 |------|------|------|
 | `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
 | `ANTHROPIC_API_KEY` | 否 | Anthropic API key，`api` provider 使用 |
+| `ANTHROPIC_BASE_URL` | 否 | Anthropic API 代理地址（中国大陆用户） |
 | `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
 
 #### LLM Provider 配置
