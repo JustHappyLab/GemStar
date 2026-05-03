@@ -44,6 +44,7 @@ from src.cli.commands.list_cmd import roles_cmd, strategies_cmd, factors_cmd  # 
 from src.cli.commands.daemon_cmd import daemon_cmd  # noqa: E402
 from src.cli.commands.doctor_cmd import doctor_cmd  # noqa: E402
 from src.cli.commands.cleanup_cmd import cleanup_cmd  # noqa: E402
+from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -56,3 +57,4 @@ app.command("factors")(factors_cmd)
 app.command("daemon")(daemon_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("cleanup")(cleanup_cmd)
+app.command("leaderboard")(leaderboard_cmd)
