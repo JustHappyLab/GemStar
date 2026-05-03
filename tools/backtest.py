@@ -1,7 +1,7 @@
-"""Main orchestrator: data -> train -> backtest -> report.
+"""Standalone backtest tool: data -> train -> backtest -> report.
 
 CALLING SPEC:
-    uv run python -m src.main --start=YYYYMMDD --end=YYYYMMDD --train-start=YYYYMMDD --capital=float
+    uv run python tools/backtest.py --start=YYYYMMDD --end=YYYYMMDD --train-start=YYYYMMDD --capital=float
         Fetches data, trains the timer model on rolling windows, runs the daily backtest,
         writes `output/backtest_report.md` and `output/backtest_curves.csv`,
         and logs a compact SwanLab backtest dashboard when configured.
@@ -12,7 +12,14 @@ SIDE EFFECTS:
 """
 import argparse
 import math
+import sys
 from pathlib import Path
+
+# Ensure project root is on sys.path so `src.*` and `tools.*` imports work
+# when running this file directly (not as a module).
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 import numpy as np
 import pandas as pd
@@ -38,7 +45,7 @@ from src.engine.backtest import run_backtest
 from src.engine.metrics import compute_all_metrics
 from src.engine.metrics import auto_segments, compute_segment_metrics
 from src.ranker.ic import compute_daily_rank_ic, summarize_ic
-from src.tracking.swanlab_run import (
+from tools.tracking.swanlab_run import (
     build_backtest_curve_frame,
     finish_swanlab_run,
     init_swanlab_run,

@@ -56,6 +56,9 @@ roles/*.yaml          skills/*/             src/llm/providers/
 GemStar/
 ├── .env.example                # 环境变量模板
 ├── pyproject.toml              # 项目配置 + 依赖管理 (uv)
+├── tools/                      # 附属工具
+│   ├── backtest.py             # 独立回测 CLI（数据→训练→回测→报告）
+│   └── tracking/               # SwanLab 实验追踪
 ├── roles/                      # Role YAML 配置（7 个角色）
 │   ├── macro_analyst.yaml
 │   ├── event_scanner.yaml
@@ -92,7 +95,8 @@ GemStar/
 │   ├── reporter/               # 报告生成
 │   ├── data_quality/           # 数据质量门
 │   ├── factors/                # 因子池 + 健康监控
-│   └── ops/                    # 故障分类 + 自愈
+│   ├── ops/                    # 故障分类 + 自愈
+│   └── schemas/                # Pydantic 数据模型
 ├── tests/                      # 单元测试
 ├── data/                       # Tushare 原始数据缓存 (Parquet)
 ├── output/                     # 回测结果 (报告/图表)
