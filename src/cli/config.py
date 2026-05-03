@@ -86,7 +86,9 @@ def load_config(path: Path | None = None) -> GemStarConfig:
     if path is None or not path.exists():
         return GemStarConfig()
 
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yaml.safe_load(path.read_text())
+    if not isinstance(raw, dict):
+        return GemStarConfig()
     expanded = _expand_dict(raw)
     return GemStarConfig.model_validate(expanded)
 

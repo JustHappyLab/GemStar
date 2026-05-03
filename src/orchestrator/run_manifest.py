@@ -81,4 +81,5 @@ def finalize_run(
         step_statuses=step_statuses,
     )
     manifest_path = Path(artifacts_dir, run_id, "run_manifest.json")
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(manifest.model_dump_json(indent=2))
