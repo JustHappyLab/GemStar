@@ -153,7 +153,7 @@ def doctor_cmd() -> None:
     # ── 9. LLM provider CLIs ───────────────────────────────────
     cli_checks = [
         ("claude CLI", "claude", ["--version"], None),
-        ("codex CLI", "codex", ["--version"], "OPENAI_API_KEY"),
+        ("codex CLI", "codex", ["--version"], None),
         ("gemini CLI", "gemini", ["--version"], None),
     ]
     for label, cmd, args, env_key in cli_checks:
