@@ -11,3 +11,12 @@ wandb/
 .DS_Store
 *.zip
 .claude/
+
+# Runtime
+gemstar.yaml
+state.db
+
+# Build / packaging
+*.egg-info/
+dist/
+build/
