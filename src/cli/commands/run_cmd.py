@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pandas as pd
 import typer
 
 from src.cli.app import get_output_format
@@ -26,6 +27,9 @@ def run_cmd(
         fetch_fina_indicator, fetch_adj_factor,
     )
     from src.orchestrator.pipeline import run_daily_pipeline
+    from src.orchestrator.rankings import build_rankings
+    from src.orchestrator.signals import build_signals
+    from src.schemas.strategy import StrategyConfigV1
 
     config = load_config()
     ref_date = date or _today_str()
@@ -55,12 +59,18 @@ def run_cmd(
         df = fetch_fina_indicator(pro, code)
         if len(df) > 0:
             fina_frames.append(df)
-    import pandas as pd
     fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
+
+    # Merge daily OHLCV with basic data (pe_ttm, pb, turnover_rate) for ranker
+    daily_merged = daily_all.merge(
+        daily_basic[["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
+        on=["ts_code", "trade_date"],
+        how="left",
+    )
 
     data = dict(
         trade_cal=trade_cal, stock_basic=stock_basic, index_daily=index_daily,
-        daily=daily_all, daily_basic=daily_basic, fina_indicator=fina_all, adj_factor=adj_factor,
+        daily=daily_merged, daily_basic=daily_basic, fina_indicator=fina_all, adj_factor=adj_factor,
     )
 
     # --- Resolve strategies ---
@@ -75,10 +85,22 @@ def run_cmd(
         trade_cal[(trade_cal["cal_date"] >= ref_date) & (trade_cal["cal_date"] <= ref_date)]["cal_date"].tolist()
     )
     if not bt_dates:
-        # Use all available dates up to ref_date
         bt_dates = sorted(trade_cal[trade_cal["cal_date"] <= ref_date]["cal_date"].tolist())
     benchmark_nav = bench.reindex(bt_dates).ffill()
-    benchmark_nav = benchmark_nav / benchmark_nav.iloc[0] * 100000  # normalized
+    benchmark_nav = benchmark_nav / benchmark_nav.iloc[0] * 100000
+
+    # --- Build signals and rankings from first strategy ---
+    strat_cfg = StrategyConfigV1.from_yaml(strat_paths[0])
+    console.print(f"[cyan]Building signals[/cyan] (LSTM timer, seq_len={strat_cfg.timer.seq_len})...")
+    signals = build_signals(index_daily, bt_dates, strat_cfg.timer)
+    console.print(f"  {len(signals)} signal dates, position range: {signals['position'].min():.2f}~{signals['position'].max():.2f}")
+
+    console.print(f"[cyan]Building rankings[/cyan] ({len(strat_cfg.factors)} factors, top_n={strat_cfg.top_n})...")
+    rankings = build_rankings(
+        daily_merged, index_daily, fina_all,
+        strat_cfg.factors, strat_cfg.top_n, bt_dates,
+    )
+    console.print(f"  {len(rankings)} ranking dates")
 
     # --- Run pipeline ---
     role_overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()} if config.roles else None
@@ -90,6 +112,8 @@ def run_cmd(
         pool_path=Path(config.pool_path),
         reference_date=ref_date,
         benchmark_nav=benchmark_nav,
+        signals=signals,
+        rankings=rankings,
         index_df=index_daily,
         llm_available=llm or config.llm.available,
         role_overrides=role_overrides,

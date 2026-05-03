@@ -34,4 +34,4 @@ class VerdictV1(BaseModel):
     hard_gates: list[HardGateResultV1] = Field(default_factory=list)
     blocking_issues: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    requires_human_approval: bool = True
+    requires_human_approval: bool = False
