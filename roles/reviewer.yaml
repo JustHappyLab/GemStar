@@ -1,0 +1,7 @@
+name: reviewer
+description: 回测结果解读与风险评估
+provider: api
+skills:
+  - review_verdict
+approval: false
+timeout: 120

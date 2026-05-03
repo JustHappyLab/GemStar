@@ -1,0 +1,5 @@
+{
+  "type": "object",
+  "schema_ref": "src.schemas.review.ReviewNotesV1",
+  "format": "json"
+}

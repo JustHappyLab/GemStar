@@ -1,0 +1,7 @@
+name: research_analyst
+description: 研究工单生成
+provider: api
+skills:
+  - generate_tickets
+approval: false
+timeout: 120

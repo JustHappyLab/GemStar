@@ -36,7 +36,7 @@ import pandas as pd
 from src.data_quality.gate import DataQualityReport, run_data_quality_gate
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMAdapter
 from src.orchestrator.artifact_store import write_artifact
 from src.reviewer.analysis import review_verdict
 from src.schemas.review import ReviewNotesV1
@@ -45,6 +45,7 @@ from src.orchestrator.run_manifest import finalize_run, start_run
 from src.research.analyst import generate_tickets
 from src.reporter.builder import build_report
 from src.reporter.builder import DailyReportV1, ReportStrategyEntry
+from src.roles.registry import RoleRegistry
 from src.scanner.event_scanner import scan_events
 from src.scanner.macro_analyst import analyze_market_regime
 from src.schemas.metrics import BacktestResultV1
@@ -66,6 +67,7 @@ def run_daily_pipeline(
     rankings: dict[str, list[str]] | None = None,
     index_df: pd.DataFrame | None = None,
     llm_available: bool = False,
+    registry: RoleRegistry | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
 ) -> dict:
@@ -96,6 +98,9 @@ def run_daily_pipeline(
     llm_available : bool
         If True, run LLM-based strategy ideation (MacroAnalyst, EventScanner,
         ResearchAnalyst, StrategyArchitect).  Requires ANTHROPIC_API_KEY.
+    registry : RoleRegistry, optional
+        Role registry for provider dispatch.  If None and llm_available=True,
+        a default registry is created.
     db_path : str
         Path to SQLite state database.
     artifacts_dir : str
@@ -171,7 +176,8 @@ def run_daily_pipeline(
         tickets = []
 
         if llm_available and index_df is not None and not daily_df.empty:
-            llm = LLMClient()
+            _reg = registry or RoleRegistry()
+            llm = LLMAdapter(_reg._get_provider("api"))
             try:
                 regime = analyze_market_regime(daily_df, index_df, reference_date, llm)
                 write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
@@ -239,7 +245,8 @@ def run_daily_pipeline(
         review_notes: list[ReviewNotesV1] = []
         if llm_available and verdicts:
             try:
-                llm = LLMClient()
+                _reg = registry or RoleRegistry()
+                llm = LLMAdapter(_reg._get_provider("api"))
                 for bt_result, verdict in zip(backtest_results, verdicts):
                     try:
                         notes = review_verdict(bt_result, verdict, factor_health, llm)
