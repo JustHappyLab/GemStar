@@ -4,9 +4,12 @@ Tests the full FSM flow with synthetic data, verifying each stage
 produces correct artifacts and the pipeline reaches COMPLETED.
 """
 
+import json
 import tempfile
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -291,3 +294,109 @@ def test_pipeline_rejects_invalid_strategy():
         # Pipeline completes, but no backtests run
         assert result["run_status"] == "completed"
         assert len(result["backtest_results"]) == 0
+
+
+def _make_index_df() -> pd.DataFrame:
+    """Create a simple upward-sloping ChiNext index DataFrame."""
+    dates = pd.bdate_range("20220101", "20220301").strftime("%Y%m%d").tolist()
+    return pd.DataFrame({
+        "trade_date": dates,
+        "close": [1000.0 + i * 2 for i in range(len(dates))],
+        "open": [999.0 + i * 2 for i in range(len(dates))],
+        "high": [1001.0 + i * 2 for i in range(len(dates))],
+        "low": [998.0 + i * 2 for i in range(len(dates))],
+        "vol": [50000000.0] * len(dates),
+    })
+
+
+def _make_llm_response(text: str) -> SimpleNamespace:
+    """Build a fake Anthropic API response."""
+    block = SimpleNamespace(type="text", text=text)
+    return SimpleNamespace(content=[block])
+
+
+def test_pipeline_runs_strategy_ideation_with_llm():
+    """Pipeline runs LLM ideation when llm_available=True and index_df is provided."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        strategy_path = _make_strategy_yaml(tmpdir)
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+        ic_df = _make_ic_df(dates)
+        index_df = _make_index_df()
+
+        regime_json = json.dumps({
+            "version": "MarketRegimeV1",
+            "as_of_date": "2022-03-01",
+            "regime": "bullish",
+            "confidence": 0.8,
+            "key_drivers": ["成交量放大"],
+            "style_bias": "成长",
+        })
+        events_json = json.dumps([{
+            "version": "SignalEventV1",
+            "event_date": "2022-03-01",
+            "event_id": "evt_001",
+            "event_type": "earnings_surprise",
+            "severity": "medium",
+            "summary": "某公司利润超预期",
+            "affected_sectors": [],
+            "affected_symbols": [],
+            "source_refs": [],
+            "confidence": 0.7,
+            "recommended_next_action": "检查持仓",
+        }])
+        tickets_json = json.dumps([{
+            "version": "ResearchTicketV1",
+            "ticket_id": "ticket_001",
+            "created_date": "2022-03-01",
+            "ticket_type": "weight_rebalance",
+            "hypothesis": "提升动量因子权重",
+            "rationale": "牛市环境",
+            "affected_factors": ["momentum_20d"],
+            "affected_sectors": [],
+            "confidence": 0.7,
+            "source_regime": "bullish",
+            "source_events": ["evt_001"],
+            "status": "draft",
+        }])
+
+        call_count = 0
+        def _side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            responses = [regime_json, events_json, tickets_json]
+            idx = min(call_count - 1, len(responses) - 1)
+            return _make_llm_response(responses[idx])
+
+        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.side_effect = _side_effect
+
+            result = run_daily_pipeline(
+                run_id="run_test_005",
+                data=data,
+                strategies=[strategy_path],
+                pool_path=pool_path,
+                reference_date="20220301",
+                benchmark_nav=benchmark_nav,
+                ic_df=ic_df,
+                signals=signals,
+                rankings=rankings,
+                index_df=index_df,
+                llm_available=True,
+                db_path=str(Path(tmpdir) / "test.db"),
+                artifacts_dir=str(Path(tmpdir) / "artifacts"),
+            )
+
+        assert result["run_status"] == "completed"
+        assert result["regime"] is not None
+        assert result["regime"].regime == "bullish"
+        assert len(result["events"]) == 1
+        assert result["events"][0].event_id == "evt_001"
+        assert len(result["tickets"]) == 1
+        assert result["tickets"][0].ticket_id == "ticket_001"
