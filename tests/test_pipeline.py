@@ -519,8 +519,7 @@ def test_pipeline_runs_reviewer_with_llm():
 
 def test_pipeline_creates_incident_on_failure():
     """Pipeline creates an IncidentV1 when an exception occurs during execution."""
-    from src.ops.classifier import VALID_CATEGORIES
-
+    valid_categories = ("data_missing", "llm_failure", "backtest_error", "quality_gate_abort", "unknown")
     valid_severities = ("low", "medium", "high", "critical")
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -552,6 +551,6 @@ def test_pipeline_creates_incident_on_failure():
         assert result["run_status"] == "failed"
         assert result["incident"] is not None
         assert result["incident"].state == "classified"
-        assert result["incident"].category in VALID_CATEGORIES
+        assert result["incident"].category in valid_categories
         assert result["incident"].severity in valid_severities
         assert "simulated quality gate crash" in result["incident"].error_message
