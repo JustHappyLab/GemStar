@@ -120,6 +120,9 @@ def run_cmd(
         llm_base_url=config.llm.base_url,
         db_path=config.db_path,
         artifacts_dir=config.artifacts_dir,
+        gen_target_count=config.strategy_generation.target_count,
+        gen_max_iterations=config.strategy_generation.max_iterations,
+        gen_cooldown_seconds=config.strategy_generation.cooldown_seconds,
     )
 
     # --- Output ---

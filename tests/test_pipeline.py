@@ -416,7 +416,7 @@ def test_pipeline_runs_reviewer_with_llm():
         ic_df = _make_ic_df(dates)
         index_df = _make_index_df()
 
-        # --- LLM responses for ideation (4 calls) + review (1 call) ---
+        # --- LLM responses for ideation (3 calls) + review (1 call) ---
         regime_json = json.dumps({
             "version": "MarketRegimeV1",
             "as_of_date": "2022-03-01",
@@ -481,8 +481,8 @@ def test_pipeline_runs_reviewer_with_llm():
         def _side_effect(**kwargs):
             nonlocal call_count
             call_count += 1
-            # Ideation: calls 1-4, Review: call 5+
-            ideation_responses = [regime_json, events_json, tickets_json, architect_yaml]
+            # Ideation: calls 1-3 (regime, events, tickets), Review: call 4+
+            ideation_responses = [regime_json, events_json, tickets_json]
             if call_count <= len(ideation_responses):
                 return _make_llm_response(ideation_responses[call_count - 1])
             return _make_llm_response(review_json)

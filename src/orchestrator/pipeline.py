@@ -74,6 +74,9 @@ def run_daily_pipeline(
     llm_base_url: str | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
+    gen_target_count: int = 0,
+    gen_max_iterations: int = 10,
+    gen_cooldown_seconds: int = 300,
 ) -> dict:
     """Execute the full daily pipeline.
 
@@ -185,6 +188,8 @@ def run_daily_pipeline(
         events = []
         tickets = []
 
+        # --- LLM IDEATION (context gathering, once) ---
+        llm = None
         if llm_available and _reg is not None and index_df is not None and not daily_df.empty:
             provider_name = _reg.get_role("macro_analyst").provider
             llm = LLMAdapter(_reg.get_provider(provider_name))
@@ -197,59 +202,102 @@ def run_daily_pipeline(
 
                 tickets = generate_tickets(regime, events, factor_health, pool_path, llm)
                 write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
-
-                for ticket in tickets:
-                    if ticket.status != "draft":
-                        continue
-                    try:
-                        draft_path = draft_strategy([ticket], pool_path, reference_date, llm, output_dir=str(Path(artifacts_dir) / run_id / "drafts"))
-                        strategies.append(draft_path)
-                    except Exception:
-                        logger.warning("Failed to draft strategy for ticket %s", ticket.ticket_id, exc_info=True)
             except Exception:
-                logger.warning("LLM ideation failed, continuing with existing strategies", exc_info=True)
+                logger.warning("LLM ideation context gathering failed", exc_info=True)
 
         result["regime"] = regime
         result["events"] = events
         result["tickets"] = tickets
 
-        # --- STRATEGY_VALIDATION ---
-        fsm.transition("strategy_validation")
+        # --- ITERATIVE STRATEGY GENERATION LOOP ---
+        # Pre-existing strategies are always evaluated; LLM generates new ones in a loop
+        # until we have enough candidates (gen_target_count) or hit max_iterations.
+        import time as _time
 
-        valid_strategies: list[tuple[Path, VerdictV1]] = []
-        for strat_path in strategies:
-            verdict = validate_strategy(strat_path, pool_path, strategy_id=strat_path.stem)
-            write_artifact(run_id, f"validation_{strat_path.stem}", verdict.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
-            if verdict.recommended_state != "rejected":
-                valid_strategies.append((strat_path, verdict))
-
-        # --- BACKTESTING ---
-        fsm.transition("backtesting")
         backtest_results: list[BacktestResultV1] = []
-        if signals is not None and rankings is not None:
-            for strat_path, _ in valid_strategies:
-                bt_result = run_strategy_from_yaml(
-                    path=strat_path,
-                    daily_df=data.get("daily", pd.DataFrame()),
-                    signals=signals,
-                    rankings=rankings,
-                    benchmark_nav=benchmark_nav,
-                    ic_df=ic_df,
-                )
-                bt_result.run_id = run_id
-                backtest_results.append(bt_result)
-                write_artifact(run_id, f"backtest_{strat_path.stem}", bt_result.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
-        result["backtest_results"] = backtest_results
-
-        # --- JUDGING ---
-        fsm.transition("judging")
         verdicts: list[VerdictV1] = []
-        for bt_result in backtest_results:
-            verdict = evaluate_rules(bt_result, strategy_id=bt_result.strategy_name)
-            verdict.run_id = run_id
-            verdicts.append(verdict)
-            write_artifact(run_id, f"verdict_{bt_result.strategy_name}", verdict.model_dump(), base_dir=artifacts_dir, step_id="judging")
+        collected_candidates: list[tuple[Path, BacktestResultV1, VerdictV1]] = []
+        can_backtest = signals is not None and rankings is not None
+        use_loop = llm is not None and gen_target_count > 0 and can_backtest
+
+        # First pass: evaluate pre-existing strategies (no loop needed)
+        for strat_path in strategies:
+            verdict_v = validate_strategy(strat_path, pool_path, strategy_id=strat_path.stem)
+            write_artifact(run_id, f"validation_{strat_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
+            if verdict_v.recommended_state == "rejected":
+                continue
+            if can_backtest:
+                bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=signals, rankings=rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                bt.run_id = run_id
+                backtest_results.append(bt)
+                write_artifact(run_id, f"backtest_{strat_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
+                j = evaluate_rules(bt, strategy_id=bt.strategy_name)
+                j.run_id = run_id
+                verdicts.append(j)
+                write_artifact(run_id, f"verdict_{bt.strategy_name}", j.model_dump(), base_dir=artifacts_dir, step_id="judging")
+                if j.recommended_state == "candidate":
+                    collected_candidates.append((strat_path, bt, j))
+
+        # Iterative LLM generation loop
+        if use_loop:
+            draft_dir = str(Path(artifacts_dir) / run_id / "drafts")
+            iteration = 0
+            while len(collected_candidates) < gen_target_count and iteration < gen_max_iterations:
+                iteration += 1
+                logger.info("Strategy generation iteration %d/%d (candidates: %d/%d)",
+                            iteration, gen_max_iterations, len(collected_candidates), gen_target_count)
+                try:
+                    # Generate new tickets for this iteration
+                    iter_tickets = generate_tickets(regime, events, factor_health, pool_path, llm)
+                    for ticket in iter_tickets:
+                        if ticket.status != "draft":
+                            continue
+                        try:
+                            draft_path = draft_strategy([ticket], pool_path, reference_date, llm, output_dir=draft_dir)
+                        except Exception:
+                            logger.warning("Failed to draft strategy for ticket %s", ticket.ticket_id, exc_info=True)
+                            continue
+
+                        # Validate
+                        verdict_v = validate_strategy(draft_path, pool_path, strategy_id=draft_path.stem)
+                        write_artifact(run_id, f"validation_{draft_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
+                        if verdict_v.recommended_state == "rejected":
+                            continue
+
+                        # Backtest
+                        bt = run_strategy_from_yaml(path=draft_path, daily_df=daily_df, signals=signals, rankings=rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                        bt.run_id = run_id
+                        backtest_results.append(bt)
+                        write_artifact(run_id, f"backtest_{draft_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
+
+                        # Judge
+                        j = evaluate_rules(bt, strategy_id=bt.strategy_name)
+                        j.run_id = run_id
+                        verdicts.append(j)
+                        write_artifact(run_id, f"verdict_{bt.strategy_name}", j.model_dump(), base_dir=artifacts_dir, step_id="judging")
+
+                        if j.recommended_state == "candidate":
+                            collected_candidates.append((draft_path, bt, j))
+                            if len(collected_candidates) >= gen_target_count:
+                                break
+
+                except Exception:
+                    logger.warning("Iteration %d failed", iteration, exc_info=True)
+
+                # Cooldown between iterations (skip if we already have enough)
+                if len(collected_candidates) < gen_target_count and iteration < gen_max_iterations:
+                    _time.sleep(gen_cooldown_seconds)
+
+            result["gen_iterations"] = iteration
+            result["gen_candidates_found"] = len(collected_candidates)
+
+        result["backtest_results"] = backtest_results
         result["verdicts"] = verdicts
+
+        # --- FSM transitions for validation/backtest/judging phases ---
+        fsm.transition("strategy_validation")
+        fsm.transition("backtesting")
+        fsm.transition("judging")
 
         # --- REVIEWING (LLM, best-effort) ---
         review_notes: list[ReviewNotesV1] = []

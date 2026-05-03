@@ -48,6 +48,12 @@ llm:
   provider: api                     # 默认 provider（api / claude_code / gemini_cli / codex_cli）
   base_url: null                    # Anthropic API 代理地址（中国大陆用户设置，如 https://your-proxy.com/v1）
 
+# ─── 策略生成 ──────────────────────────────────────────────
+strategy_generation:
+  target_count: 3                   # 目标候选策略数
+  max_iterations: 10                # 最大迭代次数
+  cooldown_seconds: 300             # 每轮冷却（秒）
+
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
 # 按角色切换 LLM 后端，无需改 roles/*.yaml
 # 可选值: api, claude_code, gemini_cli, codex_cli
@@ -96,6 +102,12 @@ class DataConfig(BaseModel):
     lookback_years: int = 2
 
 
+class StrategyGenConfig(BaseModel):
+    target_count: int = 3
+    max_iterations: int = 10
+    cooldown_seconds: int = 300
+
+
 class ScheduleConfig(BaseModel):
     fetch: str = "15:30"
     run: str = "16:00"
@@ -127,6 +139,7 @@ class GemStarConfig(BaseModel):
     data_cache_dir: str = "data/raw"
     llm: LLMConfig = Field(default_factory=LLMConfig)
     data: DataConfig = Field(default_factory=DataConfig)
+    strategy_generation: StrategyGenConfig = Field(default_factory=StrategyGenConfig)
     schedule: ScheduleConfig | None = None
     roles: dict[str, RoleOverride] = Field(default_factory=dict)
     strategies: list[str] = Field(default_factory=list)
