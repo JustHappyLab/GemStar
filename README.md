@@ -230,6 +230,9 @@ gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
 # 拉取数据
 gemstar fetch --start 20240101 --end 20260503
 
+# 启动自动调度（替代 cron）
+gemstar daemon --foreground
+
 # 查看运行状态（JSON 输出，供 QClaw 解析）
 gemstar -o json status
 
@@ -245,6 +248,49 @@ gemstar factors
 所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
 
 首次运行 `gemstar run` 会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
+
+### 自动调度
+
+`gemstar daemon` 替代 cron，内置交易日感知和失败重试：
+
+```bash
+# 启动（前台模式，Ctrl+C 退出）
+gemstar daemon --foreground
+
+# 后台运行
+nohup gemstar daemon &
+```
+
+在 `gemstar.yaml` 中配置调度时间：
+
+```yaml
+# ─── 调度 ─────────────────────────────────────────────────
+schedule: "收盘后"              # 预设：收盘后 / 盘前 / 深夜
+# schedule: "16:00"            # 自定义时间
+# schedule: null               # 手动模式，不自动调度
+```
+
+预设说明：
+
+| 预设 | 数据拉取 | Pipeline | 适用场景 |
+|------|---------|----------|---------|
+| `收盘后` | 15:30 | 16:00 | 数据新鲜，最常用 |
+| `盘前` | 06:00 | 07:00 | 用昨天数据，早上看结果 |
+| `深夜` | 15:30 | 02:00 | 夜间 API 便宜 |
+
+自动拉取数据（无需手动 `gemstar fetch`）：
+
+```yaml
+data:
+  auto_fetch: true             # pipeline 前自动拉取缺失数据
+  lookback_years: 2            # 训练数据回溯年数
+```
+
+Daemon 内置行为：
+- 自动跳过非交易日（周末/节假日）
+- 已完成的日期不重复执行
+- 失败自动重试，最多 3 次
+- `SIGINT` / `SIGTERM` 优雅退出
 
 ### Python API
 

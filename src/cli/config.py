@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 _CONFIG_SEARCH = [
     Path("gemstar.yaml"),
@@ -23,6 +23,17 @@ _DEFAULT_TEMPLATE = """\
 tushare_token: ${TUSHARE_TOKEN}     # Tushare Pro API token（必需）
 benchmark: 399006.SZ                # 基准指数（创业板指）
 data_cache_dir: data/raw            # 数据缓存目录（Parquet）
+
+# ─── 数据拉取 ─────────────────────────────────────────────
+data:
+  auto_fetch: true                  # pipeline 前自动拉取缺失数据
+  lookback_years: 2                 # 训练数据回溯年数
+
+# ─── 调度 ─────────────────────────────────────────────────
+# 预设: 收盘后 / 盘前 / 深夜
+# 自定义: {fetch: "15:30", run: "17:00"}
+# 手动模式: null（只用 gemstar run 手动执行）
+schedule: "收盘后"
 
 # ─── 路径 ─────────────────────────────────────────────────
 pool_path: factors/pool.json        # 因子池
@@ -62,6 +73,13 @@ strategies:
 
 _ENV_RE = re.compile(r"\$\{(\w+)}")
 
+# ── Schedule presets ──────────────────────────────────────────
+_PRESETS: dict[str, dict[str, str]] = {
+    "收盘后": {"fetch": "15:30", "run": "16:00"},
+    "盘前":   {"fetch": "06:00", "run": "07:00"},
+    "深夜":   {"fetch": "15:30", "run": "02:00"},
+}
+
 
 class LLMConfig(BaseModel):
     available: bool = False
@@ -73,6 +91,33 @@ class RoleOverride(BaseModel):
     provider: str | None = None
 
 
+class DataConfig(BaseModel):
+    auto_fetch: bool = True
+    lookback_years: int = 2
+
+
+class ScheduleConfig(BaseModel):
+    fetch: str = "15:30"
+    run: str = "16:00"
+
+
+def parse_schedule(value: str | dict | None) -> ScheduleConfig | None:
+    """Parse schedule config: preset name, time string, dict, or None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if value in _PRESETS:
+            return ScheduleConfig(**_PRESETS[value])
+        # Validate HH:MM format
+        parts = value.split(":")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            return ScheduleConfig(fetch=value, run=value)
+        raise ValueError(f"Invalid schedule value: {value!r} (expected preset name or HH:MM)")
+    if isinstance(value, dict):
+        return ScheduleConfig(**value)
+    raise ValueError(f"Invalid schedule value: {value!r}")
+
+
 class GemStarConfig(BaseModel):
     tushare_token: str = ""
     benchmark: str = "399006.SZ"
@@ -81,8 +126,17 @@ class GemStarConfig(BaseModel):
     artifacts_dir: str = "artifacts"
     data_cache_dir: str = "data/raw"
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    data: DataConfig = Field(default_factory=DataConfig)
+    schedule: ScheduleConfig | None = None
     roles: dict[str, RoleOverride] = Field(default_factory=dict)
     strategies: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_schedule(cls, values: dict) -> dict:
+        if "schedule" in values:
+            values["schedule"] = parse_schedule(values["schedule"])
+        return values
 
 
 def _expand_env(value: str) -> str:
