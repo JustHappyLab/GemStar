@@ -400,3 +400,118 @@ def test_pipeline_runs_strategy_ideation_with_llm():
         assert result["events"][0].event_id == "evt_001"
         assert len(result["tickets"]) == 1
         assert result["tickets"][0].ticket_id == "ticket_001"
+
+
+def test_pipeline_runs_reviewer_with_llm():
+    """Pipeline runs Reviewer LLM when llm_available=True and verdicts exist."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        strategy_path = _make_strategy_yaml(tmpdir)
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+        ic_df = _make_ic_df(dates)
+        index_df = _make_index_df()
+
+        # --- LLM responses for ideation (4 calls) + review (1 call) ---
+        regime_json = json.dumps({
+            "version": "MarketRegimeV1",
+            "as_of_date": "2022-03-01",
+            "regime": "bullish",
+            "confidence": 0.8,
+            "key_drivers": ["成交量放大"],
+            "style_bias": "成长",
+        })
+        events_json = json.dumps([{
+            "version": "SignalEventV1",
+            "event_date": "2022-03-01",
+            "event_id": "evt_001",
+            "event_type": "earnings_surprise",
+            "severity": "medium",
+            "summary": "某公司利润超预期",
+            "affected_sectors": [],
+            "affected_symbols": [],
+            "source_refs": [],
+            "confidence": 0.7,
+            "recommended_next_action": "检查持仓",
+        }])
+        tickets_json = json.dumps([{
+            "version": "ResearchTicketV1",
+            "ticket_id": "ticket_001",
+            "created_date": "2022-03-01",
+            "ticket_type": "weight_rebalance",
+            "hypothesis": "提升动量因子权重",
+            "rationale": "牛市环境",
+            "affected_factors": ["momentum_20d"],
+            "affected_sectors": [],
+            "confidence": 0.7,
+            "source_regime": "bullish",
+            "source_events": ["evt_001"],
+            "status": "draft",
+        }])
+        # MacroAnalyst may also produce a draft call, but we handle that
+        # generically via the side_effect index.  Call 4 = StrategyArchitect
+        # (returns a YAML-like string that gets saved to disk).
+        architect_yaml = (
+            "version: StrategyConfigV1\n"
+            "name: llm_strat\n"
+            "universe: chinext\n"
+            "timer: {mode: full}\n"
+            "factors:\n"
+            "  - {factor_id: momentum_20d, weight: 1.0}\n"
+            "top_n: 3\n"
+            "rebalance: daily\n"
+            "backtest: {start: '20220101', end: '20220301', capital: 100000}\n"
+        )
+        review_json = json.dumps({
+            "version": "ReviewNotesV1",
+            "strategy_id": "test_strat",
+            "run_id": "run_test_006",
+            "verdict_summary": "candidate — 全部硬门通过",
+            "explanation": "该策略通过所有5项硬门检查。",
+            "risk_highlights": [],
+            "confidence": 0.9,
+        })
+
+        call_count = 0
+
+        def _side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Ideation: calls 1-4, Review: call 5+
+            ideation_responses = [regime_json, events_json, tickets_json, architect_yaml]
+            if call_count <= len(ideation_responses):
+                return _make_llm_response(ideation_responses[call_count - 1])
+            return _make_llm_response(review_json)
+
+        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.side_effect = _side_effect
+
+            result = run_daily_pipeline(
+                run_id="run_test_006",
+                data=data,
+                strategies=[strategy_path],
+                pool_path=pool_path,
+                reference_date="20220301",
+                benchmark_nav=benchmark_nav,
+                ic_df=ic_df,
+                signals=signals,
+                rankings=rankings,
+                index_df=index_df,
+                llm_available=True,
+                db_path=str(Path(tmpdir) / "test.db"),
+                artifacts_dir=str(Path(tmpdir) / "artifacts"),
+            )
+
+        assert result["run_status"] == "completed"
+        # 2 strategies (original + LLM-drafted) → 2 backtests → 2 verdicts → 2 reviews
+        assert len(result["review_notes"]) >= 1
+        note = result["review_notes"][0]
+        assert note.version == "ReviewNotesV1"
+        assert note.strategy_id == "test_strat"
+        assert note.confidence == 0.9
+        assert "硬门" in note.verdict_summary

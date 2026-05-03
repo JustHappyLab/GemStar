@@ -38,6 +38,8 @@ from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
 from src.llm.client import LLMClient
 from src.orchestrator.artifact_store import write_artifact
+from src.reviewer.analysis import review_verdict
+from src.schemas.review import ReviewNotesV1
 from src.orchestrator.fsm_daily import DailyFSM
 from src.orchestrator.run_manifest import finalize_run, start_run
 from src.research.analyst import generate_tickets
@@ -116,6 +118,7 @@ def run_daily_pipeline(
         "regime": None,
         "events": [],
         "tickets": [],
+        "review_notes": [],
         "backtest_results": [],
         "verdicts": [],
         "report": None,
@@ -230,6 +233,22 @@ def run_daily_pipeline(
             verdicts.append(verdict)
             write_artifact(run_id, f"verdict_{bt_result.strategy_name}", verdict.model_dump(), base_dir=artifacts_dir, step_id="judging")
         result["verdicts"] = verdicts
+
+        # --- REVIEWING (LLM, best-effort) ---
+        review_notes: list[ReviewNotesV1] = []
+        if llm_available and verdicts:
+            try:
+                llm = LLMClient()
+                for bt_result, verdict in zip(backtest_results, verdicts):
+                    try:
+                        notes = review_verdict(bt_result, verdict, factor_health, llm)
+                        review_notes.append(notes)
+                        write_artifact(run_id, f"review_{bt_result.strategy_name}", notes.model_dump(), base_dir=artifacts_dir, step_id="judging")
+                    except Exception:
+                        pass  # skip failed reviews
+            except Exception:
+                pass  # LLM unavailable
+        result["review_notes"] = review_notes
 
         # --- LEADERBOARD_BUILDING ---
         fsm.transition("leaderboard_building")
