@@ -6,6 +6,7 @@ CALLING SPEC:
         Raises ValueError when the token is missing.
     fetch_income, fetch_balancesheet, fetch_cashflow, fetch_disclosure_date,
     fetch_forecast, fetch_express — PIT-friendly financial data fetchers.
+    fetch_report_rc, fetch_report_fy — analyst ratings & earnings forecasts.
 """
 
 import os
@@ -298,3 +299,55 @@ def fetch_forecast(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFra
 def fetch_express(pro, ts_code: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     """Fetch earnings express report for a single stock."""
     return _fetch_by_ts_code(pro, ts_code, "express", cache_dir)
+
+
+def fetch_report_rc(pro, ts_code: str, start_date: str = "", end_date: str = "", cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch analyst ratings/recommendations for a single stock."""
+    expected_cols = ["ts_code", "report_date", "org_name", "rating_name", "target_price", "indv_indu_code"]
+    name = f"report_rc_{ts_code.replace('.', '_')}"
+    cached = _read_cache(cache_dir, name)
+    if cached is not None:
+        return cached
+    df = _call_with_retry(
+        pro.report_rc,
+        ts_code=ts_code,
+        start_date=start_date,
+        end_date=end_date,
+        op_name=f"report_rc {ts_code}",
+    )
+    if df is None:
+        df = pd.DataFrame(columns=expected_cols)
+    else:
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        df = df[expected_cols]
+    _write_cache(df, cache_dir, name)
+    _rate_limit()
+    return df
+
+
+def fetch_report_fy(pro, ts_code: str, start_date: str = "", end_date: str = "", cache_dir: str = "data/raw") -> pd.DataFrame:
+    """Fetch analyst earnings forecasts for a single stock."""
+    expected_cols = ["ts_code", "report_date", "org_name", "eps_last", "eps_this", "eps_next", "rating_name"]
+    name = f"report_fy_{ts_code.replace('.', '_')}"
+    cached = _read_cache(cache_dir, name)
+    if cached is not None:
+        return cached
+    df = _call_with_retry(
+        pro.report_fy,
+        ts_code=ts_code,
+        start_date=start_date,
+        end_date=end_date,
+        op_name=f"report_fy {ts_code}",
+    )
+    if df is None:
+        df = pd.DataFrame(columns=expected_cols)
+    else:
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = None
+        df = df[expected_cols]
+    _write_cache(df, cache_dir, name)
+    _rate_limit()
+    return df
