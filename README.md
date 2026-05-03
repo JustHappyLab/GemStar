@@ -127,6 +127,13 @@ cp .env.example .env
 gemstar init
 ```
 
+可选配置 SwanLab 实验记录（独立回测工具使用）：
+
+```bash
+SWANLAB_API_KEY=your_key
+SWANLAB_PROJ_NAME=gemstar
+```
+
 ### CLI 命令
 
 ```bash
@@ -157,6 +164,24 @@ gemstar factors
 所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
 
 首次运行 `gemstar run` 会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
+
+### Python API
+
+也可以直接调用 pipeline：
+
+```python
+from src.orchestrator.pipeline import run_daily_pipeline
+
+result = run_daily_pipeline(
+    run_id="20260503-001",
+    data=data_dict,           # Tushare DataFrame 映射
+    strategies=[Path("...")], # 策略 YAML 路径
+    pool_path=Path("factors/pool.json"),
+    reference_date="20260503",
+    benchmark_nav=benchmark_series,
+    llm_available=True,       # 启用 LLM 策略生成
+)
+```
 
 ### 运行测试
 
