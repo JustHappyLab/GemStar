@@ -18,7 +18,8 @@ from src.schemas.metrics import BacktestResultV1
 from src.schemas.review import ReviewNotesV1
 from src.schemas.verdict import VerdictV1
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "reviewer.txt"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "review_verdict" / "prompt.txt"
+_SYSTEM_PROMPT = _PROMPT_PATH.read_text()
 
 
 def review_verdict(
@@ -73,7 +74,7 @@ def review_verdict(
         ]
 
     user_prompt = json.dumps(context, ensure_ascii=False)
-    system_prompt = _PROMPT_PATH.read_text()
+    system_prompt = _SYSTEM_PROMPT
 
     response = llm_client.generate(user_prompt, system=system_prompt)
 

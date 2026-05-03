@@ -109,7 +109,7 @@ def test_regime_is_valid_enum(mock_anthropic_cls: MagicMock) -> None:
 
 
 @patch("src.llm.client.anthropic.Anthropic")
-def test_malformed_json_retries_then_raises(mock_anthropic_cls: MagicMock) -> None:
+def test_malformed_json_raises(mock_anthropic_cls: MagicMock) -> None:
     mock_client = MagicMock()
     mock_anthropic_cls.return_value = mock_client
     mock_client.messages.create.return_value = _make_response("NOT VALID JSON")
@@ -120,4 +120,4 @@ def test_malformed_json_retries_then_raises(mock_anthropic_cls: MagicMock) -> No
             _make_daily_df(), _make_index_df(), "20260430", llm,
         )
 
-    assert mock_client.messages.create.call_count == 2
+    assert mock_client.messages.create.call_count == 1

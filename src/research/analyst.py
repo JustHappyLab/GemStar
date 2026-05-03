@@ -17,7 +17,8 @@ from src.schemas.factor import FactorHealthReportV1, FactorPoolV1
 from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 
-_PROMPT_PATH = Path(__file__).resolve().parent.parent / "llm" / "prompts" / "research_analyst.txt"
+_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "skills" / "generate_tickets" / "prompt.txt"
+_SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def generate_tickets(
@@ -60,7 +61,7 @@ def generate_tickets(
     user_prompt = "\n".join(parts)
 
     # 2. Load system prompt
-    system_prompt = _PROMPT_PATH.read_text(encoding="utf-8").strip()
+    system_prompt = _SYSTEM_PROMPT
 
     # 3. Call LLM
     raw = llm_client.generate(user_prompt, system=system_prompt)

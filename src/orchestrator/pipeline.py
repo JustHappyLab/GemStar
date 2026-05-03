@@ -28,6 +28,7 @@ SIDE EFFECTS:
     Writes to state.db (via record_step) and artifacts/<run_id>/.
 """
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -36,7 +37,7 @@ import pandas as pd
 from src.data_quality.gate import DataQualityReport, run_data_quality_gate
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMAdapter
 from src.orchestrator.artifact_store import write_artifact
 from src.reviewer.analysis import review_verdict
 from src.schemas.review import ReviewNotesV1
@@ -45,6 +46,7 @@ from src.orchestrator.run_manifest import finalize_run, start_run
 from src.research.analyst import generate_tickets
 from src.reporter.builder import build_report
 from src.reporter.builder import DailyReportV1, ReportStrategyEntry
+from src.roles.registry import RoleRegistry
 from src.scanner.event_scanner import scan_events
 from src.scanner.macro_analyst import analyze_market_regime
 from src.schemas.metrics import BacktestResultV1
@@ -52,6 +54,8 @@ from src.schemas.verdict import VerdictV1
 from src.strategies.architect import draft_strategy
 from src.strategies.runner import run_strategy_from_yaml
 from src.strategies.validator import validate_strategy
+
+logger = logging.getLogger(__name__)
 
 
 def run_daily_pipeline(
@@ -66,6 +70,7 @@ def run_daily_pipeline(
     rankings: dict[str, list[str]] | None = None,
     index_df: pd.DataFrame | None = None,
     llm_available: bool = False,
+    registry: RoleRegistry | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
 ) -> dict:
@@ -96,6 +101,9 @@ def run_daily_pipeline(
     llm_available : bool
         If True, run LLM-based strategy ideation (MacroAnalyst, EventScanner,
         ResearchAnalyst, StrategyArchitect).  Requires ANTHROPIC_API_KEY.
+    registry : RoleRegistry, optional
+        Role registry for provider dispatch.  If None and llm_available=True,
+        a default registry is created.
     db_path : str
         Path to SQLite state database.
     artifacts_dir : str
@@ -109,6 +117,7 @@ def run_daily_pipeline(
     # --- Initialize ---
     start_run(run_id, db_path=db_path, artifacts_dir=artifacts_dir)
     fsm = DailyFSM(run_id, db_path=db_path)
+    strategies = list(strategies)  # avoid mutating caller's list
 
     result: dict = {
         "run_id": run_id,
@@ -125,6 +134,9 @@ def run_daily_pipeline(
         "report": None,
         "markdown": "",
     }
+
+    # Resolve registry once for all LLM stages
+    _reg = registry or RoleRegistry() if llm_available else None
 
     try:
         # --- COLLECTING ---
@@ -170,8 +182,8 @@ def run_daily_pipeline(
         events = []
         tickets = []
 
-        if llm_available and index_df is not None and not daily_df.empty:
-            llm = LLMClient()
+        if llm_available and _reg is not None and index_df is not None and not daily_df.empty:
+            llm = LLMAdapter(_reg.get_provider("api"))
             try:
                 regime = analyze_market_regime(daily_df, index_df, reference_date, llm)
                 write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
@@ -189,9 +201,9 @@ def run_daily_pipeline(
                         draft_path = draft_strategy([ticket], pool_path, reference_date, llm, output_dir=str(Path(artifacts_dir) / run_id / "drafts"))
                         strategies.append(draft_path)
                     except Exception:
-                        pass  # skip failed drafts; existing strategies still proceed
+                        logger.warning("Failed to draft strategy for ticket %s", ticket.ticket_id, exc_info=True)
             except Exception:
-                pass  # LLM ideation is best-effort; pipeline continues with existing strategies
+                logger.warning("LLM ideation failed, continuing with existing strategies", exc_info=True)
 
         result["regime"] = regime
         result["events"] = events
@@ -237,18 +249,18 @@ def run_daily_pipeline(
 
         # --- REVIEWING (LLM, best-effort) ---
         review_notes: list[ReviewNotesV1] = []
-        if llm_available and verdicts:
+        if llm_available and _reg is not None and verdicts:
             try:
-                llm = LLMClient()
+                llm = LLMAdapter(_reg.get_provider("api"))
                 for bt_result, verdict in zip(backtest_results, verdicts):
                     try:
                         notes = review_verdict(bt_result, verdict, factor_health, llm)
                         review_notes.append(notes)
                         write_artifact(run_id, f"review_{bt_result.strategy_name}", notes.model_dump(), base_dir=artifacts_dir, step_id="judging")
                     except Exception:
-                        pass  # skip failed reviews
+                        logger.warning("Failed to review verdict for %s", bt_result.strategy_name, exc_info=True)
             except Exception:
-                pass  # LLM unavailable
+                logger.warning("LLM review unavailable", exc_info=True)
         result["review_notes"] = review_notes
 
         # --- LEADERBOARD_BUILDING ---

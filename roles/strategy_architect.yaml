@@ -1,0 +1,7 @@
+name: strategy_architect
+description: 策略构思与 YAML 草稿
+provider: api
+skills:
+  - draft_strategy
+approval: false
+timeout: 120

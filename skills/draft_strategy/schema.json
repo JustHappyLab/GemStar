@@ -1,0 +1,5 @@
+{
+  "type": "object",
+  "schema_ref": "src.schemas.strategy.StrategyConfigV1",
+  "format": "yaml"
+}

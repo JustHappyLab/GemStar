@@ -1,0 +1,8 @@
+name: engineer
+description: 策略代码工程师
+provider: claude_code
+skills:
+  - write_code
+  - fix_bug
+approval: true
+timeout: 600

@@ -1,0 +1,5 @@
+{
+  "type": "array",
+  "items_schema_ref": "src.schemas.research.ResearchTicketV1",
+  "format": "json"
+}

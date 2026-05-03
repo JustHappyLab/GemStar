@@ -312,7 +312,8 @@ def _make_index_df() -> pd.DataFrame:
 def _make_llm_response(text: str) -> SimpleNamespace:
     """Build a fake Anthropic API response."""
     block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
+    usage = SimpleNamespace(input_tokens=50, output_tokens=30)
+    return SimpleNamespace(content=[block], usage=usage)
 
 
 def test_pipeline_runs_strategy_ideation_with_llm():

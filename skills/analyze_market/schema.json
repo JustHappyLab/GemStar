@@ -1,0 +1,5 @@
+{
+  "type": "object",
+  "schema_ref": "src.schemas.signal.MarketRegimeV1",
+  "format": "json"
+}
