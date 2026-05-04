@@ -47,7 +47,6 @@ def start_cmd(
         _run_daemon(config)
     else:
         pid = _daemonize(log_path)
-        _write_pid(pid)
         console.print("[green]Daemon started.[/green]")
         console.print(f"  PID:  {pid}")
         console.print(f"  Log:  {log_path}")
@@ -103,7 +102,7 @@ def daemon_status_cmd() -> None:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        console.print("[yellow]Stale PID file (process {pid} not found).[/yellow]")
+        console.print(f"[yellow]Stale PID file (process {pid} not found).[/yellow]")
         _remove_pid()
         raise typer.Exit(0)
 
@@ -202,11 +201,18 @@ def _print_summary(config) -> None:
 
 
 def _daemonize(log_path: Path) -> int:
-    """Double-fork to detach into background. Returns child PID."""
+    """Double-fork to detach into background. Returns grandchild PID via PID file."""
     # First fork
     pid = os.fork()
     if pid > 0:
-        return pid  # parent returns child PID
+        # Parent — wait for grandchild to write PID file, then return its PID
+        import time
+        for _ in range(50):
+            time.sleep(0.1)
+            p = _read_pid()
+            if p is not None:
+                return p
+        return pid  # fallback
 
     # Child — become session leader
     os.setsid()
@@ -216,11 +222,17 @@ def _daemonize(log_path: Path) -> int:
     if pid > 0:
         os._exit(0)  # first child exits
 
-    # Grandchild — redirect stdio to log file
+    # Grandchild — write our own PID so status/stop can find us
+    _write_pid(os.getpid())
+
+    # Redirect stdio to log file
     fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     os.dup2(fd, sys.stdout.fileno())
     os.dup2(fd, sys.stderr.fileno())
     os.close(fd)
+
+    # Set up logging so logger.info() etc. also go to the log file
+    _setup_logging(log_path)
 
     # Run the daemon loop
     try:
