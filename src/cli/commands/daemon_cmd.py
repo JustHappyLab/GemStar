@@ -270,9 +270,11 @@ def _run_loop(config, stop_event: threading.Event) -> None:
     while not stop_event.is_set():
         today = date.today()
         today_str = today.strftime("%Y%m%d")
+        logger.info("Checking schedule for %s...", today_str)
 
         # Check if today is a trading day
         if not _is_trading_day_cached(today_str, config, stop_event):
+            logger.info("%s is not a trading day, sleeping until tomorrow", today_str)
             _sleep_until_tomorrow(stop_event)
             if stop_event.is_set():
                 break
@@ -338,11 +340,15 @@ def _is_trading_day_cached(date_str: str, config, stop_event: threading.Event) -
 
         from src.orchestrator.scheduler import is_trading_day
 
-        return is_trading_day(date_str, cal)
+        result = is_trading_day(date_str, cal)
+        logger.info("Trade calendar check: %s is %s", date_str, "trading day" if result else "non-trading day")
+        return result
     except Exception as e:
-        logger.warning("Trade calendar check failed: %s — assuming trading day", e)
+        logger.warning("Trade calendar check failed: %s — falling back to weekday heuristic", e)
         d = datetime.strptime(date_str, "%Y%m%d").date()
-        return d.weekday() < 5
+        result = d.weekday() < 5
+        logger.info("Weekday heuristic: %s (weekday=%d) → %s", date_str, d.weekday(), "trading day" if result else "non-trading day")
+        return result
 
 
 def _run_subcommand(
@@ -362,6 +368,10 @@ def _run_subcommand(
             timeout=3600,
             cwd=None,
         )
+        if result.returncode == 0:
+            logger.info("%s finished successfully", subcmd)
+        else:
+            logger.warning("%s exited with code %d", subcmd, result.returncode)
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         logger.error("%s timed out after 1 hour", subcmd)
