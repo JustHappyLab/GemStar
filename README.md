@@ -230,11 +230,21 @@ gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
 # 拉取数据
 gemstar fetch --start 20240101 --end 20260503
 
-# 启动自动调度（替代 cron）
-gemstar daemon --foreground
+# 启动自动调度（后台运行）
+gemstar start
 
-# 查看运行状态（JSON 输出，供 QClaw 解析）
-gemstar -o json status
+# 前台运行（调试用，Ctrl+C 退出）
+gemstar start --foreground
+
+# 查看 daemon 状态
+gemstar status
+
+# 停止 / 重启
+gemstar stop
+gemstar restart
+
+# 查看 pipeline 运行状态（JSON 输出，供 QClaw 解析）
+gemstar -o json run-status
 
 # 列出历史运行
 gemstar history
@@ -251,17 +261,22 @@ gemstar factors
 
 ### 自动调度
 
-`gemstar daemon` 替代 cron，内置交易日感知和失败重试：
+`gemstar start` 替代 cron，后台运行，内置交易日感知和失败重试：
 
 ```bash
-# 启动（前台模式，Ctrl+C 退出）
-gemstar daemon --foreground
+# 后台启动
+gemstar start
 
-# 后台运行
-nohup gemstar daemon &
+# 前台运行（调试用）
+gemstar start --foreground
+
+# 查看状态 / 停止 / 重启
+gemstar status
+gemstar stop
+gemstar restart
 ```
 
-在 `gemstar.yaml` 中配置调度时间：
+在 `gemstar.yaml` 中配置调度时间和日志路径：
 
 ```yaml
 # ─── 调度 ─────────────────────────────────────────────────
@@ -290,6 +305,7 @@ Daemon 内置行为：
 - 自动跳过非交易日（周末/节假日）
 - 已完成的日期不重复执行
 - 失败自动重试，最多 3 次
+- 日志输出到 `logs/gemstar.log`（路径可在 `gemstar.yaml` 的 `log_path` 配置）
 - `SIGINT` / `SIGTERM` 优雅退出
 
 ### Python API

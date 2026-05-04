@@ -25,18 +25,24 @@ from src.cli.config import ScheduleConfig, parse_schedule  # noqa: F401
 
 def is_trading_day(date_str: str, trade_cal_df: pd.DataFrame) -> bool:
     """Check if *date_str* (YYYYMMDD) is a trading day."""
-    open_days = trade_cal_df[trade_cal_df["is_open"] == 1]["cal_date"].astype(str)
+    if "is_open" in trade_cal_df.columns:
+        open_days = trade_cal_df[trade_cal_df["is_open"] == 1]["cal_date"].astype(str)
+    else:
+        open_days = trade_cal_df["cal_date"].astype(str)
     return date_str in open_days.values
 
 
 def next_trading_day(from_date: date, trade_cal_df: pd.DataFrame) -> date:
     """Return the next trading day on or after *from_date*."""
-    open_days = (
-        trade_cal_df[trade_cal_df["is_open"] == 1]["cal_date"]
-        .astype(str)
-        .sort_values()
-        .tolist()
-    )
+    if "is_open" in trade_cal_df.columns:
+        open_days = (
+            trade_cal_df[trade_cal_df["is_open"] == 1]["cal_date"]
+            .astype(str)
+            .sort_values()
+            .tolist()
+        )
+    else:
+        open_days = trade_cal_df["cal_date"].astype(str).sort_values().tolist()
     from_str = from_date.strftime("%Y%m%d")
     for d in open_days:
         if d >= from_str:
