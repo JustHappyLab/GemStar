@@ -15,6 +15,9 @@ wandb/
 # Runtime
 gemstar.yaml
 state.db
+.gemstar.pid
+logs/
+artifacts/
 
 # Build / packaging
 *.egg-info/
