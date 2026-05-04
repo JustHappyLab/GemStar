@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GemStar — AI 驱动的自动化量化研究框架</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #0d0d14;
+  --bg-card: #111119;
+  --bg-card-hover: #16161f;
+  --cyan: #00e5ff;
+  --cyan-dim: #00e5ff33;
+  --cyan-glow: #00e5ff66;
+  --green: #39ff14;
+  --green-dim: #39ff1433;
+  --amber: #ffab00;
+  --amber-dim: #ffab0033;
+  --text-primary: #e8e8ed;
+  --text-secondary: #8888a0;
+  --text-dim: #55556a;
+  --border: #1e1e2e;
+  --border-glow: #00e5ff22;
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cyan-dim) var(--bg-primary);
+}
+
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--cyan);
+  color: var(--bg-primary);
+}
+
+/* ── Background Grid ─────────────────────────────── */
+
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
+  opacity: 0.4;
+}
+
+/* ── Noise Texture ───────────────────────────────── */
+
+.noise {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Scanline Effect ─────────────────────────────── */
+
+.scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+}
+
+/* ── Glow Orbs ───────────────────────────────────── */
+
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(100px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb-1 {
+  width: 500px; height: 500px;
+  top: -100px; left: -100px;
+  background: var(--cyan);
+  opacity: 0.06;
+  animation: orb-drift 20s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 400px; height: 400px;
+  bottom: -100px; right: -100px;
+  background: var(--green);
+  opacity: 0.04;
+  animation: orb-drift 25s ease-in-out infinite reverse;
+}
+
+.orb-3 {
+  width: 300px; height: 300px;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--cyan);
+  opacity: 0.03;
+  animation: orb-pulse 8s ease-in-out infinite;
+}
+
+@keyframes orb-drift {
+  0%, 100% { transform: translate(0, 0); }
+  33% { transform: translate(40px, -30px); }
+  66% { transform: translate(-20px, 20px); }
+}
+
+@keyframes orb-pulse {
+  0%, 100% { opacity: 0.03; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.06; transform: translate(-50%, -50%) scale(1.2); }
+}
+
+/* ── Layout ──────────────────────────────────────── */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 10;
+}
+
+section {
+  padding: 120px 0;
+}
+
+/* ── Nav ─────────────────────────────────────────── */
+
+nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 16px 0;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 10, 15, 0.8);
+  border-bottom: 1px solid var(--border);
+}
+
+nav .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-brand {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--cyan);
+  text-decoration: none;
+  letter-spacing: -0.5px;
+}
+
+.nav-brand span {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.nav-links {
+  display: flex;
+  gap: 32px;
+  list-style: none;
+}
+
+.nav-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  transition: color 0.2s;
+}
+
+.nav-links a:hover {
+  color: var(--cyan);
+}
+
+.nav-github {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-github:hover {
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+  background: var(--cyan-dim);
+}
+
+/* ── Hero ────────────────────────────────────────── */
+
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding-top: 80px;
+  position: relative;
+}
+
+.hero-content {
+  text-align: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  background: var(--bg-card);
+  animation: fade-in 0.8s ease-out;
+}
+
+.hero-badge .dot {
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--green-dim); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 6px transparent; }
+}
+
+.hero-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #fff 0%, var(--cyan) 50%, var(--green) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: fade-in 0.8s ease-out 0.1s both;
+}
+
+.hero-tagline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  color: var(--cyan);
+  font-weight: 500;
+  margin-bottom: 24px;
+  animation: fade-in 0.8s ease-out 0.2s both;
+}
+
+.hero-subtitle {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto 40px;
+  line-height: 1.8;
+  animation: fade-in 0.8s ease-out 0.3s both;
+}
+
+.hero-subtitle .arrow {
+  color: var(--text-dim);
+  margin: 0 2px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  animation: fade-in 0.8s ease-out 0.4s both;
+}
+
+.btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 14px 32px;
+  border-radius: 8px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--cyan);
+  color: var(--bg-primary);
+  box-shadow: 0 0 20px var(--cyan-dim), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.btn-primary:hover {
+  background: #33eaff;
+  box-shadow: 0 0 30px var(--cyan-glow), 0 0 60px var(--cyan-dim);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  transform: translateY(-2px);
+}
+
+.hero-terminal {
+  margin-top: 60px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: fade-in 0.8s ease-out 0.5s both;
+  text-align: left;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-dot:nth-child(1) { background: #ff5f57; }
+.terminal-dot:nth-child(2) { background: #febc2e; }
+.terminal-dot:nth-child(3) { background: #28c840; }
+
+.terminal-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-left: 8px;
+}
+
+.terminal-body {
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+
+.terminal-line {
+  opacity: 0;
+  animation: terminal-type 0.3s ease-out forwards;
+}
+
+.terminal-line .prompt {
+  color: var(--cyan);
+}
+
+.terminal-line .cmd {
+  color: var(--text-primary);
+}
+
+.terminal-line .comment {
+  color: var(--text-dim);
+}
+
+.terminal-line:nth-child(1) { animation-delay: 0.6s; }
+.terminal-line:nth-child(2) { animation-delay: 0.9s; }
+.terminal-line:nth-child(3) { animation-delay: 1.2s; }
+.terminal-line:nth-child(4) { animation-delay: 1.5s; }
+.terminal-line:nth-child(5) { animation-delay: 1.8s; }
+.terminal-line:nth-child(6) { animation-delay: 2.1s; }
+
+@keyframes terminal-type {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Pipeline Section ────────────────────────────── */
+
+.pipeline-section {
+  padding: 100px 0 120px;
+  position: relative;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -1px;
+  margin-bottom: 16px;
+}
+
+.section-desc {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Pipeline Visualization */
+
+.pipeline-container {
+  position: relative;
+  padding: 40px 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pipeline-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: max-content;
+  padding: 20px 0;
+  justify-content: center;
+}
+
+.pipeline-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.node-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  position: relative;
+  transition: all 0.4s ease;
+}
+
+.node-dot::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  transition: all 0.4s ease;
+}
+
+.pipeline-node.active .node-dot {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px var(--cyan-glow), 0 0 24px var(--cyan-dim);
+}
+
+.pipeline-node.active .node-dot::after {
+  border-color: var(--cyan-dim);
+  animation: node-ping 2s ease-out infinite;
+}
+
+@keyframes node-ping {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.node-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+  transition: color 0.4s ease;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipeline-node.active .node-label {
+  color: var(--cyan);
+}
+
+.pipeline-connector {
+  height: 2px;
+  width: 60px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.pipeline-connector::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  box-shadow: 0 0 8px var(--cyan-dim);
+  transition: width 0.6s ease;
+}
+
+.pipeline-connector.filled::after {
+  width: 100%;
+}
+
+.pipeline-status {
+  text-align: center;
+  margin-top: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.pipeline-status .state-name {
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+/* ── Capabilities ────────────────────────────────── */
+
+.capabilities {
+  padding: 100px 0;
+}
+
+.capabilities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.cap-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.cap-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyan), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.cap-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--cyan-dim);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(0, 229, 255, 0.06);
+}
+
+.cap-card:hover::before {
+  opacity: 1;
+}
+
+.cap-icon {
+  font-size: 1.5rem;
+  margin-bottom: 16px;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  background: var(--cyan-dim);
+  border-radius: 10px;
+  color: var(--cyan);
+}
+
+.cap-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.cap-en {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.cap-desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+/* ── Multi-Roles ──────────────────────────────────── */
+
+.roles-section {
+  padding: 100px 0;
+}
+
+.roles-flow {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.roles-stage {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.stage-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  border-right: 2px solid var(--border);
+}
+
+.stage-roles {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.role-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  flex: 1;
+  min-width: 180px;
+  position: relative;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.role-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.role-card:hover {
+  border-color: var(--cyan-dim);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.06);
+}
+
+.role-card:hover::before {
+  opacity: 1;
+}
+
+.role-card[data-provider="api"]::before { background: var(--cyan); }
+.role-card[data-provider="claude_code"]::before { background: var(--green); }
+.role-card[data-provider="gemini_cli"]::before { background: var(--amber); }
+
+.role-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.role-icon {
+  font-size: 1.2rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cyan-dim);
+  border-radius: 8px;
+}
+
+.role-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.role-provider {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.role-provider.api { background: var(--cyan-dim); color: var(--cyan); }
+.role-provider.cli { background: var(--green-dim); color: var(--green); }
+
+.role-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.role-skill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  padding: 3px 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+
+.role-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.role-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--amber-dim);
+  color: var(--amber);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.stage-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
+  margin-left: 48px;
+}
+
+.stage-arrow .arrow-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-arrow .arrow-line::before {
+  content: '';
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+}
+
+.stage-arrow .arrow-line::after {
+  content: '';
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+}
+
+.role-data-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
+  margin-left: 48px;
+}
+
+.data-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  padding: 6px 14px;
+  background: var(--bg-card);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+
+/* ── Feedback Loop ────────────────────────────────── */
+
+.feedback-section {
+  padding: 100px 0;
+}
+
+.feedback-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.feedback-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.feedback-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+}
+
+.feedback-card-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.feedback-card-title .icon {
+  font-size: 1.2rem;
+}
+
+.feedback-card-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+  letter-spacing: 0.5px;
+}
+
+.loop-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.loop-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 10px 14px;
+  background: rgba(0, 229, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.loop-step:hover {
+  border-color: var(--cyan-dim);
+  background: rgba(0, 229, 255, 0.06);
+}
+
+.loop-step .step-num {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cyan-dim);
+  border-radius: 6px;
+  font-size: 0.7rem;
+  color: var(--cyan);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.loop-step .step-text {
+  color: var(--text-secondary);
+}
+
+.loop-step .step-text strong {
+  color: var(--text-primary);
+}
+
+.loop-arrow {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  position: relative;
+}
+
+.loop-arrow::before {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+  margin: 0 auto 4px;
+}
+
+.loop-retry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--amber);
+  padding: 8px 12px;
+  background: var(--amber-dim);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.loop-retry .retry-icon {
+  font-size: 0.9rem;
+}
+
+/* Incident FSM */
+
+.fsm-states {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fsm-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.fsm-state:hover {
+  border-color: var(--cyan-dim);
+}
+
+.fsm-state .state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fsm-state .state-dot.s-detected { background: var(--amber); }
+.fsm-state .state-dot.s-classified { background: var(--cyan); }
+.fsm-state .state-dot.s-retrying { background: var(--green); }
+.fsm-state .state-dot.s-degraded { background: var(--amber); }
+.fsm-state .state-dot.s-manual { background: #ff5f57; }
+.fsm-state .state-dot.s-engineering { background: var(--green); }
+.fsm-state .state-dot.s-resolved { background: var(--cyan); }
+
+.fsm-state .state-name {
+  color: var(--text-primary);
+  font-weight: 500;
+  min-width: 120px;
+}
+
+.fsm-state .state-desc {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+.fsm-loop-hint {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--amber-dim);
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--amber);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.feedback-full-width {
+  grid-column: 1 / -1;
+}
+
+.gate-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.gate-card {
+  padding: 14px;
+  background: rgba(0, 229, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.gate-card .gate-metric {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.gate-card .gate-threshold {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--cyan);
+  margin-top: 4px;
+}
+
+/* ── Architecture ────────────────────────────────── */
+
+.architecture {
+  padding: 100px 0;
+}
+
+.arch-diagram {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  gap: 0;
+  align-items: stretch;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.arch-layer {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  position: relative;
+}
+
+.arch-layer-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--cyan);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+
+.arch-layer-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.arch-item {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 8px 12px;
+  background: rgba(0, 229, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.arch-item:hover {
+  border-color: var(--cyan-dim);
+  color: var(--text-primary);
+  background: rgba(0, 229, 255, 0.08);
+}
+
+.arch-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+}
+
+.arch-note {
+  text-align: center;
+  margin-top: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* ── Tech Stack ──────────────────────────────────── */
+
+.tech-stack {
+  padding: 80px 0;
+}
+
+.tech-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.tech-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 10px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tech-badge:hover {
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+  background: var(--cyan-dim);
+}
+
+.tech-badge .tech-icon {
+  font-size: 1rem;
+}
+
+/* ── Quick Start ─────────────────────────────────── */
+
+.quickstart {
+  padding: 100px 0;
+}
+
+.quickstart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.quickstart-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quickstart-header .dots {
+  display: flex;
+  gap: 6px;
+}
+
+.quickstart-header .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.quickstart-header .dot:nth-child(1) { background: #ff5f57; }
+.quickstart-header .dot:nth-child(2) { background: #febc2e; }
+.quickstart-header .dot:nth-child(3) { background: #28c840; }
+
+.quickstart-header .title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.quickstart-body {
+  padding: 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 2;
+}
+
+.quickstart-body .line {
+  display: flex;
+  gap: 8px;
+}
+
+.quickstart-body .prompt {
+  color: var(--cyan);
+  user-select: none;
+}
+
+.quickstart-body .cmd {
+  color: var(--text-primary);
+}
+
+.quickstart-body .comment {
+  color: var(--text-dim);
+}
+
+.quickstart-body .output {
+  color: var(--green);
+  opacity: 0.7;
+}
+
+/* ── Footer ──────────────────────────────────────── */
+
+footer {
+  padding: 40px 0;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+footer p {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+footer a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+footer a:hover {
+  text-decoration: underline;
+}
+
+/* ── Responsive ──────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+
+  section { padding: 80px 0; }
+
+  .hero { padding-top: 60px; }
+
+  .hero-title { letter-spacing: -1px; }
+
+  .hero-actions { flex-direction: column; align-items: center; }
+
+  .btn { width: 100%; max-width: 280px; justify-content: center; }
+
+  .pipeline-track { padding: 20px 16px; }
+
+  .pipeline-connector { width: 30px; }
+
+  .node-label { font-size: 0.55rem; }
+
+  .arch-diagram {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .arch-arrow {
+    transform: rotate(90deg);
+    padding: 4px 0;
+  }
+
+  .capabilities-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .roles-stage {
+    flex-direction: column;
+  }
+
+  .stage-label {
+    writing-mode: horizontal-tb;
+    border-right: none;
+    border-bottom: 2px solid var(--border);
+    min-width: auto;
+    padding: 8px 0;
+  }
+
+  .stage-roles {
+    flex-direction: column;
+  }
+
+  .role-card {
+    min-width: auto;
+  }
+
+  .data-flow {
+    margin-left: 0;
+  }
+
+  .feedback-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feedback-full-width {
+    grid-column: 1;
+  }
+
+  .gate-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .container { padding: 0 16px; }
+
+  .cap-card { padding: 24px; }
+
+  .gate-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ── Scroll Reveal ───────────────────────────────── */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="noise"></div>
+<div class="scanlines"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- Nav -->
+<nav>
+  <div class="container">
+    <a href="#" class="nav-brand">GemStar</a>
+    <ul class="nav-links">
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#roles">Roles</a></li>
+      <li><a href="#feedback">Feedback</a></li>
+      <li><a href="#capabilities">Features</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+    </ul>
+    <a href="https://github.com/JustHappyLab/GemStar" target="_blank" class="nav-github">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero" id="hero">
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        Open Source Quant Framework
+      </div>
+      <h1 class="hero-title">GemStar</h1>
+      <p class="hero-tagline">AI 驱动的自动化量化研究框架</p>
+      <p class="hero-subtitle">
+        FSM 驱动的多 Agent 日频 Pipeline
+        <span class="arrow">→</span>
+        自动完成数据质检
+        <span class="arrow">→</span>
+        因子监控
+        <span class="arrow">→</span>
+        策略生成
+        <span class="arrow">→</span>
+        回测
+        <span class="arrow">→</span>
+        评审
+      </p>
+      <div class="hero-actions">
+        <a href="#quickstart" class="btn btn-primary">Get Started</a>
+        <a href="https://github.com/JustHappyLab/GemStar" target="_blank" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <div class="hero-terminal">
+        <div class="terminal-header">
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-title">~/GemStar</span>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">uv sync</span></div>
+          <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar init</span></div>
+          <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar run --llm</span></div>
+          <div class="terminal-line"><span class="comment">  → COLLECTING → QUALITY_CHECKING → ...</span></div>
+          <div class="terminal-line"><span class="comment">  → STRATEGY_IDEATION → BACKTESTING → ...</span></div>
+          <div class="terminal-line"><span class="output">  ✓ Pipeline completed (run_id: 20260505-001)</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pipeline -->
+<section class="pipeline-section" id="pipeline">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Pipeline</div>
+      <h2 class="section-title">14 状态自动流转</h2>
+      <p class="section-desc">每个交易日，GemStar 自动执行完整研究流程，从数据采集到最终报告</p>
+    </div>
+    <div class="pipeline-container reveal">
+      <div class="pipeline-track" id="pipeline-track">
+        <!-- Nodes and connectors generated by JS -->
+      </div>
+      <div class="pipeline-status" id="pipeline-status"></div>
+    </div>
+  </div>
+</section>
+
+<!-- Capabilities -->
+<section class="capabilities" id="capabilities">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Features</div>
+      <h2 class="section-title">核心能力</h2>
+      <p class="section-desc">从数据采集到策略评审，全自动闭环</p>
+    </div>
+    <div class="capabilities-grid">
+      <div class="cap-card reveal">
+        <div class="cap-icon">⚡</div>
+        <h3 class="cap-title">自动调度</h3>
+        <div class="cap-en">Auto Scheduling</div>
+        <p class="cap-desc">交易日感知，自动跳过非交易日。后台 daemon 运行，失败自动重试，最多 3 次。</p>
+      </div>
+      <div class="cap-card reveal">
+        <div class="cap-icon">🤖</div>
+        <h3 class="cap-title">多 Agent 协作</h3>
+        <div class="cap-en">Multi-Agent</div>
+        <p class="cap-desc">7 个专业角色分工协作，4 种 LLM 后端可切换。通过 YAML 配置即可更换 Provider。</p>
+      </div>
+      <div class="cap-card reveal">
+        <div class="cap-icon">📊</div>
+        <h3 class="cap-title">因子健康监控</h3>
+        <div class="cap-en">Factor Health</div>
+        <p class="cap-desc">基于 IC/IR 的因子健康度分析，异常自动降级，确保策略信号质量。</p>
+      </div>
+      <div class="cap-card reveal">
+        <div class="cap-icon">🔬</div>
+        <h3 class="cap-title">回测引擎</h3>
+        <div class="cap-en">Backtesting</div>
+        <p class="cap-desc">真实 A 股约束：T+1、涨跌停、滑点。与聚宽验证 NAV 差异 0.0000%。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Multi-Roles -->
+<section class="roles-section" id="roles">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Multi-Agent</div>
+      <h2 class="section-title">7 个专业角色协作</h2>
+      <p class="section-desc">每个角色专注一个领域，通过数据流串联，形成完整研究闭环</p>
+    </div>
+
+    <div class="roles-flow reveal">
+      <!-- Stage 1: Market Perception -->
+      <div class="roles-stage">
+        <div class="stage-label">感知层</div>
+        <div class="stage-roles">
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">📡</div>
+              <span class="role-name">event_scanner</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">统计检测器扫描异动：财报惊喜、成交量异常、动量突变</div>
+            <div class="role-skills">
+              <span class="role-skill">scan_events</span>
+            </div>
+          </div>
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">🌍</div>
+              <span class="role-name">macro_analyst</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">20 日市场统计 → 判断 regime：bullish / bearish / volatile / defensive</div>
+            <div class="role-skills">
+              <span class="role-skill">analyze_market</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="data-flow">
+        <div class="data-badge">SignalEvent[] + MarketRegime →</div>
+      </div>
+
+      <!-- Stage 2: Research -->
+      <div class="roles-stage">
+        <div class="stage-label">研究层</div>
+        <div class="stage-roles">
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">🔬</div>
+              <span class="role-name">research_analyst</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">综合市场信号 + 因子健康度，生成研究 ticket（假设 + 因子关联）</div>
+            <div class="role-skills">
+              <span class="role-skill">generate_tickets</span>
+            </div>
+          </div>
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">🏗️</div>
+              <span class="role-name">strategy_architect</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">从 research ticket 草拟策略 YAML，输出可验证的策略配置</div>
+            <div class="role-skills">
+              <span class="role-skill">draft_strategy</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="data-flow">
+        <div class="data-badge">ResearchTicket[] → Strategy YAML → Backtest</div>
+      </div>
+
+      <!-- Stage 3: Evaluation -->
+      <div class="roles-stage">
+        <div class="stage-label">评审层</div>
+        <div class="stage-roles">
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">⚖️</div>
+              <span class="role-name">reviewer</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">解读回测结果，生成评审意见：解释 + 风险 + 置信度（纯建议，无决策权）</div>
+            <div class="role-skills">
+              <span class="role-skill">review_verdict</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="data-flow">
+        <div class="data-badge">ReviewNotes (advisory) → Daily Report</div>
+      </div>
+
+      <!-- Stage 4: Engineering -->
+      <div class="roles-stage">
+        <div class="stage-label">工程层</div>
+        <div class="stage-roles">
+          <div class="role-card" data-provider="claude_code">
+            <div class="role-header">
+              <div class="role-icon">💻</div>
+              <span class="role-name">engineer</span>
+              <span class="role-provider cli">claude_code</span>
+              <span class="role-badge">需批准</span>
+            </div>
+            <div class="role-desc">编写或修改策略代码，操作文件系统。仅 CLI 类 provider 可用</div>
+            <div class="role-skills">
+              <span class="role-skill">write_code</span>
+              <span class="role-skill">fix_bug</span>
+            </div>
+          </div>
+          <div class="role-card" data-provider="claude_code">
+            <div class="role-header">
+              <div class="role-icon">🔧</div>
+              <span class="role-name">bugfix</span>
+              <span class="role-provider cli">claude_code</span>
+              <span class="role-badge">需批准</span>
+            </div>
+            <div class="role-desc">紧急修复：分析错误 → 定位代码 → 最小化修复 → 验证</div>
+            <div class="role-skills">
+              <span class="role-skill">fix_bug</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Feedback Loop -->
+<section class="feedback-section" id="feedback">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Feedback Loop</div>
+      <h2 class="section-title">闭环反馈机制</h2>
+      <p class="section-desc">多层反馈确保策略质量和系统自愈</p>
+    </div>
+
+    <div class="feedback-grid">
+      <!-- Iterative Strategy Loop -->
+      <div class="feedback-card reveal">
+        <div class="feedback-card-title"><span class="icon">🔄</span> 策略生成循环</div>
+        <div class="feedback-card-subtitle">Iterative Generation Loop</div>
+        <div class="loop-diagram">
+          <div class="loop-step">
+            <span class="step-num">1</span>
+            <span class="step-text"><strong>generate_tickets</strong> — 从市场上下文生成研究假设</span>
+          </div>
+          <div class="loop-arrow">↓</div>
+          <div class="loop-step">
+            <span class="step-num">2</span>
+            <span class="step-text"><strong>draft_strategy</strong> — 草拟策略 YAML</span>
+          </div>
+          <div class="loop-arrow">↓</div>
+          <div class="loop-step">
+            <span class="step-num">3</span>
+            <span class="step-text"><strong>validate</strong> + <strong>backtest</strong> — 验证并回测</span>
+          </div>
+          <div class="loop-arrow">↓</div>
+          <div class="loop-step">
+            <span class="step-num">4</span>
+            <span class="step-text"><strong>judge</strong> — 5 道硬性关卡评估</span>
+          </div>
+          <div class="loop-arrow">↓</div>
+          <div class="loop-retry">
+            <span class="retry-icon">↻</span>
+            rejected → 重新生成 tickets，循环直到收集足够 candidate
+          </div>
+        </div>
+      </div>
+
+      <!-- Incident FSM -->
+      <div class="feedback-card reveal">
+        <div class="feedback-card-title"><span class="icon">🛡️</span> 故障自愈 FSM</div>
+        <div class="feedback-card-subtitle">Incident Self-Healing — 7 States</div>
+        <div class="fsm-states">
+          <div class="fsm-state">
+            <span class="state-dot s-detected"></span>
+            <span class="state-name">DETECTED</span>
+            <span class="state-desc">异常发现</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-classified"></span>
+            <span class="state-name">CLASSIFIED</span>
+            <span class="state-desc">分类：data / LLM / backtest / quality</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-retrying"></span>
+            <span class="state-name">RETRYING</span>
+            <span class="state-desc">自动重试，失败可回到 CLASSIFIED</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-degraded"></span>
+            <span class="state-name">DEGRADED</span>
+            <span class="state-desc">降级运行，跳过 LLM 阶段</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-manual"></span>
+            <span class="state-name">MANUAL</span>
+            <span class="state-desc">需要人工介入</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-engineering"></span>
+            <span class="state-name">ENGINEERING</span>
+            <span class="state-desc">创建 bugfix 任务</span>
+          </div>
+          <div class="fsm-state">
+            <span class="state-dot s-resolved"></span>
+            <span class="state-name">RESOLVED</span>
+            <span class="state-desc">问题解决</span>
+          </div>
+        </div>
+        <div class="fsm-loop-hint">
+          <span>↻</span> RETRYING → CLASSIFIED 可循环，实现自愈
+        </div>
+      </div>
+
+      <!-- Judge Gates -->
+      <div class="feedback-card feedback-full-width reveal">
+        <div class="feedback-card-title"><span class="icon">🚦</span> 策略评审关卡</div>
+        <div class="feedback-card-subtitle">5 Hard Gates — 全部通过才能成为 candidate</div>
+        <div class="gate-cards">
+          <div class="gate-card">
+            <div class="gate-metric">Sharpe</div>
+            <div class="gate-threshold">≥ 1.0</div>
+          </div>
+          <div class="gate-card">
+            <div class="gate-metric">Calmar</div>
+            <div class="gate-threshold">≥ 0.8</div>
+          </div>
+          <div class="gate-card">
+            <div class="gate-metric">Max Drawdown</div>
+            <div class="gate-threshold">≥ -30%</div>
+          </div>
+          <div class="gate-card">
+            <div class="gate-metric">Trades</div>
+            <div class="gate-threshold">≥ 100</div>
+          </div>
+          <div class="gate-card">
+            <div class="gate-metric">Segment IR Std</div>
+            <div class="gate-threshold">≤ 0.5</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="architecture" id="architecture">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Architecture</div>
+      <h2 class="section-title">三层架构</h2>
+      <p class="section-desc">Role / Provider / Skill 解耦设计，灵活组合</p>
+    </div>
+    <div class="arch-diagram reveal">
+      <div class="arch-layer">
+        <div class="arch-layer-title">Roles</div>
+        <div class="arch-layer-items">
+          <div class="arch-item">macro_analyst</div>
+          <div class="arch-item">event_scanner</div>
+          <div class="arch-item">research_analyst</div>
+          <div class="arch-item">strategy_architect</div>
+          <div class="arch-item">reviewer</div>
+          <div class="arch-item">engineer</div>
+        </div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">Skills</div>
+        <div class="arch-layer-items">
+          <div class="arch-item">analyze_market</div>
+          <div class="arch-item">scan_events</div>
+          <div class="arch-item">generate_tickets</div>
+          <div class="arch-item">draft_strategy</div>
+          <div class="arch-item">review_verdict</div>
+          <div class="arch-item">write_code</div>
+        </div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">Providers</div>
+        <div class="arch-layer-items">
+          <div class="arch-item">api (Anthropic)</div>
+          <div class="arch-item">claude_code</div>
+          <div class="arch-item">gemini_cli</div>
+          <div class="arch-item">codex_cli</div>
+        </div>
+      </div>
+    </div>
+    <p class="arch-note">roles/*.yaml → skills/*/ → src/llm/providers/</p>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section class="tech-stack">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Tech Stack</div>
+      <h2 class="section-title">技术栈</h2>
+    </div>
+    <div class="tech-grid reveal">
+      <div class="tech-badge"><span class="tech-icon">🐍</span> Python 3.13</div>
+      <div class="tech-badge"><span class="tech-icon">🔥</span> PyTorch</div>
+      <div class="tech-badge"><span class="tech-icon">📈</span> Tushare</div>
+      <div class="tech-badge"><span class="tech-icon">🧠</span> Anthropic</div>
+      <div class="tech-badge"><span class="tech-icon">✅</span> Pydantic</div>
+      <div class="tech-badge"><span class="tech-icon">🐼</span> pandas</div>
+      <div class="tech-badge"><span class="tech-icon">🔢</span> numpy</div>
+      <div class="tech-badge"><span class="tech-icon">🤖</span> scikit-learn</div>
+    </div>
+  </div>
+</section>
+
+<!-- Quick Start -->
+<section class="quickstart" id="quickstart">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Quick Start</div>
+      <h2 class="section-title">快速开始</h2>
+      <p class="section-desc">4 条命令，从零到策略生成</p>
+    </div>
+    <div class="quickstart-card reveal">
+      <div class="quickstart-header">
+        <div class="dots">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <span class="title">Terminal</span>
+      </div>
+      <div class="quickstart-body">
+        <div class="line"><span class="prompt">$</span> <span class="cmd">git clone https://github.com/JustHappyLab/GemStar.git</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">cd GemStar</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">uv sync</span> <span class="comment"># install dependencies</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar init</span> <span class="comment"># generate config</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar run</span> <span class="comment"># run pipeline</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar start</span> <span class="comment"># start daemon</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <p>GemStar &mdash; <a href="https://github.com/JustHappyLab/GemStar" target="_blank">GitHub</a></p>
+  </div>
+</footer>
+
+<script>
+// ── Pipeline Animation ──────────────────────────────
+
+const states = [
+  'COLLECTING',
+  'QUALITY_CHECKING',
+  'FACTOR_MONITORING',
+  'STRATEGY_IDEATION',
+  'STRATEGY_VALIDATION',
+  'BACKTESTING',
+  'JUDGING',
+  'LEADERBOARD',
+  'REPORTING',
+  'COMPLETED'
+];
+
+const stateLabels = [
+  '数据采集',
+  '质量检查',
+  '因子监控',
+  '策略构思',
+  '策略验证',
+  '回测',
+  '评审',
+  '排行榜',
+  '报告',
+  '完成'
+];
+
+const track = document.getElementById('pipeline-track');
+const statusEl = document.getElementById('pipeline-status');
+
+// Build pipeline DOM
+states.forEach((state, i) => {
+  const node = document.createElement('div');
+  node.className = 'pipeline-node';
+  node.dataset.index = i;
+  node.innerHTML = `
+    <div class="node-dot"></div>
+    <div class="node-label">${stateLabels[i]}</div>
+  `;
+  track.appendChild(node);
+
+  if (i < states.length - 1) {
+    const conn = document.createElement('div');
+    conn.className = 'pipeline-connector';
+    conn.dataset.index = i;
+    track.appendChild(conn);
+  }
+});
+
+let currentStep = 0;
+let animating = false;
+
+function animatePipeline() {
+  if (animating) return;
+  animating = true;
+  currentStep = 0;
+
+  // Reset all
+  document.querySelectorAll('.pipeline-node').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.pipeline-connector').forEach(c => c.classList.remove('filled'));
+
+  function step() {
+    if (currentStep >= states.length) {
+      statusEl.innerHTML = `<span class="state-name">COMPLETED</span> — Pipeline finished successfully`;
+      animating = false;
+      // Restart after delay
+      setTimeout(animatePipeline, 4000);
+      return;
+    }
+
+    const nodes = document.querySelectorAll('.pipeline-node');
+    const connectors = document.querySelectorAll('.pipeline-connector');
+
+    nodes[currentStep].classList.add('active');
+
+    if (currentStep > 0) {
+      connectors[currentStep - 1].classList.add('filled');
+    }
+
+    statusEl.innerHTML = `Processing <span class="state-name">${states[currentStep]}</span> — ${stateLabels[currentStep]}`;
+    currentStep++;
+    setTimeout(step, 800);
+  }
+
+  step();
+}
+
+// Start animation when pipeline section is visible
+const pipelineObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting && !animating) {
+      setTimeout(animatePipeline, 500);
+    }
+  });
+}, { threshold: 0.3 });
+
+pipelineObserver.observe(document.getElementById('pipeline'));
+
+// ── Scroll Reveal ───────────────────────────────────
+
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+// ── Nav Scroll Effect ───────────────────────────────
+
+let lastScroll = 0;
+window.addEventListener('scroll', () => {
+  const nav = document.querySelector('nav');
+  const scrollY = window.scrollY;
+
+  if (scrollY > 100) {
+    nav.style.borderBottomColor = 'var(--cyan-dim)';
+  } else {
+    nav.style.borderBottomColor = 'var(--border)';
+  }
+
+  lastScroll = scrollY;
+}, { passive: true });
+
+// ── Smooth scroll for anchor links ──────────────────
+
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+  anchor.addEventListener('click', function(e) {
+    e.preventDefault();
+    const target = document.querySelector(this.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+</script>
+
+</body>
+</html>
