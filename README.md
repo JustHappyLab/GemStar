@@ -1,6 +1,6 @@
 # GemStar
 
-ChiNext (GEM) 创业板自动化量化研究平台。FSM 驱动的多 Agent 日频 Pipeline，自动完成数据质检 → 因子监控 → 策略生成 → 回测 → 评审。
+AI 驱动的自动化量化研究框架。FSM 驱动的多 Agent 日频 Pipeline，自动完成数据质检 → 因子监控 → 策略生成 → 回测 → 评审。
 
 ---
 

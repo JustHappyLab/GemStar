@@ -16,7 +16,7 @@ def get_output_format() -> OutputFormat:
 
 app = typer.Typer(
     name="gemstar",
-    help="GemStar — ChiNext automated quantitative research platform.",
+    help="GemStar — AI-driven automated quantitative research framework.",
     no_args_is_help=True,
 )
 
