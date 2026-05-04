@@ -39,6 +39,7 @@ schedule: "收盘后"
 pool_path: factors/pool.json        # 因子池
 db_path: state.db                   # 状态数据库
 artifacts_dir: artifacts            # 产物目录
+log_path: logs/gemstar.log          # daemon 日志路径
 
 # ─── LLM 配置 ─────────────────────────────────────────────
 # 控制 pipeline 是否启用 LLM 策略生成阶段
@@ -137,6 +138,7 @@ class GemStarConfig(BaseModel):
     db_path: str = "state.db"
     artifacts_dir: str = "artifacts"
     data_cache_dir: str = "data/raw"
+    log_path: str = "logs/gemstar.log"
     llm: LLMConfig = Field(default_factory=LLMConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     strategy_generation: StrategyGenConfig = Field(default_factory=StrategyGenConfig)

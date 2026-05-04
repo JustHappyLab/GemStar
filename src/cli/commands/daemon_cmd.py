@@ -1,13 +1,15 @@
-"""gemstar daemon — built-in scheduler for automated daily pipeline runs."""
+"""gemstar start/stop/status/restart — background scheduler management."""
 
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import subprocess
 import sys
 import threading
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import typer
 
@@ -18,22 +20,179 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY = 600  # 10 minutes
+_PID_FILE = Path(".gemstar.pid")
 
 
-def daemon_cmd(
+# ── CLI commands ────────────────────────────────────────────────
+
+
+def start_cmd(
     foreground: bool = typer.Option(False, "--foreground", "-f", help="Run in foreground (no detach)."),
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
-    """Start the scheduler daemon for automated daily pipeline runs."""
-    from src.cli.config import find_config
+    """Start the scheduler daemon in the background."""
+    config = _load_and_validate(config_path)
+
+    if _is_running():
+        console.print("[yellow]Daemon is already running.[/yellow]")
+        console.print("Use [cyan]gemstar restart[/cyan] to restart, or [cyan]gemstar stop[/cyan] to stop.")
+        raise typer.Exit(1)
+
+    log_path = Path(config.log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if foreground:
+        _print_summary(config)
+        _setup_logging(log_path)
+        _run_daemon(config)
+    else:
+        pid = _daemonize(log_path)
+        _write_pid(pid)
+        console.print("[green]Daemon started.[/green]")
+        console.print(f"  PID:  {pid}")
+        console.print(f"  Log:  {log_path}")
+        console.print(f"  Fetch: {config.schedule.fetch}  Run: {config.schedule.run}")
+        console.print()
+        console.print("[dim]Manage with: gemstar status | stop | restart[/dim]")
+
+
+def stop_cmd() -> None:
+    """Stop the scheduler daemon."""
+    pid = _read_pid()
+    if pid is None:
+        console.print("[yellow]Daemon is not running.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"Stopping daemon (PID {pid})...")
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        console.print("[yellow]Process not found, cleaning up stale PID file.[/yellow]")
+        _remove_pid()
+        raise typer.Exit(0)
+    except PermissionError:
+        console.print("[red]Permission denied. Try running with sudo.[/red]")
+        raise typer.Exit(1)
+
+    # Wait up to 5 seconds for graceful shutdown
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        import time
+        time.sleep(0.1)
+    else:
+        console.print("[yellow]Process did not exit, sending SIGKILL...[/yellow]")
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    _remove_pid()
+    console.print("[green]Daemon stopped.[/green]")
+
+
+def daemon_status_cmd() -> None:
+    """Show daemon status."""
+    pid = _read_pid()
+    if pid is None:
+        console.print("[dim]Daemon is not running.[/dim]")
+        raise typer.Exit(0)
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        console.print("[yellow]Stale PID file (process {pid} not found).[/yellow]")
+        _remove_pid()
+        raise typer.Exit(0)
 
     config = load_config()
+    try:
+        uptime_s = datetime.now().timestamp() - os.path.getmtime(_PID_FILE)
+        uptime = _format_duration(uptime_s)
+    except OSError:
+        uptime = "?"
 
+    console.print(f"[green]Daemon is running.[/green]")
+    console.print(f"  PID:     {pid}")
+    console.print(f"  Uptime:  {uptime}")
+    if config.schedule:
+        console.print(f"  Fetch:   {config.schedule.fetch}")
+        console.print(f"  Run:     {config.schedule.run}")
+    console.print(f"  Log:     {config.log_path}")
+
+
+def restart_cmd(
+    foreground: bool = typer.Option(False, "--foreground", "-f", help="Run in foreground (no detach)."),
+    config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
+) -> None:
+    """Restart the scheduler daemon."""
+    pid = _read_pid()
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+            console.print("Stopping current daemon...")
+            stop_cmd()
+        except ProcessLookupError:
+            _remove_pid()
+
+    start_cmd(foreground=foreground, config_path=config_path)
+
+
+# ── Helper functions ────────────────────────────────────────────
+
+
+def _load_and_validate(config_path: str | None) -> "GemStarConfig":
+    path = Path(config_path) if config_path else None
+    config = load_config(path)
     if config.schedule is None:
         console.print("[red]No schedule configured in gemstar.yaml.[/red]")
         console.print('Set schedule: "收盘后" or schedule: "16:00" in your config.')
         raise typer.Exit(1)
+    return config
 
+
+def _is_running() -> bool:
+    pid = _read_pid()
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        _remove_pid()
+        return False
+
+
+def _read_pid() -> int | None:
+    try:
+        return int(_PID_FILE.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _write_pid(pid: int) -> None:
+    _PID_FILE.write_text(str(pid))
+
+
+def _remove_pid() -> None:
+    try:
+        _PID_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _setup_logging(log_path: Path) -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s %(name)s %(levelname)s  %(message)s")
+    fh = logging.FileHandler(str(log_path))
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+
+
+def _print_summary(config) -> None:
     console.print(f"[cyan]GemStar daemon[/cyan]")
     console.print(f"  Fetch: {config.schedule.fetch}")
     console.print(f"  Run:   {config.schedule.run}")
@@ -41,22 +200,60 @@ def daemon_cmd(
     console.print(f"  Auto-fetch: {'on' if config.data.auto_fetch else 'off'}")
     console.print()
 
+
+def _daemonize(log_path: Path) -> int:
+    """Double-fork to detach into background. Returns child PID."""
+    # First fork
+    pid = os.fork()
+    if pid > 0:
+        return pid  # parent returns child PID
+
+    # Child — become session leader
+    os.setsid()
+
+    # Second fork — prevent re-acquiring a terminal
+    pid = os.fork()
+    if pid > 0:
+        os._exit(0)  # first child exits
+
+    # Grandchild — redirect stdio to log file
+    fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(fd, sys.stdout.fileno())
+    os.dup2(fd, sys.stderr.fileno())
+    os.close(fd)
+
+    # Run the daemon loop
+    try:
+        config = _load_and_validate(None)
+        _run_daemon(config)
+    except Exception:
+        logger.exception("Daemon crashed")
+    finally:
+        _remove_pid()
+        os._exit(0)
+
+
+def _run_daemon(config) -> None:
     stop_event = threading.Event()
 
     def _handle_signal(signum, frame):
-        console.print("\n[yellow]Shutting down gracefully...[/yellow]")
+        logger.info("Received signal %d, shutting down...", signum)
         stop_event.set()
 
-    signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
+    logger.info("Daemon started (fetch=%s, run=%s)", config.schedule.fetch, config.schedule.run)
     _run_loop(config, stop_event)
+    logger.info("Daemon stopped")
+
+
+# ── Core loop (mostly unchanged) ───────────────────────────────
 
 
 def _run_loop(config, stop_event: threading.Event) -> None:
     """Main daemon loop."""
     schedule = config.schedule
-    today_str = date.today().strftime("%Y%m%d")
 
     while not stop_event.is_set():
         today = date.today()
@@ -74,48 +271,46 @@ def _run_loop(config, stop_event: threading.Event) -> None:
 
         status = last_run_status(config.db_path, today_str)
         if status == "completed":
-            console.print(f"[dim]{today_str} already completed, skipping[/dim]")
+            logger.info("%s already completed, skipping", today_str)
             _sleep_until_tomorrow(stop_event)
             if stop_event.is_set():
                 break
             continue
 
         # Wait for fetch time
-        console.print(f"[dim]Waiting until {schedule.fetch} to fetch data...[/dim]")
+        logger.info("Waiting until %s to fetch data...", schedule.fetch)
         if not _wait_or_stop(schedule.fetch, stop_event):
             break
 
         # Fetch data
         if config.data.auto_fetch:
-            console.print(f"[cyan]{_now_str()} Fetching data...[/cyan]")
+            logger.info("Fetching data...")
             ok = _run_subcommand("fetch", config, stop_event)
             if not ok:
-                console.print("[yellow]Fetch failed, will retry with pipeline[/yellow]")
+                logger.warning("Fetch failed, will retry with pipeline")
 
         # Wait for run time
         if schedule.run != schedule.fetch:
-            console.print(f"[dim]Waiting until {schedule.run} to run pipeline...[/dim]")
+            logger.info("Waiting until %s to run pipeline...", schedule.run)
             if not _wait_or_stop(schedule.run, stop_event):
                 break
 
         # Run pipeline with retries
         for attempt in range(1, _MAX_RETRIES + 1):
-            console.print(f"[cyan]{_now_str()} Running pipeline (attempt {attempt}/{_MAX_RETRIES})...[/cyan]")
+            logger.info("Running pipeline (attempt %d/%d)...", attempt, _MAX_RETRIES)
             ok = _run_subcommand("run", config, stop_event, llm=config.llm.available)
             if ok:
-                console.print(f"[green]{_now_str()} Pipeline completed[/green]")
+                logger.info("Pipeline completed")
                 break
             if attempt < _MAX_RETRIES:
-                console.print(f"[yellow]Pipeline failed, retrying in {_RETRY_DELAY // 60}min...[/yellow]")
+                logger.warning("Pipeline failed, retrying in %dmin...", _RETRY_DELAY // 60)
                 if not _wait_seconds(_RETRY_DELAY, stop_event):
                     break
         else:
-            console.print(f"[red]{_now_str()} Pipeline failed after {_MAX_RETRIES} attempts[/red]")
+            logger.error("Pipeline failed after %d attempts", _MAX_RETRIES)
 
         # Sleep until tomorrow
         _sleep_until_tomorrow(stop_event)
-
-    console.print("[dim]Daemon stopped[/dim]")
 
 
 def _is_trading_day_cached(date_str: str, config, stop_event: threading.Event) -> bool:
@@ -124,7 +319,6 @@ def _is_trading_day_cached(date_str: str, config, stop_event: threading.Event) -
         from src.data.fetcher import init_tushare, fetch_trade_calendar
 
         pro = init_tushare(config.tushare_token or None)
-        # Fetch a small window around today
         d = datetime.strptime(date_str, "%Y%m%d").date()
         start = (d - timedelta(days=7)).strftime("%Y%m%d")
         end = (d + timedelta(days=7)).strftime("%Y%m%d")
@@ -135,7 +329,6 @@ def _is_trading_day_cached(date_str: str, config, stop_event: threading.Event) -
         return is_trading_day(date_str, cal)
     except Exception as e:
         logger.warning("Trade calendar check failed: %s — assuming trading day", e)
-        # Fallback: assume weekdays are trading days
         d = datetime.strptime(date_str, "%Y%m%d").date()
         return d.weekday() < 5
 
@@ -154,31 +347,25 @@ def _run_subcommand(
     try:
         result = subprocess.run(
             cmd,
-            timeout=3600,  # 1 hour max per subcommand
+            timeout=3600,
             cwd=None,
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
-        console.print(f"[red]{subcmd} timed out after 1 hour[/red]")
+        logger.error("%s timed out after 1 hour", subcmd)
         return False
     except Exception as e:
-        console.print(f"[red]{subcmd} error: {e}[/red]")
+        logger.error("%s error: %s", subcmd, e)
         return False
 
 
 def _wait_or_stop(target_time: str, stop_event: threading.Event) -> bool:
     """Wait until target_time. Returns True if time reached, False if stopped."""
     from src.orchestrator.scheduler import wait_until
-
     return wait_until(target_time, stop_event=stop_event)
 
 
 def _wait_seconds(seconds: int, stop_event: threading.Event) -> bool:
-    """Wait for a number of seconds. Returns True if time reached, False if stopped."""
-    return _wait_seconds_impl(seconds, stop_event)
-
-
-def _wait_seconds_impl(seconds: int, stop_event: threading.Event) -> bool:
     end = datetime.now() + timedelta(seconds=seconds)
     while True:
         remaining = (end - datetime.now()).total_seconds()
@@ -197,9 +384,16 @@ def _sleep_until_tomorrow(stop_event: threading.Event) -> None:
     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=30, microsecond=0)
     seconds = (tomorrow - now).total_seconds()
     if seconds > 0:
-        console.print(f"[dim]Sleeping until {tomorrow.strftime('%Y-%m-%d %H:%M')}...[/dim]")
-        _wait_seconds_impl(seconds, stop_event)
+        logger.info("Sleeping until %s...", tomorrow.strftime("%Y-%m-%d %H:%M"))
+        _wait_seconds(seconds, stop_event)
 
 
-def _now_str() -> str:
-    return datetime.now().strftime("%H:%M:%S")
+def _format_duration(seconds: float) -> str:
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m {s % 60}s"
+    h = s // 3600
+    m = (s % 3600) // 60
+    return f"{h}h {m}m"
