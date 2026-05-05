@@ -19,6 +19,9 @@ state.db
 logs/
 artifacts/
 
+# Promotional materials (not for GitHub)
+promote/
+
 # Build / packaging
 *.egg-info/
 dist/
