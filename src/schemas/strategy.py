@@ -17,6 +17,21 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+UniverseName = Literal[
+    "auto",
+    "a_share",
+    "a_share_core",
+    "a_share_liquid",
+    "chinext",
+    "chinext_core",
+    "star",
+    "star_core",
+    "main_board",
+    "main_board_core",
+    "all",
+]
+
+
 class FactorWeightV1(BaseModel):
     factor_id: str
     weight: float = Field(ge=0.0, le=1.0)
@@ -47,7 +62,8 @@ class StrategyConfigV1(BaseModel):
     name: str
     hypothesis: str = ""
     source_idea: str = ""
-    universe: Literal["chinext", "all"] = "chinext"
+    universe: UniverseName = "auto"
+    universe_rationale: str = ""
     timer: TimerConfigV1 = Field(default_factory=TimerConfigV1)
     factors: list[FactorWeightV1] = Field(default_factory=list)
     top_n: int = Field(default=5, ge=1, le=50)

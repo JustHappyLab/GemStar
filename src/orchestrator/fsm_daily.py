@@ -55,7 +55,11 @@ _ALLOWED_TRANSITIONS: dict[str, list[str]] = {
     # terminal
     DailyState.COMPLETED: [],
     DailyState.FAILED: [],
-    DailyState.DEGRADED: [DailyState.REPORTING],  # degraded can still report
+    DailyState.DEGRADED: [
+        DailyState.FACTOR_MONITORING,
+        DailyState.REPORTING,
+        DailyState.FAILED,
+    ],  # degraded can continue the normal pipeline or report early
     DailyState.MANUAL_ATTENTION: [],
 }
 

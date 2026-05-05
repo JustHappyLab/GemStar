@@ -58,8 +58,8 @@ def _compute_user_prompt(
         f"波动率: {volatility:.2%}\n"
         f"上涨比例: {breadth:.1%}\n"
         f"成交量趋势(近5日/前15日): {volume_trend:+.1%}\n"
-        f"创业板指20日收益: {idx_ret_20d:+.2%}\n"
-        f"创业板指波动率: {idx_volatility:.2%}\n"
+        f"基准指数20日收益: {idx_ret_20d:+.2%}\n"
+        f"基准指数波动率: {idx_volatility:.2%}\n"
     )
 
 
@@ -74,7 +74,7 @@ def analyze_market_regime(
     Args:
         daily_df: Daily stock data with columns ts_code, trade_date, close,
             pre_close, vol.  Must cover at least 20 trading days.
-        index_df: ChiNext index daily data with columns trade_date, close.
+        index_df: Benchmark index daily data with columns trade_date, close.
         reference_date: Date string in YYYYMMDD format.
         llm_client: LLM client for generating the regime assessment.
 

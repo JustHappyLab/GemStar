@@ -30,6 +30,8 @@ class DailyReportV1(BaseModel):
     run_id: str = ""
     market_summary: str = ""
     leaderboard: list[ReportStrategyEntry] = Field(default_factory=list)
+    universe_notes: list[str] = Field(default_factory=list)
+    benchmark_notes: list[str] = Field(default_factory=list)
     holdings_signal: list[str] = Field(default_factory=list)
     signals_summary: list[str] = Field(default_factory=list)
     factor_notes: list[str] = Field(default_factory=list)

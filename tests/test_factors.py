@@ -24,6 +24,7 @@ def _make_data():
         {
             'ts_code': '000001.SZ',
             'ann_date': dates[0],
+            'disclosure_date': dates[0],
             'end_date': dates[0] - pd.Timedelta(days=90),
             'roe': 12.0,
             'revenue_yoy': 10.0,
@@ -32,6 +33,7 @@ def _make_data():
         {
             'ts_code': '000002.SZ',
             'ann_date': dates[0],
+            'disclosure_date': dates[0],
             'end_date': dates[0] - pd.Timedelta(days=90),
             'roe': 15.0,
             'revenue_yoy': 20.0,
@@ -109,6 +111,15 @@ def test_compute_all_factors_keeps_same_day_fundamentals_available():
     first_row = result[result["trade_date"] == daily["trade_date"].min().strftime("%Y%m%d")].iloc[0]
 
     assert pd.notna(first_row["roe"])
+
+
+def test_compute_all_factors_does_not_fallback_to_ann_date_without_disclosure_date():
+    daily, index_daily, fina = _make_data()
+    fina = fina.drop(columns=["disclosure_date"])
+
+    result = compute_all_factors(daily, index_daily, fina)
+
+    assert result["roe"].isna().all()
 
 
 def test_compute_all_factors_uses_disclosure_date_for_fundamentals():

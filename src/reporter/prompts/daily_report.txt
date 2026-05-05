@@ -6,6 +6,14 @@
 
 {market_summary}
 
+## Universe
+
+{universe_notes}
+
+## Benchmark
+
+{benchmark_notes}
+
 ## Leaderboard
 
 {leaderboard}

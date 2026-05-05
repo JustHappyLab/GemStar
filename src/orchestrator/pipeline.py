@@ -34,9 +34,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.data.cleaner import apply_adjusted_prices
 from src.data_quality.gate import run_data_quality_gate
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
+from src.orchestrator.benchmark import describe_benchmark_resolution
 from src.llm.adapter import RoleLLMAdapter
 from src.orchestrator.artifact_store import write_artifact
 from src.reviewer.analysis import review_verdict
@@ -53,6 +55,7 @@ from src.schemas.strategy import StrategyConfigV1
 from src.schemas.verdict import VerdictV1
 from src.orchestrator.rankings import build_rankings
 from src.orchestrator.signals import build_signals
+from src.orchestrator.universe import UniverseResolution, describe_resolution, resolve_strategy_universe
 from src.strategies.architect import draft_strategy
 from src.strategies.runner import run_strategy_from_yaml
 from src.strategies.validator import validate_strategy
@@ -67,6 +70,7 @@ def run_daily_pipeline(
     pool_path: Path,
     reference_date: str,
     benchmark_nav: pd.Series,
+    benchmark_info: dict | None = None,
     ic_df: pd.DataFrame | None = None,
     signals: pd.DataFrame | None = None,
     rankings: dict[str, list[str]] | None = None,
@@ -146,6 +150,8 @@ def run_daily_pipeline(
         "incident": None,
         "backtest_results": [],
         "verdicts": [],
+        "universe_resolutions": [],
+        "benchmark_resolution": benchmark_info,
         "report": None,
         "markdown": "",
     }
@@ -160,7 +166,16 @@ def run_daily_pipeline(
         write_artifact(run_id, "data_manifest", {
             "tables": list(data.keys()),
             "reference_date": reference_date,
+            "benchmark": benchmark_info,
         }, base_dir=artifacts_dir, step_id="collecting")
+        if benchmark_info:
+            write_artifact(
+                run_id,
+                "benchmark_resolution",
+                benchmark_info,
+                base_dir=artifacts_dir,
+                step_id="collecting",
+            )
 
         # --- QUALITY_CHECKING ---
         fsm.transition("quality_checking")
@@ -192,7 +207,12 @@ def run_daily_pipeline(
 
         # --- STRATEGY_IDEATION ---
         fsm.transition("strategy_ideation")
-        daily_df = data.get("daily", pd.DataFrame())
+        daily_df = apply_adjusted_prices(
+            data.get("daily", pd.DataFrame()),
+            data.get("adj_factor"),
+        )
+        data = dict(data)
+        data["daily"] = daily_df
         regime = None
         events = []
         tickets = []
@@ -231,6 +251,8 @@ def run_daily_pipeline(
 
         backtest_results: list[BacktestResultV1] = []
         verdicts: list[VerdictV1] = []
+        universe_resolutions: list[dict] = []
+        universe_notes: list[str] = []
         collected_candidates: list[tuple[Path, BacktestResultV1, VerdictV1]] = []
         can_backtest = signals is not None and rankings is not None
         can_auto_backtest = auto_build_strategy_inputs and index_df is not None and "trade_cal" in data
@@ -242,7 +264,7 @@ def run_daily_pipeline(
             write_artifact(run_id, f"validation_{strat_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
             if verdict_v.recommended_state == "rejected":
                 continue
-            strat_signals, strat_rankings = _strategy_inputs(
+            strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
                 strat_path=strat_path,
                 data=data,
                 daily_df=daily_df,
@@ -251,6 +273,14 @@ def run_daily_pipeline(
                 explicit_signals=signals,
                 explicit_rankings=rankings,
                 auto_build=auto_build_strategy_inputs,
+            )
+            _record_universe_resolution(
+                run_id,
+                strat_path.stem,
+                universe_resolution,
+                universe_resolutions,
+                universe_notes,
+                artifacts_dir,
             )
             if strat_signals is not None and strat_rankings is not None:
                 bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
@@ -291,7 +321,7 @@ def run_daily_pipeline(
                             continue
 
                         # Backtest
-                        strat_signals, strat_rankings = _strategy_inputs(
+                        strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
                             strat_path=draft_path,
                             data=data,
                             daily_df=daily_df,
@@ -300,6 +330,14 @@ def run_daily_pipeline(
                             explicit_signals=signals,
                             explicit_rankings=rankings,
                             auto_build=auto_build_strategy_inputs,
+                        )
+                        _record_universe_resolution(
+                            run_id,
+                            draft_path.stem,
+                            universe_resolution,
+                            universe_resolutions,
+                            universe_notes,
+                            artifacts_dir,
                         )
                         if strat_signals is None or strat_rankings is None:
                             continue
@@ -332,6 +370,7 @@ def run_daily_pipeline(
 
         result["backtest_results"] = backtest_results
         result["verdicts"] = verdicts
+        result["universe_resolutions"] = universe_resolutions
 
         # --- FSM transitions for validation/backtest/judging phases ---
         fsm.transition("strategy_validation")
@@ -367,6 +406,8 @@ def run_daily_pipeline(
             leaderboard=leaderboard,
             verdicts=verdicts,
             factor_health=factor_health,
+            universe_notes=universe_notes,
+            benchmark_notes=[describe_benchmark_resolution(benchmark_info)] if benchmark_info else [],
         )
         result["report"] = report
         result["markdown"] = markdown
@@ -424,6 +465,30 @@ def _build_leaderboard(
     return entries
 
 
+def _record_universe_resolution(
+    run_id: str,
+    strategy_id: str,
+    resolution: UniverseResolution | None,
+    resolutions: list[dict],
+    notes: list[str],
+    artifacts_dir: str,
+) -> None:
+    if resolution is None:
+        return
+    payload = {"strategy_id": strategy_id, **resolution.model_dump()}
+    if payload in resolutions:
+        return
+    resolutions.append(payload)
+    notes.append(describe_resolution(strategy_id, resolution))
+    write_artifact(
+        run_id,
+        f"universe_{strategy_id}",
+        payload,
+        base_dir=artifacts_dir,
+        step_id="strategy_validation",
+    )
+
+
 def _strategy_inputs(
     *,
     strat_path: Path,
@@ -434,22 +499,23 @@ def _strategy_inputs(
     explicit_signals: pd.DataFrame | None,
     explicit_rankings: dict[str, list[str]] | None,
     auto_build: bool,
-) -> tuple[pd.DataFrame | None, dict[str, list[str]] | None]:
+) -> tuple[pd.DataFrame | None, dict[str, list[str]] | None, UniverseResolution | None]:
     """Resolve signals/rankings for one strategy."""
-    if not auto_build:
-        return explicit_signals, explicit_rankings
-
-    if index_df is None or daily_df.empty:
-        return explicit_signals, explicit_rankings
-
     try:
         config = StrategyConfigV1.from_yaml(strat_path)
+        resolution = resolve_strategy_universe(config)
     except Exception:
-        return explicit_signals, explicit_rankings
+        return explicit_signals, explicit_rankings, None
+
+    if not auto_build:
+        return explicit_signals, explicit_rankings, resolution
+
+    if index_df is None or daily_df.empty:
+        return explicit_signals, explicit_rankings, resolution
 
     trade_dates = _strategy_trade_dates(data, daily_df, config.backtest.start, config.backtest.end, reference_date)
     if not trade_dates:
-        return explicit_signals, explicit_rankings
+        return explicit_signals, explicit_rankings, resolution
 
     fina_df = data.get("fina_indicator")
     if fina_df is None:
@@ -463,8 +529,10 @@ def _strategy_inputs(
         factors=config.factors,
         top_n=config.top_n,
         trade_dates=trade_dates,
+        universe=resolution,
+        stock_basic=data.get("stock_basic"),
     )
-    return signals, rankings
+    return signals, rankings, resolution
 
 
 def _strategy_trade_dates(

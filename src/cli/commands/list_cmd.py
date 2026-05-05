@@ -51,7 +51,7 @@ def strategies_cmd() -> None:
                 data = yaml.safe_load(config_file.read_text()) or {}
                 entries.append({
                     "name": data.get("name", d.name),
-                    "universe": data.get("universe", "chinext"),
+                    "universe": data.get("universe", "auto"),
                     "timer": data.get("timer", {}).get("mode", "?"),
                     "factors": len(data.get("factors", [])),
                     "top_n": data.get("top_n", 5),

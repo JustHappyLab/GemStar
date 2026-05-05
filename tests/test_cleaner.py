@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
+import pytest
 from src.data.cleaner import (
+    apply_adjusted_prices,
     fill_missing_cross_section,
     filter_active_stocks,
     filter_new_stocks,
@@ -58,3 +60,28 @@ class TestFillMissing:
         assert result["x"].iloc[2] == 2.0  # median of 1,2,4
         assert result["y"].iloc[1] == 30.0  # median of 10,30,40
         assert not result[["x", "y"]].isna().any().any()
+
+
+class TestAdjustedPrices:
+    def test_preserves_continuity_and_volume(self):
+        daily = pd.DataFrame({
+            "ts_code": ["300001.SZ", "300001.SZ"],
+            "trade_date": ["20240101", "20240102"],
+            "open": [20.0, 10.0],
+            "high": [20.0, 10.0],
+            "low": [20.0, 10.0],
+            "close": [20.0, 10.0],
+            "pre_close": [20.0, 10.0],
+            "vol": [1000, 1000],
+        })
+        adj = pd.DataFrame({
+            "ts_code": ["300001.SZ", "300001.SZ"],
+            "trade_date": ["20240101", "20240102"],
+            "adj_factor": [0.5, 1.0],
+        })
+
+        result = apply_adjusted_prices(daily, adj)
+
+        assert result.loc[0, "close"] == pytest.approx(10.0)
+        assert result.loc[1, "close"] == pytest.approx(10.0)
+        assert result["vol"].tolist() == [1000, 1000]

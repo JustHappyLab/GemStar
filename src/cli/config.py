@@ -21,7 +21,7 @@ _DEFAULT_TEMPLATE = """\
 
 # ─── 数据源 ───────────────────────────────────────────────
 tushare_token: ${TUSHARE_TOKEN}     # Tushare Pro API token（必需）
-benchmark: 399006.SZ                # 基准指数（创业板指）
+benchmark: auto                     # 基准指数，auto 会按策略 universe 自动选择
 data_cache_dir: data/raw            # 数据缓存目录（Parquet）
 
 # ─── 数据拉取 ─────────────────────────────────────────────
@@ -133,7 +133,7 @@ def parse_schedule(value: str | dict | None) -> ScheduleConfig | None:
 
 class GemStarConfig(BaseModel):
     tushare_token: str = ""
-    benchmark: str = "399006.SZ"
+    benchmark: str = "auto"
     pool_path: str = "factors/pool.json"
     db_path: str = "state.db"
     artifacts_dir: str = "artifacts"

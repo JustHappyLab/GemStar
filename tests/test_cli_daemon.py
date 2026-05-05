@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -76,3 +77,35 @@ def test_root_start_alias_still_supported(tmp_path, monkeypatch):
     result = runner.invoke(app, ["start"])
     assert result.exit_code == 1
     assert "schedule" in result.output.lower()
+
+
+def test_run_subcommand_forwards_config_path(monkeypatch, tmp_path):
+    """Scheduler subprocesses must use the same custom config as the parent."""
+    from src.cli.commands import daemon_cmd
+
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(daemon_cmd.subprocess, "run", fake_run)
+
+    ok = daemon_cmd._run_subcommand(
+        "run",
+        config=SimpleNamespace(llm=SimpleNamespace(available=True)),
+        stop_event=None,
+        llm=True,
+        config_path=str(tmp_path / "custom.yaml"),
+    )
+
+    assert ok is True
+    assert captured["cmd"] == [
+        daemon_cmd.sys.executable,
+        "-m",
+        "src.cli.app",
+        "run",
+        "--config",
+        str(tmp_path / "custom.yaml"),
+        "--llm",
+    ]

@@ -31,6 +31,7 @@ def start_cmd(
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
     """Start the daily pipeline scheduler."""
+    resolved_config_path = str(Path(config_path).resolve()) if config_path else None
     config = _load_and_validate(config_path)
 
     if _is_running():
@@ -44,9 +45,9 @@ def start_cmd(
     if foreground:
         _print_summary(config)
         _setup_logging(log_path)
-        _run_daemon(config)
+        _run_daemon(config, config_path=resolved_config_path)
     else:
-        pid = _daemonize(log_path)
+        pid = _daemonize(log_path, config_path=resolved_config_path)
         console.print("[green]Scheduler started.[/green]")
         console.print(f"  PID:  {pid}")
         console.print(f"  Log:  {log_path}")
@@ -200,7 +201,7 @@ def _print_summary(config) -> None:
     console.print()
 
 
-def _daemonize(log_path: Path) -> int:
+def _daemonize(log_path: Path, config_path: str | None = None) -> int:
     """Double-fork to detach into background. Returns grandchild PID via PID file."""
     # First fork
     pid = os.fork()
@@ -236,8 +237,8 @@ def _daemonize(log_path: Path) -> int:
 
     # Run the daemon loop
     try:
-        config = _load_and_validate(None)
-        _run_daemon(config)
+        config = _load_and_validate(config_path)
+        _run_daemon(config, config_path=config_path)
     except Exception:
         logger.exception("Daemon crashed")
     finally:
@@ -245,7 +246,7 @@ def _daemonize(log_path: Path) -> int:
         os._exit(0)
 
 
-def _run_daemon(config) -> None:
+def _run_daemon(config, config_path: str | None = None) -> None:
     stop_event = threading.Event()
 
     def _handle_signal(signum, frame):
@@ -256,14 +257,14 @@ def _run_daemon(config) -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info("Daemon started (fetch=%s, run=%s)", config.schedule.fetch, config.schedule.run)
-    _run_loop(config, stop_event)
+    _run_loop(config, stop_event, config_path=config_path)
     logger.info("Daemon stopped")
 
 
 # ── Core loop (mostly unchanged) ───────────────────────────────
 
 
-def _run_loop(config, stop_event: threading.Event) -> None:
+def _run_loop(config, stop_event: threading.Event, config_path: str | None = None) -> None:
     """Main daemon loop."""
     schedule = config.schedule
 
@@ -299,7 +300,7 @@ def _run_loop(config, stop_event: threading.Event) -> None:
         # Fetch data
         if config.data.auto_fetch:
             logger.info("Fetching data...")
-            ok = _run_subcommand("fetch", config, stop_event)
+            ok = _run_subcommand("fetch", config, stop_event, config_path=config_path)
             if not ok:
                 logger.warning("Fetch failed, will retry with pipeline")
 
@@ -312,7 +313,7 @@ def _run_loop(config, stop_event: threading.Event) -> None:
         # Run pipeline with retries
         for attempt in range(1, _MAX_RETRIES + 1):
             logger.info("Running pipeline (attempt %d/%d)...", attempt, _MAX_RETRIES)
-            ok = _run_subcommand("run", config, stop_event, llm=config.llm.available)
+            ok = _run_subcommand("run", config, stop_event, llm=config.llm.available, config_path=config_path)
             if ok:
                 logger.info("Pipeline completed")
                 break
@@ -356,9 +357,12 @@ def _run_subcommand(
     config,
     stop_event: threading.Event,
     llm: bool = False,
+    config_path: str | None = None,
 ) -> bool:
     """Run a gemstar subcommand as a subprocess. Returns True on success."""
     cmd = [sys.executable, "-m", "src.cli.app", subcmd]
+    if config_path:
+        cmd.extend(["--config", config_path])
     if llm:
         cmd.append("--llm")
 

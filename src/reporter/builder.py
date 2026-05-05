@@ -55,6 +55,18 @@ def _render_markdown(report: DailyReportV1) -> str:
 
     leaderboard_md = _build_leaderboard_lines(report.leaderboard)
 
+    universe_md = ""
+    if report.universe_notes:
+        universe_md = "\n".join(f"- {n}" for n in report.universe_notes) + "\n"
+    else:
+        universe_md = "_No universe resolution recorded._\n"
+
+    benchmark_md = ""
+    if report.benchmark_notes:
+        benchmark_md = "\n".join(f"- {n}" for n in report.benchmark_notes) + "\n"
+    else:
+        benchmark_md = "_No benchmark resolution recorded._\n"
+
     # Build verdicts-like section from signals_summary
     signals_md = ""
     if report.signals_summary:
@@ -72,6 +84,8 @@ def _render_markdown(report: DailyReportV1) -> str:
         report_date=report.report_date.isoformat(),
         run_id=report.run_id,
         market_summary=report.market_summary,
+        universe_notes=universe_md,
+        benchmark_notes=benchmark_md,
         leaderboard=leaderboard_md,
         signals_summary=signals_md,
         factor_notes=factor_md,
@@ -86,6 +100,8 @@ def build_report(
     leaderboard: list[ReportStrategyEntry],
     verdicts: list[VerdictV1] | None = None,
     factor_health: FactorHealthReportV1 | None = None,
+    universe_notes: list[str] | None = None,
+    benchmark_notes: list[str] | None = None,
 ) -> tuple[DailyReportV1, str]:
     """Build a daily report from verified downstream artifacts.
 
@@ -139,6 +155,8 @@ def build_report(
         report_date=report_date,
         run_id=run_id,
         leaderboard=leaderboard,
+        universe_notes=universe_notes or [],
+        benchmark_notes=benchmark_notes or [],
         signals_summary=signals_summary,
         factor_notes=factor_notes,
         health_status=health_status,

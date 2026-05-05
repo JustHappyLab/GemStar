@@ -24,8 +24,11 @@ def run_cmd(
     from src.data.fetcher import (
         init_tushare, fetch_trade_calendar, fetch_stock_basic,
         fetch_index_daily, fetch_daily_all, fetch_daily_basic,
-        fetch_fina_indicator, fetch_adj_factor,
+        fetch_fina_indicator, fetch_adj_factor, fetch_disclosure_date,
+        attach_disclosure_dates,
     )
+    from src.orchestrator.benchmark import BenchmarkResolution, resolve_benchmark_for_universes
+    from src.orchestrator.universe import eligible_codes_from_stock_basic, resolve_strategy_universe
     from src.orchestrator.pipeline import run_daily_pipeline
     from src.schemas.strategy import StrategyConfigV1
 
@@ -50,19 +53,38 @@ def run_cmd(
     train_start = _data_start(ref_date, strat_configs, config.data.lookback_years)
     cache_dir = config.data_cache_dir
 
+    resolved_universes = [resolve_strategy_universe(strategy) for strategy in strat_configs]
+    benchmark_resolution = resolve_benchmark_for_universes(config.benchmark, resolved_universes)
+
     trade_cal = fetch_trade_calendar(pro, train_start, ref_date, cache_dir=cache_dir)
     stock_basic = fetch_stock_basic(pro, cache_dir=cache_dir)
-    index_daily = fetch_index_daily(pro, config.benchmark, train_start, ref_date, cache_dir=cache_dir)
+    index_daily, benchmark_resolution = _fetch_benchmark_index_daily(
+        fetch_index_daily,
+        pro,
+        benchmark_resolution,
+        train_start,
+        ref_date,
+        cache_dir,
+    )
     daily_all = fetch_daily_all(pro, train_start, ref_date, cache_dir=cache_dir)
     daily_basic = fetch_daily_basic(pro, train_start, ref_date, cache_dir=cache_dir)
     adj_factor = fetch_adj_factor(pro, train_start, ref_date, cache_dir=cache_dir)
 
-    codes = stock_basic["ts_code"].tolist()
+    code_sets = [
+        eligible_codes_from_stock_basic(stock_basic, ref_date, resolution)
+        for resolution in resolved_universes
+    ]
+    codes = sorted(set().union(*(codes for codes in code_sets if codes)))
+    if not codes:
+        codes = stock_basic["ts_code"].tolist()
     fina_frames = []
     for i, code in enumerate(codes):
         if (i + 1) % 200 == 0:
             console.print(f"  fina: {i + 1}/{len(codes)}")
-        df = fetch_fina_indicator(pro, code, cache_dir=cache_dir)
+        df = attach_disclosure_dates(
+            fetch_fina_indicator(pro, code, cache_dir=cache_dir),
+            fetch_disclosure_date(pro, code, cache_dir=cache_dir),
+        )
         if len(df) > 0:
             fina_frames.append(df)
     fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
@@ -87,6 +109,7 @@ def run_cmd(
     # --- Run pipeline ---
     role_overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()} if config.roles else None
     console.print(f"[cyan]Running pipeline[/cyan] ({len(strat_paths)} strategies, per-strategy inputs)...")
+    console.print(f"  Benchmark: {benchmark_resolution.resolved} ({benchmark_resolution.name})")
     result = run_daily_pipeline(
         run_id=run_id,
         data=data,
@@ -94,6 +117,7 @@ def run_cmd(
         pool_path=Path(config.pool_path),
         reference_date=ref_date,
         benchmark_nav=benchmark_nav,
+        benchmark_info=benchmark_resolution.model_dump(),
         index_df=index_daily,
         llm_available=llm or config.llm.available,
         role_overrides=role_overrides,
@@ -121,6 +145,33 @@ def _today_str() -> str:
     return date.today().strftime("%Y%m%d")
 
 
+def _fetch_benchmark_index_daily(
+    fetch_index_daily,
+    pro,
+    resolution: "BenchmarkResolution",
+    start_date: str,
+    end_date: str,
+    cache_dir: str,
+) -> tuple[pd.DataFrame, "BenchmarkResolution"]:
+    from src.orchestrator.benchmark import BenchmarkResolution
+
+    last_df = pd.DataFrame()
+    for candidate in resolution.candidates:
+        df = fetch_index_daily(pro, candidate, start_date, end_date, cache_dir=cache_dir)
+        if df is not None and not df.empty:
+            if candidate == resolution.resolved:
+                return df, resolution
+            return df, BenchmarkResolution(
+                requested=resolution.requested,
+                resolved=candidate,
+                name=f"{resolution.name} fallback",
+                reason=f"{resolution.reason} Primary benchmark returned no data; using fallback {candidate}.",
+                candidates=resolution.candidates,
+            )
+        last_df = df if df is not None else pd.DataFrame()
+    return last_df, resolution
+
+
 def _data_start(ref_date: str, strategies: list[StrategyConfigV1], lookback_years: int) -> str:
     """Earliest data date needed for configured strategy backtests."""
     starts = [_offset_years(ref_date, -lookback_years)]
@@ -140,6 +191,10 @@ def _json_summary(result: dict) -> dict:
         "status": result.get("run_status"),
         "run_id": result.get("run_id"),
     }
+    if result.get("benchmark_resolution"):
+        summary["benchmark"] = result["benchmark_resolution"]
+    if result.get("universe_resolutions"):
+        summary["universes"] = result["universe_resolutions"]
     report = result.get("report")
     if report and hasattr(report, "model_dump"):
         summary["report"] = report.model_dump()

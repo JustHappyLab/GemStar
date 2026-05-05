@@ -259,6 +259,33 @@ gemstar factors
 
 首次运行 `gemstar run` 会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
 
+### Universe 预设
+
+普通用户无需手动选择股票池。策略 YAML 可以省略 `universe`，或使用默认：
+
+```yaml
+universe: auto
+```
+
+GemStar 会根据策略名称、假设、研究票据和因子上下文自动解析为具体股票池，并在报告的 `Universe` 段披露使用的股票池、选择原因和过滤条件。高级用户可以显式指定：
+
+| preset | 用途 |
+|--------|------|
+| `a_share_core` | 默认全 A 核心可交易池，排除 ST、退市/未上市、上市不足 120 天标的 |
+| `a_share_liquid` | 全 A 高流动性研究池，额外排除当日成交额最低 20% |
+| `chinext_core` | 创业板核心池 |
+| `star_core` | 科创板核心池 |
+| `main_board_core` | 沪深主板核心池 |
+| `all` | 兼容旧配置，等价于 `a_share` |
+
+`gemstar.yaml` 里的基准指数也可以保持默认：
+
+```yaml
+benchmark: auto
+```
+
+GemStar 会根据 resolved universe 自动选择基准指数，并在报告的 `Benchmark` 段披露。例如创业板策略使用 `399006.SZ`，全 A 研究默认使用中证全指口径。
+
 ### 自动调度
 
 `gemstar scheduler start` 替代 cron，后台运行，内置交易日感知和失败重试：
@@ -354,7 +381,7 @@ uv run python -m pytest tests/ -v
 | Win Rate | 胜率 |
 | Profit Factor | 盈亏比 |
 | Annual Turnover | 年化换手率 |
-| Alpha | 相对创业板指超额收益 |
+| Alpha | 相对配置基准指数的超额收益 |
 
 ### 引擎验证
 

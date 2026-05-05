@@ -181,6 +181,13 @@ def test_full_pipeline_completes():
             pool_path=pool_path,
             reference_date="20220301",
             benchmark_nav=benchmark_nav,
+            benchmark_info={
+                "requested": "auto",
+                "resolved": "399006.SZ",
+                "name": "ChiNext Index",
+                "reason": "test",
+                "candidates": ("399006.SZ",),
+            },
             ic_df=ic_df,
             signals=signals,
             rankings=rankings,
@@ -192,6 +199,10 @@ def test_full_pipeline_completes():
         assert result["quality_report"] is not None
         assert result["quality_report"].mode in ("normal", "degraded")
         assert result["factor_health"] is not None
+        assert result["universe_resolutions"][0]["resolved"] == "chinext"
+        assert result["benchmark_resolution"]["resolved"] == "399006.SZ"
+        assert "## Benchmark" in result["markdown"]
+        assert "## Universe" in result["markdown"]
         assert len(result["backtest_results"]) == 1
         assert len(result["verdicts"]) == 1
         assert result["report"] is not None

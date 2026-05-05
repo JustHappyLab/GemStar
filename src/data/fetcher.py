@@ -72,12 +72,65 @@ def _normalize_fina_indicator(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=expected_cols)
 
     normalized = df.rename(columns={"or_yoy": "revenue_yoy"}).copy()
-    if "disclosure_date" not in normalized.columns and "ann_date" in normalized.columns:
-        normalized["disclosure_date"] = normalized["ann_date"]
     for col in expected_cols:
         if col not in normalized.columns:
             normalized[col] = None
     return normalized[expected_cols]
+
+
+def attach_disclosure_dates(
+    fina_df: pd.DataFrame,
+    disclosure_df: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Attach actual disclosure dates without falling back to announcement dates."""
+    result = _normalize_fina_indicator(fina_df)
+    if result.empty or disclosure_df is None or disclosure_df.empty:
+        return result
+
+    if "ts_code" not in disclosure_df.columns or "end_date" not in disclosure_df.columns:
+        return result
+
+    disclosure_date_col = None
+    for candidate in ("actual_date", "disclosure_date"):
+        if candidate in disclosure_df.columns:
+            disclosure_date_col = candidate
+            break
+    if disclosure_date_col is None:
+        return result
+
+    disclosure = disclosure_df[["ts_code", "end_date", disclosure_date_col]].copy()
+    disclosure = disclosure.rename(columns={disclosure_date_col: "_actual_disclosure_date"})
+    disclosure["_actual_disclosure_date"] = disclosure["_actual_disclosure_date"].astype(str).str[:8]
+    disclosure = disclosure[
+        disclosure["_actual_disclosure_date"].notna()
+        & disclosure["_actual_disclosure_date"].str.match(r"^\d{8}$")
+    ]
+    if disclosure.empty:
+        return result
+
+    disclosure = (
+        disclosure.sort_values(["ts_code", "end_date", "_actual_disclosure_date"])
+        .drop_duplicates(["ts_code", "end_date"], keep="first")
+    )
+
+    merged = result.drop(columns=["disclosure_date"]).merge(
+        disclosure,
+        on=["ts_code", "end_date"],
+        how="left",
+    )
+    merged["disclosure_date"] = merged.pop("_actual_disclosure_date")
+    return merged[
+        [
+            "ts_code",
+            "ann_date",
+            "disclosure_date",
+            "end_date",
+            "roe",
+            "revenue_yoy",
+            "netprofit_yoy",
+            "grossprofit_margin",
+        ]
+    ]
 
 
 def _split_monthly(start_date: str, end_date: str) -> list[tuple[str, str]]:
@@ -121,7 +174,7 @@ def fetch_trade_calendar(pro, start_date: str, end_date: str, cache_dir: str = "
 
 
 def fetch_stock_basic(pro, cache_dir: str = "data/raw") -> pd.DataFrame:
-    name = "stock_basic_chinext"
+    name = "stock_basic_a_share"
     cached = _read_cache(cache_dir, name)
     if cached is not None:
         return cached
@@ -141,7 +194,7 @@ def fetch_stock_basic(pro, cache_dir: str = "data/raw") -> pd.DataFrame:
         op_name="stock_basic delisted",
     )
     df = pd.concat([listed, delisted], ignore_index=True)
-    df = df[df["ts_code"].str.match(r"^30[01]")].reset_index(drop=True)
+    df = df[df["ts_code"].astype(str).str.match(r"^(00[0-3]|30[01]|60[0-9]|68[89]|4[0-9]|8[0-9]|920)")].reset_index(drop=True)
     _write_cache(df, cache_dir, name)
     _rate_limit()
     return df
