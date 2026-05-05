@@ -4,6 +4,7 @@ import pytest
 from src.data.fetcher import (
     _call_with_retry,
     _normalize_fina_indicator,
+    attach_disclosure_dates,
     init_tushare,
     fetch_trade_calendar,
     fetch_stock_basic,
@@ -87,21 +88,41 @@ class TestFinaNormalization:
         assert "revenue_yoy" in normalized.columns
         assert "disclosure_date" in normalized.columns
         assert normalized.loc[0, "revenue_yoy"] == 18.5
-        assert normalized.loc[0, "disclosure_date"] == "20240101"
+        assert pd.isna(normalized.loc[0, "disclosure_date"])
+
+    def test_attaches_actual_disclosure_date_by_report_period(self):
+        fina = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "ann_date": ["20240101"],
+            "end_date": ["20231231"],
+            "roe": [12.0],
+            "or_yoy": [18.5],
+            "netprofit_yoy": [8.0],
+            "grossprofit_margin": [21.0],
+        })
+        disclosure = pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "end_date": ["20231231"],
+            "actual_date": ["20240420"],
+        })
+
+        normalized = attach_disclosure_dates(fina, disclosure)
+
+        assert normalized.loc[0, "disclosure_date"] == "20240420"
 
 
 class TestStockBasic:
-    def test_filters_chinext(self, pro, tmp_path):
+    def test_filters_a_share_common_stock_codes(self, pro, tmp_path):
         pro.stock_basic.return_value = pd.DataFrame({
-            "ts_code": ["300001.SZ", "600001.SH", "301001.SZ", "000001.SZ"],
-            "name": ["A", "B", "C", "D"],
-            "list_date": ["20100101"] * 4,
-            "delist_date": [None] * 4,
-            "market": ["创业板", "主板", "创业板", "主板"],
+            "ts_code": ["300001.SZ", "600001.SH", "301001.SZ", "000001.SZ", "688001.SH", "159001.SZ"],
+            "name": ["A", "B", "C", "D", "E", "ETF"],
+            "list_date": ["20100101"] * 6,
+            "delist_date": [None] * 6,
+            "market": ["创业板", "主板", "创业板", "主板", "科创板", "ETF"],
         })
         with patch("src.data.fetcher._rate_limit"):
             df = fetch_stock_basic(pro, cache_dir=str(tmp_path))
-        assert set(df["ts_code"]) == {"300001.SZ", "301001.SZ"}
+        assert set(df["ts_code"]) == {"300001.SZ", "600001.SH", "301001.SZ", "000001.SZ", "688001.SH"}
 
 
 class TestIndexDaily:

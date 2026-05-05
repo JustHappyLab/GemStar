@@ -24,7 +24,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = load_config()
     assert cfg.tushare_token == ""
-    assert cfg.benchmark == "399006.SZ"
+    assert cfg.benchmark == "auto"
     assert cfg.pool_path == "factors/pool.json"
     assert cfg.db_path == "state.db"
     assert cfg.artifacts_dir == "artifacts"
@@ -114,7 +114,7 @@ def test_write_template_creates_file(tmp_path):
     assert dest.exists()
     text = dest.read_text()
     assert "tushare_token: ${TUSHARE_TOKEN}" in text
-    assert "benchmark: 399006.SZ" in text
+    assert "benchmark: auto" in text
     assert "llm:" in text
 
 
@@ -172,7 +172,7 @@ def test_invalid_yaml_returns_defaults(tmp_path):
 
     cfg = load_config(cfg_path)
     assert cfg.tushare_token == ""
-    assert cfg.benchmark == "399006.SZ"
+    assert cfg.benchmark == "auto"
     assert cfg.llm.available is False
     assert cfg.strategies == []
 
@@ -187,7 +187,7 @@ def test_empty_yaml_returns_defaults(tmp_path):
 
     cfg = load_config(cfg_path)
     assert cfg.tushare_token == ""
-    assert cfg.benchmark == "399006.SZ"
+    assert cfg.benchmark == "auto"
     assert cfg.llm.available is False
     assert cfg.llm.provider == "api"
     assert cfg.strategies == []

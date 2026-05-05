@@ -47,7 +47,7 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
         if 'disclosure_date' in fina_all.columns:
             fina['available_date'] = fina_all['disclosure_date']
         else:
-            fina['available_date'] = fina['ann_date']
+            fina['available_date'] = pd.NaT
         fina['available_date'] = pd.to_datetime(fina['available_date'])
         fina['ann_date'] = pd.to_datetime(fina['ann_date'])
         fina['end_date'] = pd.to_datetime(fina['end_date'], errors='coerce')

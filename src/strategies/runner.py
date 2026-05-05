@@ -130,7 +130,13 @@ def _align_benchmark_nav(benchmark_nav: pd.Series, trade_dates: list[str]) -> pd
         return pd.Series(dtype=float)
     aligned = benchmark_nav.copy()
     aligned.index = aligned.index.astype(str)
-    aligned = aligned.sort_index().reindex(trade_dates).ffill().bfill()
+    aligned = aligned.sort_index().reindex(trade_dates).ffill()
+    if aligned.isna().any():
+        missing = aligned[aligned.isna()].index.tolist()
+        raise ValueError(
+            "Benchmark NAV is missing for the start of the backtest window; "
+            f"cannot fill from future dates. Missing dates include: {missing[:3]}"
+        )
     return aligned.astype(float)
 
 

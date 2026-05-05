@@ -232,14 +232,16 @@ class TestPITCheck:
     """disclosure_date > reference_date is a PIT violation."""
 
     def test_no_disclosure_date_column(self):
-        """If fina_indicator has no disclosure_date column, no PIT error."""
+        """If fina_indicator has no disclosure_date column, PIT safety is degraded."""
         ref = "20260503"
         data = _full_core_data(ref)
         data["fina_indicator"] = _make_fina_indicator(disclosure_date=None)
         report = run_data_quality_gate(data, ref)
 
         pit_issues = [i for i in report.issues if i.check == "pit"]
-        assert len(pit_issues) == 0
+        assert len(pit_issues) == 1
+        assert pit_issues[0].level == "warning"
+        assert report.mode == "degraded"
 
     def test_disclosure_date_in_future(self):
         """Rows with disclosure_date > reference_date trigger PIT error."""

@@ -19,6 +19,7 @@ import pandas as pd
 from src.ranker.factors import compute_all_factors
 from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n
+from src.orchestrator.universe import UniverseResolution, filter_group_for_universe, resolve_universe_value
 from src.schemas.strategy import FactorWeightV1
 
 
@@ -29,6 +30,9 @@ def build_rankings(
     factors: list[FactorWeightV1],
     top_n: int,
     trade_dates: list[str],
+    *,
+    universe: str | UniverseResolution = "auto",
+    stock_basic: pd.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """Compute per-date stock rankings from factor scores.
 
@@ -46,6 +50,11 @@ def build_rankings(
         Number of top stocks to select per date.
     trade_dates : list[str]
         Trading dates to rank for (YYYYMMDD).
+    universe : str | UniverseResolution
+        Strategy universe preset or resolved universe.
+    stock_basic : DataFrame, optional
+        Stock metadata with list_date / delist_date used for point-in-time
+        active-universe filtering.
 
     Returns
     -------
@@ -55,7 +64,6 @@ def build_rankings(
         return {}
 
     weights = {f.factor_id: f.weight for f in factors}
-    factor_ids = set(weights.keys())
 
     # Compute cross-sectional factors
     factor_df = compute_all_factors(daily_df, index_daily, fina_df)
@@ -73,9 +81,19 @@ def build_rankings(
         return {}
 
     # Per-date cross-sectional normalization and scoring
+    resolution = resolve_universe_value(universe)
     rankings: dict[str, list[str]] = {}
     for date, group in factor_df.groupby("trade_date"):
-        g = group.copy()
+        g = filter_group_for_universe(
+            group,
+            stock_basic=stock_basic,
+            trade_date=str(date),
+            resolution=resolution,
+        )
+        if g.empty:
+            rankings[str(date)] = []
+            continue
+
         for col in available:
             g[col] = winsorize_mad(g[col])
             g[col] = zscore_cross_section(g[col])

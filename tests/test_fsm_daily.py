@@ -83,3 +83,15 @@ def test_fsm_degraded_path():
         # degraded can still report
         fsm.transition("reporting")
         assert fsm.current() == "reporting"
+
+
+def test_fsm_degraded_can_continue_pipeline():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = str(Path(tmpdir) / "test.db")
+        start_run("run_001", db_path=db, artifacts_dir=str(Path(tmpdir) / "artifacts"))
+        fsm = DailyFSM("run_001", db_path=db)
+        fsm.transition("collecting")
+        fsm.transition("quality_checking")
+        fsm.transition("degraded")
+        fsm.transition("factor_monitoring")
+        assert fsm.current() == "factor_monitoring"

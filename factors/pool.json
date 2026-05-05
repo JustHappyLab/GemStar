@@ -8,7 +8,7 @@
       "computation": "Return on equity from latest financial report",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -17,7 +17,7 @@
       "computation": "Year-over-year revenue growth rate",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -26,7 +26,7 @@
       "computation": "Year-over-year net profit growth rate",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -35,7 +35,7 @@
       "computation": "Inverse of trailing P/E ratio (1/pe_ttm)",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -44,7 +44,7 @@
       "computation": "Inverse of price-to-book ratio (1/pb)",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -53,7 +53,7 @@
       "computation": "20-day close price percentage change",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -62,7 +62,7 @@
       "computation": "20-day rolling mean of turnover rate",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     },
     {
@@ -71,7 +71,7 @@
       "computation": "Stock 20d return minus index 20d return",
       "direction": "positive",
       "horizon": "1d",
-      "universe": "chinext",
+      "universe": "a_share_core",
       "status": "active"
     }
   ],

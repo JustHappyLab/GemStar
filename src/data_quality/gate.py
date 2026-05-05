@@ -226,12 +226,37 @@ def _check_pit(
         return
 
     if "disclosure_date" not in fina.columns:
-        return  # column absent — nothing to check
+        issues.append(DataQualityIssue(
+            level="warning",
+            table="fina_indicator",
+            check="pit",
+            message=(
+                "fina_indicator is missing disclosure_date; fundamental data "
+                "cannot be verified as point-in-time safe."
+            ),
+        ))
+        return
 
     # disclosure_date may be YYYYMMDD string, int, or NaN.
-    disc = fina["disclosure_date"].dropna().astype(str)
+    raw_disc = fina["disclosure_date"]
+    disc = raw_disc.dropna().astype(str)
     # Strip any time component if present.
     disc = disc.str[:8]
+    disc = disc[disc.str.match(r"^\d{8}$")]
+
+    missing_count = len(fina) - len(disc)
+    if missing_count > 0:
+        issues.append(DataQualityIssue(
+            level="warning",
+            table="fina_indicator",
+            check="pit",
+            message=(
+                f"{missing_count} rows in fina_indicator are missing a valid "
+                "disclosure_date and will not be PIT-safe for fundamentals."
+            ),
+        ))
+    if disc.empty:
+        return
 
     future_mask = disc > reference_date
     n_future = int(future_mask.sum())

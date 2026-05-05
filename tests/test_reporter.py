@@ -143,6 +143,30 @@ class TestFullLeaderboardWithVerdicts:
         )
         assert report.signals_summary == []
 
+    def test_universe_notes_are_rendered(self):
+        report, md = build_report(
+            report_date=date(2026, 5, 3),
+            run_id="run-universe",
+            leaderboard=_make_leaderboard(1),
+            universe_notes=["quality_value: a_share_core - default research universe"],
+        )
+
+        assert report.universe_notes == ["quality_value: a_share_core - default research universe"]
+        assert "## Universe" in md
+        assert "a_share_core" in md
+
+    def test_benchmark_notes_are_rendered(self):
+        report, md = build_report(
+            report_date=date(2026, 5, 3),
+            run_id="run-benchmark",
+            leaderboard=_make_leaderboard(1),
+            benchmark_notes=["000985.CSI (CSI All Share)"],
+        )
+
+        assert report.benchmark_notes == ["000985.CSI (CSI All Share)"]
+        assert "## Benchmark" in md
+        assert "000985.CSI" in md
+
 
 class TestFactorHealthNotes:
     def test_factor_health_appears_in_report(self):

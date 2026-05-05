@@ -202,6 +202,19 @@ class TestRunStrategyFromYaml:
 
         assert captured["trade_dates"] == ["20240102", "20240103", "20240104"]
 
+    def test_benchmark_missing_at_start_raises(self, tmp_path):
+        yaml_path = _write_yaml(tmp_path)
+        benchmark_nav = _make_benchmark_nav().loc["20240103":]
+
+        with pytest.raises(ValueError, match="Benchmark NAV is missing"):
+            run_strategy_from_yaml(
+                yaml_path,
+                daily_df=_make_daily_df(),
+                signals=pd.DataFrame({"trade_date": DATES, "position": [1.0] * 5}),
+                rankings={d: STOCKS for d in DATES},
+                benchmark_nav=benchmark_nav,
+            )
+
     def test_segments_populated(self, tmp_path):
         yaml_path = _write_yaml(tmp_path)
         result = run_strategy_from_yaml(

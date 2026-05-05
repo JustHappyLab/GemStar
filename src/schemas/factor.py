@@ -26,7 +26,7 @@ class FactorRegistryEntryV1(BaseModel):
     coverage: float | None = None
     direction: Literal["positive", "negative", "neutral"] = "positive"
     horizon: str = "1d"
-    universe: str = "chinext"
+    universe: str = "a_share_core"
     last_updated: str = ""
     status: Literal[
         "candidate",
