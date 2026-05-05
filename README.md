@@ -231,20 +231,20 @@ gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
 gemstar fetch --start 20240101 --end 20260503
 
 # 启动自动调度（后台运行）
-gemstar start
+gemstar scheduler start
 
 # 前台运行（调试用，Ctrl+C 退出）
-gemstar start --foreground
+gemstar scheduler start --foreground
 
-# 查看 daemon 状态
-gemstar status
+# 查看调度器状态
+gemstar scheduler status
 
 # 停止 / 重启
-gemstar stop
-gemstar restart
+gemstar scheduler stop
+gemstar scheduler restart
 
 # 查看 pipeline 运行状态（JSON 输出，供 QClaw 解析）
-gemstar -o json run-status
+gemstar -o json status
 
 # 列出历史运行
 gemstar history
@@ -261,19 +261,19 @@ gemstar factors
 
 ### 自动调度
 
-`gemstar start` 替代 cron，后台运行，内置交易日感知和失败重试：
+`gemstar scheduler start` 替代 cron，后台运行，内置交易日感知和失败重试：
 
 ```bash
 # 后台启动
-gemstar start
+gemstar scheduler start
 
 # 前台运行（调试用）
-gemstar start --foreground
+gemstar scheduler start --foreground
 
 # 查看状态 / 停止 / 重启
-gemstar status
-gemstar stop
-gemstar restart
+gemstar scheduler status
+gemstar scheduler stop
+gemstar scheduler restart
 ```
 
 在 `gemstar.yaml` 中配置调度时间和日志路径：

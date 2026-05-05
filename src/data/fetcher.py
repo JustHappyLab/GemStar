@@ -61,6 +61,7 @@ def _normalize_fina_indicator(df: pd.DataFrame) -> pd.DataFrame:
     expected_cols = [
         "ts_code",
         "ann_date",
+        "disclosure_date",
         "end_date",
         "roe",
         "revenue_yoy",
@@ -71,6 +72,8 @@ def _normalize_fina_indicator(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=expected_cols)
 
     normalized = df.rename(columns={"or_yoy": "revenue_yoy"}).copy()
+    if "disclosure_date" not in normalized.columns and "ann_date" in normalized.columns:
+        normalized["disclosure_date"] = normalized["ann_date"]
     for col in expected_cols:
         if col not in normalized.columns:
             normalized[col] = None

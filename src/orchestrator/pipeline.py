@@ -37,7 +37,7 @@ import pandas as pd
 from src.data_quality.gate import run_data_quality_gate
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
-from src.llm.adapter import LLMAdapter
+from src.llm.adapter import RoleLLMAdapter
 from src.orchestrator.artifact_store import write_artifact
 from src.reviewer.analysis import review_verdict
 from src.schemas.review import ReviewNotesV1
@@ -49,7 +49,10 @@ from src.roles.registry import RoleRegistry
 from src.scanner.event_scanner import scan_events
 from src.scanner.macro_analyst import analyze_market_regime
 from src.schemas.metrics import BacktestResultV1
+from src.schemas.strategy import StrategyConfigV1
 from src.schemas.verdict import VerdictV1
+from src.orchestrator.rankings import build_rankings
+from src.orchestrator.signals import build_signals
 from src.strategies.architect import draft_strategy
 from src.strategies.runner import run_strategy_from_yaml
 from src.strategies.validator import validate_strategy
@@ -77,6 +80,7 @@ def run_daily_pipeline(
     gen_target_count: int = 0,
     gen_max_iterations: int = 10,
     gen_cooldown_seconds: int = 300,
+    auto_build_strategy_inputs: bool = False,
 ) -> dict:
     """Execute the full daily pipeline.
 
@@ -114,6 +118,11 @@ def run_daily_pipeline(
         Path to SQLite state database.
     artifacts_dir : str
         Base directory for artifacts.
+    auto_build_strategy_inputs : bool
+        If True, build signals and rankings separately for each strategy from
+        the strategy YAML.  CLI runs use this so each strategy gets its own
+        timer/factor/top_n settings; tests and lower-level callers can still
+        pass explicit signals/rankings.
 
     Returns
     -------
@@ -189,19 +198,25 @@ def run_daily_pipeline(
         tickets = []
 
         # --- LLM IDEATION (context gathering, once) ---
-        llm = None
+        llm_ready = False
+        strategy_llm = None
         if llm_available and _reg is not None and index_df is not None and not daily_df.empty:
-            provider_name = _reg.get_role("macro_analyst").provider
-            llm = LLMAdapter(_reg.get_provider(provider_name))
             try:
-                regime = analyze_market_regime(daily_df, index_df, reference_date, llm)
+                regime = analyze_market_regime(
+                    daily_df,
+                    index_df,
+                    reference_date,
+                    RoleLLMAdapter(_reg, "macro_analyst"),
+                )
                 write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
 
-                events = scan_events(data, reference_date, llm)
+                events = scan_events(data, reference_date, RoleLLMAdapter(_reg, "event_scanner"))
                 write_artifact(run_id, "event_signals", [e.model_dump() for e in events], base_dir=artifacts_dir, step_id="strategy_ideation")
 
-                tickets = generate_tickets(regime, events, factor_health, pool_path, llm)
+                tickets = generate_tickets(regime, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
                 write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
+                strategy_llm = RoleLLMAdapter(_reg, "strategy_architect")
+                llm_ready = True
             except Exception:
                 logger.warning("LLM ideation context gathering failed", exc_info=True)
 
@@ -218,7 +233,8 @@ def run_daily_pipeline(
         verdicts: list[VerdictV1] = []
         collected_candidates: list[tuple[Path, BacktestResultV1, VerdictV1]] = []
         can_backtest = signals is not None and rankings is not None
-        use_loop = llm is not None and gen_target_count > 0 and can_backtest
+        can_auto_backtest = auto_build_strategy_inputs and index_df is not None and "trade_cal" in data
+        use_loop = llm_ready and strategy_llm is not None and gen_target_count > 0 and (can_backtest or can_auto_backtest)
 
         # First pass: evaluate pre-existing strategies (no loop needed)
         for strat_path in strategies:
@@ -226,8 +242,18 @@ def run_daily_pipeline(
             write_artifact(run_id, f"validation_{strat_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
             if verdict_v.recommended_state == "rejected":
                 continue
-            if can_backtest:
-                bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=signals, rankings=rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+            strat_signals, strat_rankings = _strategy_inputs(
+                strat_path=strat_path,
+                data=data,
+                daily_df=daily_df,
+                index_df=index_df,
+                reference_date=reference_date,
+                explicit_signals=signals,
+                explicit_rankings=rankings,
+                auto_build=auto_build_strategy_inputs,
+            )
+            if strat_signals is not None and strat_rankings is not None:
+                bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
                 bt.run_id = run_id
                 backtest_results.append(bt)
                 write_artifact(run_id, f"backtest_{strat_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
@@ -248,12 +274,12 @@ def run_daily_pipeline(
                             iteration, gen_max_iterations, len(collected_candidates), gen_target_count)
                 try:
                     # Generate new tickets for this iteration
-                    iter_tickets = generate_tickets(regime, events, factor_health, pool_path, llm)
+                    iter_tickets = generate_tickets(regime, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
                     for ticket in iter_tickets:
                         if ticket.status != "draft":
                             continue
                         try:
-                            draft_path = draft_strategy([ticket], pool_path, reference_date, llm, output_dir=draft_dir)
+                            draft_path = draft_strategy([ticket], pool_path, reference_date, strategy_llm, output_dir=draft_dir)
                         except Exception:
                             logger.warning("Failed to draft strategy for ticket %s", ticket.ticket_id, exc_info=True)
                             continue
@@ -265,7 +291,20 @@ def run_daily_pipeline(
                             continue
 
                         # Backtest
-                        bt = run_strategy_from_yaml(path=draft_path, daily_df=daily_df, signals=signals, rankings=rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                        strat_signals, strat_rankings = _strategy_inputs(
+                            strat_path=draft_path,
+                            data=data,
+                            daily_df=daily_df,
+                            index_df=index_df,
+                            reference_date=reference_date,
+                            explicit_signals=signals,
+                            explicit_rankings=rankings,
+                            auto_build=auto_build_strategy_inputs,
+                        )
+                        if strat_signals is None or strat_rankings is None:
+                            continue
+
+                        bt = run_strategy_from_yaml(path=draft_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
                         bt.run_id = run_id
                         backtest_results.append(bt)
                         write_artifact(run_id, f"backtest_{draft_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
@@ -303,11 +342,10 @@ def run_daily_pipeline(
         review_notes: list[ReviewNotesV1] = []
         if llm_available and _reg is not None and verdicts:
             try:
-                provider_name = _reg.get_role("reviewer").provider
-                llm = LLMAdapter(_reg.get_provider(provider_name))
+                reviewer_llm = RoleLLMAdapter(_reg, "reviewer")
                 for bt_result, verdict in zip(backtest_results, verdicts):
                     try:
-                        notes = review_verdict(bt_result, verdict, factor_health, llm)
+                        notes = review_verdict(bt_result, verdict, factor_health, reviewer_llm)
                         review_notes.append(notes)
                         write_artifact(run_id, f"review_{bt_result.strategy_name}", notes.model_dump(), base_dir=artifacts_dir, step_id="judging")
                     except Exception:
@@ -384,3 +422,66 @@ def _build_leaderboard(
             rank_change=rank_change,
         ))
     return entries
+
+
+def _strategy_inputs(
+    *,
+    strat_path: Path,
+    data: dict[str, pd.DataFrame | None],
+    daily_df: pd.DataFrame,
+    index_df: pd.DataFrame | None,
+    reference_date: str,
+    explicit_signals: pd.DataFrame | None,
+    explicit_rankings: dict[str, list[str]] | None,
+    auto_build: bool,
+) -> tuple[pd.DataFrame | None, dict[str, list[str]] | None]:
+    """Resolve signals/rankings for one strategy."""
+    if not auto_build:
+        return explicit_signals, explicit_rankings
+
+    if index_df is None or daily_df.empty:
+        return explicit_signals, explicit_rankings
+
+    try:
+        config = StrategyConfigV1.from_yaml(strat_path)
+    except Exception:
+        return explicit_signals, explicit_rankings
+
+    trade_dates = _strategy_trade_dates(data, daily_df, config.backtest.start, config.backtest.end, reference_date)
+    if not trade_dates:
+        return explicit_signals, explicit_rankings
+
+    fina_df = data.get("fina_indicator")
+    if fina_df is None:
+        fina_df = pd.DataFrame()
+
+    signals = build_signals(index_df, trade_dates, config.timer)
+    rankings = build_rankings(
+        daily_df=daily_df,
+        index_daily=index_df,
+        fina_df=fina_df,
+        factors=config.factors,
+        top_n=config.top_n,
+        trade_dates=trade_dates,
+    )
+    return signals, rankings
+
+
+def _strategy_trade_dates(
+    data: dict[str, pd.DataFrame | None],
+    daily_df: pd.DataFrame,
+    start: str,
+    end: str,
+    reference_date: str,
+) -> list[str]:
+    """Get calendar dates for a strategy, capped at the current reference date."""
+    capped_end = min(end, reference_date)
+    trade_cal = data.get("trade_cal")
+    if trade_cal is not None and not trade_cal.empty:
+        col = "cal_date" if "cal_date" in trade_cal.columns else "trade_date"
+        dates = trade_cal[col].astype(str).tolist()
+    elif "trade_date" in daily_df.columns:
+        dates = daily_df["trade_date"].astype(str).unique().tolist()
+    else:
+        dates = []
+    return sorted(d for d in dates if start <= d <= capped_end)

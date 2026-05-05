@@ -109,3 +109,17 @@ def test_compute_all_factors_keeps_same_day_fundamentals_available():
     first_row = result[result["trade_date"] == daily["trade_date"].min().strftime("%Y%m%d")].iloc[0]
 
     assert pd.notna(first_row["roe"])
+
+
+def test_compute_all_factors_uses_disclosure_date_for_fundamentals():
+    daily, index_daily, fina = _make_data()
+    first_date = daily["trade_date"].min()
+    fina["ann_date"] = first_date
+    fina["disclosure_date"] = first_date + pd.Timedelta(days=5)
+
+    result = compute_all_factors(daily, index_daily, fina)
+    before_disclosure = result[result["trade_date"] == first_date.strftime("%Y%m%d")]
+    after_disclosure = result[result["trade_date"] == (first_date + pd.offsets.BDay(5)).strftime("%Y%m%d")]
+
+    assert before_disclosure["roe"].isna().all()
+    assert after_disclosure["roe"].notna().any()

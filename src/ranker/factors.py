@@ -44,11 +44,16 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
     # Financial factors via merge_asof per stock
     if not fina_all.empty:
         fina = fina_all[['ts_code', 'ann_date', 'end_date', 'roe', 'revenue_yoy', 'netprofit_yoy']].copy()
+        if 'disclosure_date' in fina_all.columns:
+            fina['available_date'] = fina_all['disclosure_date']
+        else:
+            fina['available_date'] = fina['ann_date']
+        fina['available_date'] = pd.to_datetime(fina['available_date'])
         fina['ann_date'] = pd.to_datetime(fina['ann_date'])
         fina['end_date'] = pd.to_datetime(fina['end_date'], errors='coerce')
-        fina = fina.dropna(subset=['ann_date'])
-        fina = fina.sort_values(['ts_code', 'ann_date', 'end_date'])
-        fina = fina.drop_duplicates(['ts_code', 'ann_date'], keep='last')
+        fina = fina.dropna(subset=['available_date'])
+        fina = fina.sort_values(['ts_code', 'available_date', 'end_date'])
+        fina = fina.drop_duplicates(['ts_code', 'available_date'], keep='last')
         df = df.sort_values(['ts_code', 'trade_date'])
 
         parts = []
@@ -63,10 +68,10 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
                     grp,
                     f.drop(columns='ts_code'),
                     left_on='trade_date',
-                    right_on='ann_date',
+                    right_on='available_date',
                     direction='backward',
                 )
-                merged.drop(columns=['ann_date', 'end_date'], inplace=True, errors='ignore')
+                merged.drop(columns=['ann_date', 'available_date', 'end_date'], inplace=True, errors='ignore')
             parts.append(merged)
         df = pd.concat(parts, ignore_index=True)
     else:

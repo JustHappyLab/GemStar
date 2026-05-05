@@ -85,7 +85,9 @@ class TestFinaNormalization:
         })
         normalized = _normalize_fina_indicator(df)
         assert "revenue_yoy" in normalized.columns
+        assert "disclosure_date" in normalized.columns
         assert normalized.loc[0, "revenue_yoy"] == 18.5
+        assert normalized.loc[0, "disclosure_date"] == "20240101"
 
 
 class TestStockBasic:
@@ -127,7 +129,7 @@ class TestDailyBasic:
 
 class TestFinaIndicator:
     def test_columns(self, pro, tmp_path):
-        expected_cols = ["ts_code", "ann_date", "end_date", "roe", "revenue_yoy", "netprofit_yoy", "grossprofit_margin"]
+        expected_cols = ["ts_code", "ann_date", "disclosure_date", "end_date", "roe", "revenue_yoy", "netprofit_yoy", "grossprofit_margin"]
         pro.fina_indicator.return_value = pd.DataFrame({
             "ts_code": ["300001.SZ"],
             "ann_date": ["20240101"],

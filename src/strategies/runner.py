@@ -104,6 +104,36 @@ def _build_ic_report(ic_df: pd.DataFrame) -> ICReportV1:
     return ICReportV1(factors=entries)
 
 
+def _date_strings(values) -> list[str]:
+    return sorted(str(v) for v in values)
+
+
+def _resolve_trade_dates(
+    daily_df: pd.DataFrame,
+    signals: pd.DataFrame,
+    start: str,
+    end: str,
+) -> list[str]:
+    """Return tradable dates in the strategy backtest window."""
+    daily_dates = set(_date_strings(daily_df["trade_date"].unique())) if "trade_date" in daily_df else set()
+    signal_dates = _date_strings(signals["trade_date"].unique()) if "trade_date" in signals else []
+    candidates = signal_dates or sorted(daily_dates)
+    return [
+        d for d in candidates
+        if start <= d <= end and (not daily_dates or d in daily_dates)
+    ]
+
+
+def _align_benchmark_nav(benchmark_nav: pd.Series, trade_dates: list[str]) -> pd.Series:
+    """Align benchmark NAV to the exact strategy trade dates."""
+    if not trade_dates:
+        return pd.Series(dtype=float)
+    aligned = benchmark_nav.copy()
+    aligned.index = aligned.index.astype(str)
+    aligned = aligned.sort_index().reindex(trade_dates).ffill().bfill()
+    return aligned.astype(float)
+
+
 def run_strategy_from_yaml(
     path: str | Path,
     daily_df: pd.DataFrame,
@@ -115,21 +145,29 @@ def run_strategy_from_yaml(
     """Load strategy YAML, run backtest, and return BacktestResultV1."""
     config = StrategyConfigV1.from_yaml(path)
     bc = config.backtest
+    trade_dates = _resolve_trade_dates(daily_df, signals, bc.start, bc.end)
+    if not trade_dates:
+        raise ValueError(
+            f"No trade dates available for strategy '{config.name}' "
+            f"in backtest window {bc.start}~{bc.end}."
+        )
 
     bt = run_backtest(
         daily_df=daily_df,
         signals=signals,
         rankings=rankings,
+        trade_dates=trade_dates,
         initial_capital=bc.capital,
         volume_limit_pct=bc.volume_limit_pct,
         cost_multiplier=bc.cost_multiplier,
     )
+    aligned_benchmark = _align_benchmark_nav(benchmark_nav, trade_dates)
 
     raw_metrics = compute_all_metrics(
         nav=bt["nav"],
         trade_pnls=bt["trade_pnls"],
         daily_turnover=bt["daily_turnover"],
-        benchmark_nav=benchmark_nav,
+        benchmark_nav=aligned_benchmark,
         initial_capital=bc.capital,
         rf_annual=bc.rf_annual,
     )
@@ -137,7 +175,7 @@ def run_strategy_from_yaml(
     segments = auto_segments(bc.start, bc.end)
     raw_segment_metrics = compute_segment_metrics(
         nav=bt["nav"],
-        benchmark_nav=benchmark_nav,
+        benchmark_nav=aligned_benchmark,
         segments=segments,
         rf_annual=bc.rf_annual,
     )

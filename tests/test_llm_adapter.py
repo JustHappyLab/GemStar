@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.llm.adapter import LLMAdapter
+from src.llm.adapter import LLMAdapter, RoleLLMAdapter
 from src.llm.providers.base import AgentProvider, AgentResult
 
 
@@ -27,6 +27,18 @@ class StubProvider(AgentProvider):
         self.last_task = task
         self.last_context = context
         return AgentResult(output=self._output)
+
+
+class StubRegistry:
+    def __init__(self, output: str = "role ok"):
+        self.output = output
+        self.last_role: str | None = None
+        self.last_context: dict | None = None
+
+    def execute_role(self, name: str, context: dict | None = None) -> AgentResult:
+        self.last_role = name
+        self.last_context = context
+        return AgentResult(output=self.output)
 
 
 # ---------------------------------------------------------------------------
@@ -84,3 +96,14 @@ def test_preserves_exact_output_string():
     result = adapter.generate("prompt")
 
     assert result is exact  # identity check, not just equality
+
+
+def test_role_adapter_executes_named_role():
+    registry = StubRegistry(output="role result")
+    adapter = RoleLLMAdapter(registry, "reviewer")
+
+    result = adapter.generate("review this", system="ignored by role adapter")
+
+    assert result == "role result"
+    assert registry.last_role == "reviewer"
+    assert registry.last_context == {"task": "review this"}

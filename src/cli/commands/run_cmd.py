@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,13 +27,18 @@ def run_cmd(
         fetch_fina_indicator, fetch_adj_factor,
     )
     from src.orchestrator.pipeline import run_daily_pipeline
-    from src.orchestrator.rankings import build_rankings
-    from src.orchestrator.signals import build_signals
     from src.schemas.strategy import StrategyConfigV1
 
-    config = load_config()
+    config = load_config(Path(config_path) if config_path else None)
     ref_date = date or _today_str()
     run_id = f"{ref_date}-{uuid4().hex[:8]}"
+
+    # --- Resolve strategies before fetching so the data window covers their backtests. ---
+    strat_paths = [Path(s) for s in (strategies or config.strategies)]
+    if not strat_paths:
+        console.print("[yellow]No strategies specified. Use --strategy or set strategies in gemstar.yaml[/yellow]")
+        raise typer.Exit(1)
+    strat_configs = [StrategyConfigV1.from_yaml(p) for p in strat_paths]
 
     console.print(f"[cyan]GemStar run[/cyan] {run_id}")
     console.print(f"  Date: {ref_date}")
@@ -42,21 +47,22 @@ def run_cmd(
     # --- Fetch data ---
     console.print("[cyan]Fetching data...[/cyan]")
     pro = init_tushare(config.tushare_token or None)
-    train_start = _train_start(ref_date)
+    train_start = _data_start(ref_date, strat_configs, config.data.lookback_years)
+    cache_dir = config.data_cache_dir
 
-    trade_cal = fetch_trade_calendar(pro, train_start, ref_date)
-    stock_basic = fetch_stock_basic(pro)
-    index_daily = fetch_index_daily(pro, config.benchmark, train_start, ref_date)
-    daily_all = fetch_daily_all(pro, train_start, ref_date)
-    daily_basic = fetch_daily_basic(pro, train_start, ref_date)
-    adj_factor = fetch_adj_factor(pro, train_start, ref_date)
+    trade_cal = fetch_trade_calendar(pro, train_start, ref_date, cache_dir=cache_dir)
+    stock_basic = fetch_stock_basic(pro, cache_dir=cache_dir)
+    index_daily = fetch_index_daily(pro, config.benchmark, train_start, ref_date, cache_dir=cache_dir)
+    daily_all = fetch_daily_all(pro, train_start, ref_date, cache_dir=cache_dir)
+    daily_basic = fetch_daily_basic(pro, train_start, ref_date, cache_dir=cache_dir)
+    adj_factor = fetch_adj_factor(pro, train_start, ref_date, cache_dir=cache_dir)
 
     codes = stock_basic["ts_code"].tolist()
     fina_frames = []
     for i, code in enumerate(codes):
         if (i + 1) % 200 == 0:
             console.print(f"  fina: {i + 1}/{len(codes)}")
-        df = fetch_fina_indicator(pro, code)
+        df = fetch_fina_indicator(pro, code, cache_dir=cache_dir)
         if len(df) > 0:
             fina_frames.append(df)
     fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
@@ -73,38 +79,14 @@ def run_cmd(
         daily=daily_merged, daily_basic=daily_basic, fina_indicator=fina_all, adj_factor=adj_factor,
     )
 
-    # --- Resolve strategies ---
-    strat_paths = [Path(s) for s in (strategies or config.strategies)]
-    if not strat_paths:
-        console.print("[yellow]No strategies specified. Use --strategy or set strategies in gemstar.yaml[/yellow]")
-        raise typer.Exit(1)
-
     # --- Benchmark NAV ---
     bench = index_daily.set_index("trade_date")["close"].sort_index()
-    bt_dates = sorted(
-        trade_cal[(trade_cal["cal_date"] >= ref_date) & (trade_cal["cal_date"] <= ref_date)]["cal_date"].tolist()
-    )
-    if not bt_dates:
-        bt_dates = sorted(trade_cal[trade_cal["cal_date"] <= ref_date]["cal_date"].tolist())
-    benchmark_nav = bench.reindex(bt_dates).ffill()
+    benchmark_nav = bench.ffill()
     benchmark_nav = benchmark_nav / benchmark_nav.iloc[0] * 100000
-
-    # --- Build signals and rankings from first strategy ---
-    strat_cfg = StrategyConfigV1.from_yaml(strat_paths[0])
-    console.print(f"[cyan]Building signals[/cyan] (LSTM timer, seq_len={strat_cfg.timer.seq_len})...")
-    signals = build_signals(index_daily, bt_dates, strat_cfg.timer)
-    console.print(f"  {len(signals)} signal dates, position range: {signals['position'].min():.2f}~{signals['position'].max():.2f}")
-
-    console.print(f"[cyan]Building rankings[/cyan] ({len(strat_cfg.factors)} factors, top_n={strat_cfg.top_n})...")
-    rankings = build_rankings(
-        daily_merged, index_daily, fina_all,
-        strat_cfg.factors, strat_cfg.top_n, bt_dates,
-    )
-    console.print(f"  {len(rankings)} ranking dates")
 
     # --- Run pipeline ---
     role_overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()} if config.roles else None
-    console.print(f"[cyan]Running pipeline[/cyan] ({len(strat_paths)} strategies)...")
+    console.print(f"[cyan]Running pipeline[/cyan] ({len(strat_paths)} strategies, per-strategy inputs)...")
     result = run_daily_pipeline(
         run_id=run_id,
         data=data,
@@ -112,8 +94,6 @@ def run_cmd(
         pool_path=Path(config.pool_path),
         reference_date=ref_date,
         benchmark_nav=benchmark_nav,
-        signals=signals,
-        rankings=rankings,
         index_df=index_daily,
         llm_available=llm or config.llm.available,
         role_overrides=role_overrides,
@@ -123,6 +103,7 @@ def run_cmd(
         gen_target_count=config.strategy_generation.target_count,
         gen_max_iterations=config.strategy_generation.max_iterations,
         gen_cooldown_seconds=config.strategy_generation.cooldown_seconds,
+        auto_build_strategy_inputs=True,
     )
 
     # --- Output ---
@@ -140,10 +121,17 @@ def _today_str() -> str:
     return date.today().strftime("%Y%m%d")
 
 
-def _train_start(ref_date: str) -> str:
-    """2 years before ref_date for training data."""
-    y = int(ref_date[:4]) - 2
-    return f"{y}{ref_date[4:]}"
+def _data_start(ref_date: str, strategies: list[StrategyConfigV1], lookback_years: int) -> str:
+    """Earliest data date needed for configured strategy backtests."""
+    starts = [_offset_years(ref_date, -lookback_years)]
+    for strategy in strategies:
+        starts.append(_offset_years(strategy.backtest.start, -1))
+    return min(starts)
+
+
+def _offset_years(yyyymmdd: str, years: int) -> str:
+    ts = pd.to_datetime(yyyymmdd, format="%Y%m%d") + pd.DateOffset(years=years)
+    return ts.strftime("%Y%m%d")
 
 
 def _json_summary(result: dict) -> dict:

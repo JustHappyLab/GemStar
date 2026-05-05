@@ -18,7 +18,7 @@ def history_cmd(
 ) -> None:
     """List recent pipeline runs."""
     fmt = get_output_format()
-    config = load_config()
+    config = load_config(Path(config_path) if config_path else None)
     db_path = config.db_path
 
     if not Path(db_path).exists():

@@ -50,6 +50,12 @@ def build_signals(
     if timer_cfg is None:
         timer_cfg = TimerConfigV1()
 
+    if timer_cfg.mode == "full":
+        return pd.DataFrame({"trade_date": trade_dates, "position": [1.0] * len(trade_dates)})
+
+    if timer_cfg.mode == "ma":
+        return _build_ma_signals(index_daily, trade_dates)
+
     features = compute_index_features(index_daily)
     if features.empty or len(features) < timer_cfg.seq_len + timer_cfg.horizon + 10:
         return pd.DataFrame({"trade_date": trade_dates, "position": [0.0] * len(trade_dates)})
@@ -88,3 +94,15 @@ def build_signals(
 
     raw_signals = generate_signals(model, X_pred, pred_dates)
     return align_signals_to_calendar(raw_signals, trade_dates)
+
+
+def _build_ma_signals(index_daily: pd.DataFrame, trade_dates: list[str], window: int = 20) -> pd.DataFrame:
+    """Simple MA timer: invested when prior close is above its moving average."""
+    if not trade_dates:
+        return pd.DataFrame(columns=["trade_date", "position"])
+    df = index_daily[["trade_date", "close"]].copy().sort_values("trade_date")
+    df["trade_date"] = df["trade_date"].astype(str)
+    df["ma"] = df["close"].rolling(window).mean()
+    df["position"] = (df["close"].shift(1) > df["ma"].shift(1)).astype(float)
+    raw = df[df["trade_date"].isin(trade_dates)][["trade_date", "position"]]
+    return align_signals_to_calendar(raw, trade_dates)

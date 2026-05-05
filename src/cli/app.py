@@ -20,6 +20,12 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+scheduler_app = typer.Typer(
+    name="scheduler",
+    help="Manage the automatic daily pipeline scheduler.",
+    no_args_is_help=True,
+)
+
 
 @app.callback()
 def _global_options(
@@ -51,15 +57,24 @@ from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
 app.command("fetch")(fetch_cmd)
-app.command("run-status")(status_cmd)
+app.command("status")(status_cmd)
+app.command("run-status", hidden=True)(status_cmd)
 app.command("history")(history_cmd)
 app.command("roles")(roles_cmd)
 app.command("strategies")(strategies_cmd)
 app.command("factors")(factors_cmd)
-app.command("start")(start_cmd)
-app.command("stop")(stop_cmd)
-app.command("status")(daemon_status_cmd)
-app.command("restart")(restart_cmd)
+scheduler_app.command("start")(start_cmd)
+scheduler_app.command("status")(daemon_status_cmd)
+scheduler_app.command("stop")(stop_cmd)
+scheduler_app.command("restart")(restart_cmd)
+app.add_typer(scheduler_app, name="scheduler")
+app.command("start", hidden=True)(start_cmd)
+app.command("stop", hidden=True)(stop_cmd)
+app.command("restart", hidden=True)(restart_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("cleanup")(cleanup_cmd)
 app.command("leaderboard")(leaderboard_cmd)
+
+
+if __name__ == "__main__":
+    app()

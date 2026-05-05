@@ -8,7 +8,7 @@ CALLING SPEC:
 HARD GATES:
     1. Sharpe >= 1.0
     2. Calmar >= 0.8
-    3. max_drawdown >= -0.30  (abs(max_dd) <= 0.30)
+    3. max_drawdown <= 0.30  (absolute drawdown fraction, 0.30 = 30%)
     4. completed_trades >= 100
     5. Segment Sharpe IR std <= 0.5  (consistency across yearly segments)
 
@@ -29,7 +29,7 @@ from src.schemas.verdict import HardGateResultV1, VerdictV1
 # ---------------------------------------------------------------------------
 _SHARPE_MIN = 1.0
 _CALMAR_MIN = 0.8
-_MAX_DD_FLOOR = -0.30  # max_drawdown must be >= this value
+_MAX_DD_MAX = 0.30
 _COMPLETED_TRADES_MIN = 100
 _SEGMENT_IR_STD_MAX = 0.5
 
@@ -62,8 +62,9 @@ def evaluate(result: BacktestResultV1, *, strategy_id: str = "") -> VerdictV1:
     # Gate 2 — Calmar
     gates.append(_check("calmar", metrics.calmar, _CALMAR_MIN, ge=True))
 
-    # Gate 3 — Max drawdown (must be >= -0.30, i.e. not deeper than -30%)
-    gates.append(_check("max_drawdown", metrics.max_drawdown, _MAX_DD_FLOOR, ge=True))
+    # Gate 3 — Max drawdown. Metrics use a non-negative absolute fraction;
+    # abs() keeps older serialized results with negative drawdown values compatible.
+    gates.append(_check("max_drawdown", abs(metrics.max_drawdown), _MAX_DD_MAX, ge=False))
 
     # Gate 4 — Completed trades
     gates.append(_check("completed_trades", float(metrics.completed_trades), float(_COMPLETED_TRADES_MIN), ge=True))

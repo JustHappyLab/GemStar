@@ -45,7 +45,8 @@ def calc_max_drawdown(nav: pd.Series) -> tuple[float, object, object]:
 
 
 def calc_calmar(cagr: float, max_dd: float) -> float:
-    return cagr / max_dd if max_dd != 0 else float('inf')
+    dd = abs(max_dd)
+    return cagr / dd if dd != 0 else float('inf')
 
 
 def calc_win_rate(trade_pnls: pd.Series) -> float:

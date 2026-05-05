@@ -80,6 +80,14 @@ def test_max_dd_too_deep_rejects():
     assert any("max_drawdown" in issue for issue in verdict.blocking_issues)
 
 
+def test_positive_max_dd_too_deep_rejects():
+    result = _make_result(max_drawdown=0.45)
+    verdict = evaluate(result)
+
+    assert verdict.recommended_state == "rejected"
+    assert any("max_drawdown" in issue for issue in verdict.blocking_issues)
+
+
 def test_zero_completed_trades_rejects():
     result = _make_result(completed_trades=0)
     verdict = evaluate(result)

@@ -171,6 +171,37 @@ class TestRunStrategyFromYaml:
         assert isinstance(m.sharpe, float)
         assert isinstance(m.cagr, float)
 
+    def test_passes_strategy_backtest_window_to_engine(self, tmp_path, monkeypatch):
+        yaml_path = _write_yaml(tmp_path, {"start": "20240102", "end": "20240104"})
+        captured: dict[str, list[str]] = {}
+
+        def fake_run_backtest(*, trade_dates, **kwargs):
+            captured["trade_dates"] = trade_dates
+            nav = pd.Series(
+                {d: 100_000.0 + i * 100.0 for i, d in enumerate(trade_dates)},
+                dtype=float,
+            )
+            return {
+                "nav": nav,
+                "trades": [],
+                "daily_log": [],
+                "trade_pnls": pd.Series(dtype=float),
+                "daily_turnover": pd.Series({d: 0.0 for d in trade_dates}, dtype=float),
+                "daily_exposure": pd.Series({d: 0.0 for d in trade_dates}, dtype=float),
+            }
+
+        monkeypatch.setattr("src.strategies.runner.run_backtest", fake_run_backtest)
+
+        run_strategy_from_yaml(
+            yaml_path,
+            daily_df=_make_daily_df(),
+            signals=pd.DataFrame({"trade_date": DATES, "position": [1.0] * 5}),
+            rankings={d: STOCKS for d in DATES},
+            benchmark_nav=_make_benchmark_nav(),
+        )
+
+        assert captured["trade_dates"] == ["20240102", "20240103", "20240104"]
+
     def test_segments_populated(self, tmp_path):
         yaml_path = _write_yaml(tmp_path)
         result = run_strategy_from_yaml(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 import pandas as pd
 
@@ -23,8 +25,9 @@ def fetch_cmd(
     )
 
     fmt = get_output_format()
-    config = load_config()
+    config = load_config(Path(config_path) if config_path else None)
     pro = init_tushare(config.tushare_token or None)
+    cache_dir = config.data_cache_dir
 
     if not start or not end:
         from datetime import date, timedelta
@@ -36,22 +39,22 @@ def fetch_cmd(
     tables = {}
 
     console.print("  Trade calendar...")
-    tables["trade_cal"] = fetch_trade_calendar(pro, start, end)
+    tables["trade_cal"] = fetch_trade_calendar(pro, start, end, cache_dir=cache_dir)
 
     console.print("  Stock basic...")
-    tables["stock_basic"] = fetch_stock_basic(pro)
+    tables["stock_basic"] = fetch_stock_basic(pro, cache_dir=cache_dir)
 
     console.print("  Index daily...")
-    tables["index_daily"] = fetch_index_daily(pro, config.benchmark, start, end)
+    tables["index_daily"] = fetch_index_daily(pro, config.benchmark, start, end, cache_dir=cache_dir)
 
     console.print("  Daily bars...")
-    tables["daily_all"] = fetch_daily_all(pro, start, end)
+    tables["daily_all"] = fetch_daily_all(pro, start, end, cache_dir=cache_dir)
 
     console.print("  Daily basic...")
-    tables["daily_basic"] = fetch_daily_basic(pro, start, end)
+    tables["daily_basic"] = fetch_daily_basic(pro, start, end, cache_dir=cache_dir)
 
     console.print("  Adj factors...")
-    tables["adj_factor"] = fetch_adj_factor(pro, start, end)
+    tables["adj_factor"] = fetch_adj_factor(pro, start, end, cache_dir=cache_dir)
 
     stock_basic = tables["stock_basic"]
     codes = stock_basic["ts_code"].tolist()
@@ -60,7 +63,7 @@ def fetch_cmd(
     for i, code in enumerate(codes):
         if (i + 1) % 200 == 0:
             console.print(f"    {i + 1}/{len(codes)}")
-        df = fetch_fina_indicator(pro, code)
+        df = fetch_fina_indicator(pro, code, cache_dir=cache_dir)
         if len(df) > 0:
             fina_frames.append(df)
     tables["fina_all"] = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()

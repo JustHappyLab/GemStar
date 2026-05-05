@@ -1,4 +1,4 @@
-"""gemstar start/stop/status/restart — background scheduler management."""
+"""Scheduler command handlers — background daily pipeline management."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def start_cmd(
     foreground: bool = typer.Option(False, "--foreground", "-f", help="Run in foreground (no detach)."),
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
-    """Start the scheduler daemon in the background."""
+    """Start the daily pipeline scheduler."""
     config = _load_and_validate(config_path)
 
     if _is_running():
@@ -47,22 +47,22 @@ def start_cmd(
         _run_daemon(config)
     else:
         pid = _daemonize(log_path)
-        console.print("[green]Daemon started.[/green]")
+        console.print("[green]Scheduler started.[/green]")
         console.print(f"  PID:  {pid}")
         console.print(f"  Log:  {log_path}")
         console.print(f"  Fetch: {config.schedule.fetch}  Run: {config.schedule.run}")
         console.print()
-        console.print("[dim]Manage with: gemstar status | stop | restart[/dim]")
+        console.print("[dim]Manage with: gemstar scheduler status | scheduler stop | scheduler restart[/dim]")
 
 
 def stop_cmd() -> None:
-    """Stop the scheduler daemon."""
+    """Stop the daily pipeline scheduler."""
     pid = _read_pid()
     if pid is None:
-        console.print("[yellow]Daemon is not running.[/yellow]")
+        console.print("[yellow]Scheduler is not running.[/yellow]")
         raise typer.Exit(0)
 
-    console.print(f"Stopping daemon (PID {pid})...")
+    console.print(f"Stopping scheduler (PID {pid})...")
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -89,14 +89,14 @@ def stop_cmd() -> None:
             pass
 
     _remove_pid()
-    console.print("[green]Daemon stopped.[/green]")
+    console.print("[green]Scheduler stopped.[/green]")
 
 
 def daemon_status_cmd() -> None:
-    """Show daemon status."""
+    """Show scheduler process status."""
     pid = _read_pid()
     if pid is None:
-        console.print("[dim]Daemon is not running.[/dim]")
+        console.print("[dim]Scheduler is not running.[/dim]")
         raise typer.Exit(0)
 
     try:
@@ -113,7 +113,7 @@ def daemon_status_cmd() -> None:
     except OSError:
         uptime = "?"
 
-    console.print(f"[green]Daemon is running.[/green]")
+    console.print(f"[green]Scheduler is running.[/green]")
     console.print(f"  PID:     {pid}")
     console.print(f"  Uptime:  {uptime}")
     if config.schedule:
@@ -126,12 +126,12 @@ def restart_cmd(
     foreground: bool = typer.Option(False, "--foreground", "-f", help="Run in foreground (no detach)."),
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
-    """Restart the scheduler daemon."""
+    """Restart the daily pipeline scheduler."""
     pid = _read_pid()
     if pid is not None:
         try:
             os.kill(pid, 0)
-            console.print("Stopping current daemon...")
+            console.print("Stopping current scheduler...")
             stop_cmd()
         except ProcessLookupError:
             _remove_pid()
@@ -192,7 +192,7 @@ def _setup_logging(log_path: Path) -> None:
 
 
 def _print_summary(config) -> None:
-    console.print(f"[cyan]GemStar daemon[/cyan]")
+    console.print(f"[cyan]GemStar scheduler[/cyan]")
     console.print(f"  Fetch: {config.schedule.fetch}")
     console.print(f"  Run:   {config.schedule.run}")
     console.print(f"  LLM:   {'on' if config.llm.available else 'off'}")

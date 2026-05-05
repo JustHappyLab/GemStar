@@ -39,7 +39,7 @@ schedule: "收盘后"
 pool_path: factors/pool.json        # 因子池
 db_path: state.db                   # 状态数据库
 artifacts_dir: artifacts            # 产物目录
-log_path: logs/gemstar.log          # daemon 日志路径
+log_path: logs/gemstar.log          # scheduler 日志路径
 
 # ─── LLM 配置 ─────────────────────────────────────────────
 # 控制 pipeline 是否启用 LLM 策略生成阶段
