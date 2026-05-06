@@ -4,5 +4,4 @@ provider: claude_code
 skills:
   - write_code
   - fix_bug
-approval: true
 timeout: 600

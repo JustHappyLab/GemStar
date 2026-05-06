@@ -16,6 +16,7 @@ import yaml
 from src.cli.app import get_output_format
 from src.cli.config import find_config, load_config
 from src.cli.output import console, emit
+from src.roles.config import RoleConfig
 
 
 def _check(name: str, ok: bool, detail: str = "") -> dict:
@@ -142,6 +143,8 @@ def doctor_cmd() -> None:
                 data = yaml.safe_load(rf.read_text())
                 if not data or "name" not in data:
                     bad_roles.append(rf.name)
+                    continue
+                RoleConfig.model_validate(data)
             except Exception:
                 bad_roles.append(rf.name)
         if bad_roles:

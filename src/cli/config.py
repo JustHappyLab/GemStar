@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _CONFIG_SEARCH = [
     Path("gemstar.yaml"),
@@ -26,7 +28,7 @@ data_cache_dir: data/raw            # 数据缓存目录（Parquet）
 
 # ─── 数据拉取 ─────────────────────────────────────────────
 data:
-  auto_fetch: true                  # pipeline 前自动拉取缺失数据
+  scheduler_prefetch: true          # scheduler 在 run 前额外执行 gemstar fetch
   lookback_years: 2                 # 训练数据回溯年数
 
 # ─── 调度 ─────────────────────────────────────────────────
@@ -45,9 +47,9 @@ log_path: logs/gemstar.log          # scheduler 日志路径
 # 控制 pipeline 是否启用 LLM 策略生成阶段
 # gemstar run --llm 可临时覆盖
 llm:
-  available: false                  # true = 默认启用 LLM
+  enabled: false                    # true = 默认启用 LLM 阶段
   provider: api                     # 默认 provider（api / claude_code / gemini_cli / codex_cli）
-  base_url: null                    # Anthropic API 代理地址（中国大陆用户设置，如 https://your-proxy.com/v1）
+  base_url: ${ANTHROPIC_BASE_URL}   # Anthropic API 代理地址（仅 api provider 使用）
 
 # ─── 策略生成 ──────────────────────────────────────────────
 strategy_generation:
@@ -79,6 +81,7 @@ strategies:
 """
 
 _ENV_RE = re.compile(r"\$\{(\w+)}")
+ProviderName = Literal["api", "claude_code", "gemini_cli", "codex_cli"]
 
 # ── Schedule presets ──────────────────────────────────────────
 _PRESETS: dict[str, dict[str, str]] = {
@@ -89,27 +92,37 @@ _PRESETS: dict[str, dict[str, str]] = {
 
 
 class LLMConfig(BaseModel):
-    available: bool = False
-    provider: str = "api"
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    provider: ProviderName = "api"
     base_url: str | None = None
 
 
 class RoleOverride(BaseModel):
-    provider: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    provider: ProviderName | None = None
 
 
 class DataConfig(BaseModel):
-    auto_fetch: bool = True
+    model_config = ConfigDict(extra="forbid")
+
+    scheduler_prefetch: bool = True
     lookback_years: int = 2
 
 
 class StrategyGenConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_count: int = 3
     max_iterations: int = 10
     cooldown_seconds: int = 300
 
 
 class ScheduleConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     fetch: str = "15:30"
     run: str = "16:00"
 
@@ -132,6 +145,8 @@ def parse_schedule(value: str | dict | None) -> ScheduleConfig | None:
 
 
 class GemStarConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tushare_token: str = ""
     benchmark: str = "auto"
     pool_path: str = "factors/pool.json"
@@ -184,6 +199,7 @@ def load_config(path: Path | None = None) -> GemStarConfig:
     If *path* is None, searches for gemstar.yaml / gemstar.yml / .gemstar.yaml
     in the current directory.  Returns defaults if no file is found.
     """
+    load_dotenv()
     if path is None:
         path = find_config()
     if path is None or not path.exists():

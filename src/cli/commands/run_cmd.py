@@ -13,6 +13,14 @@ from src.cli.app import get_output_format
 from src.cli.config import load_config
 from src.cli.output import console, emit
 
+_LLM_RUN_ROLES = (
+    "macro_analyst",
+    "event_scanner",
+    "research_analyst",
+    "strategy_architect",
+    "reviewer",
+)
+
 
 def run_cmd(
     date: str = typer.Option(None, "--date", "-d", help="Trading date (YYYYMMDD). Default: today."),
@@ -43,9 +51,11 @@ def run_cmd(
         raise typer.Exit(1)
     strat_configs = [StrategyConfigV1.from_yaml(p) for p in strat_paths]
 
+    effective_llm = llm or config.llm.enabled
+
     console.print(f"[cyan]GemStar run[/cyan] {run_id}")
     console.print(f"  Date: {ref_date}")
-    console.print(f"  LLM:  {'on' if llm else 'off'}")
+    console.print(f"  LLM:  {'on' if effective_llm else 'off'}")
 
     # --- Fetch data ---
     console.print("[cyan]Fetching data...[/cyan]")
@@ -107,7 +117,7 @@ def run_cmd(
     benchmark_nav = benchmark_nav / benchmark_nav.iloc[0] * 100000
 
     # --- Run pipeline ---
-    role_overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()} if config.roles else None
+    role_overrides = _role_overrides(config)
     console.print(f"[cyan]Running pipeline[/cyan] ({len(strat_paths)} strategies, per-strategy inputs)...")
     console.print(f"  Benchmark: {benchmark_resolution.resolved} ({benchmark_resolution.name})")
     result = run_daily_pipeline(
@@ -119,7 +129,7 @@ def run_cmd(
         benchmark_nav=benchmark_nav,
         benchmark_info=benchmark_resolution.model_dump(),
         index_df=index_daily,
-        llm_available=llm or config.llm.available,
+        llm_available=effective_llm,
         role_overrides=role_overrides,
         llm_base_url=config.llm.base_url,
         db_path=config.db_path,
@@ -143,6 +153,16 @@ def run_cmd(
 
 def _today_str() -> str:
     return date.today().strftime("%Y%m%d")
+
+
+def _role_overrides(config) -> dict[str, dict] | None:
+    """Build role provider overrides for run-time LLM stages."""
+    overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()}
+    default_provider = (config.llm.provider or "").strip()
+    if default_provider:
+        for role_name in _LLM_RUN_ROLES:
+            overrides.setdefault(role_name, {}).setdefault("provider", default_provider)
+    return overrides or None
 
 
 def _fetch_benchmark_index_daily(

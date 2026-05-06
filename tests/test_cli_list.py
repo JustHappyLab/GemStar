@@ -26,10 +26,10 @@ def test_roles_table(tmp_path, monkeypatch):
     roles_dir = tmp_path / "roles"
     roles_dir.mkdir()
     (roles_dir / "analyst.yaml").write_text(
-        "name: analyst\nprovider: api\nskills:\n  - research\napproval: false\n"
+        "name: analyst\nprovider: api\nskills:\n  - research\ntimeout: 120\n"
     )
     (roles_dir / "coder.yaml").write_text(
-        "name: coder\nprovider: claude_code\nskills:\n  - write_code\napproval: true\n"
+        "name: coder\nprovider: claude_code\nskills:\n  - write_code\ntimeout: 300\n"
     )
     monkeypatch.chdir(tmp_path)
     _reset_output_format()
@@ -46,7 +46,7 @@ def test_roles_json(tmp_path, monkeypatch):
     roles_dir = tmp_path / "roles"
     roles_dir.mkdir()
     (roles_dir / "analyst.yaml").write_text(
-        "name: analyst\nprovider: api\nskills:\n  - research\napproval: false\n"
+        "name: analyst\nprovider: api\nskills:\n  - research\ntimeout: 120\n"
     )
     monkeypatch.chdir(tmp_path)
     _reset_output_format()

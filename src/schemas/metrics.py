@@ -9,6 +9,8 @@ SIDE EFFECTS:
     None.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -47,10 +49,6 @@ class ICReportEntry(BaseModel):
 class ICReportV1(BaseModel):
     version: Literal["ICReportV1"] = "ICReportV1"
     factors: list[ICReportEntry] = Field(default_factory=list)
-
-
-from typing import Literal
-
 
 class BacktestResultV1(BaseModel):
     version: Literal["BacktestResultV1"] = "BacktestResultV1"
