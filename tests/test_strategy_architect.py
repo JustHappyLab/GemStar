@@ -55,6 +55,63 @@ backtest:
   cost_multiplier: 1.0
 """
 
+FENCED_NEW_FACTOR_YAML = """\
+```yaml
+version: StrategyConfigV1
+name: low_vol_proxy
+hypothesis: Use active factors as a proxy because volatility_20d is not in the pool
+source_idea: ticket_20260506_003 requested volatility_20d; proxy with existing factors
+universe: gemstar_default
+timer:
+  mode: full
+factors:
+  - factor_id: volatility_20d
+    weight: 0.30
+  - factor_id: turnover_20d
+    weight: -0.10
+  - factor_id: roe
+    weight: 0.40
+  - factor_id: rel_strength_20d
+    weight: 0.20
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260506"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0
+```
+"""
+
+PROSE_WRAPPED_COLON_YAML = """\
+Here is the executable draft:
+
+version: StrategyConfigV1
+name: momentum_colon_text
+hypothesis: weight_rebalance (confidence: 0.72) uses momentum tilt
+source_idea: ticket_20260506_001: momentum_20d up, turnover_20d down
+universe: auto
+universe_rationale: no board-specific mandate: use auto
+timer:
+  mode: full
+factors:
+  - factor_id: momentum_20d
+    weight: 0.6
+  - factor_id: roe
+    weight: 0.4
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260506"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0
+"""
+
 
 def _make_tickets() -> list[ResearchTicketV1]:
     return [
@@ -205,3 +262,85 @@ class TestDraftStrategy:
         assert result.exists()
         config = StrategyConfigV1.from_yaml(result)
         assert config.name == "growth_momentum_v2"
+
+    def test_new_factor_draft_is_normalized_to_active_positive_factors(self, tmp_path: Path) -> None:
+        """Unavailable and negative-weight factors are removed before schema validation."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+
+        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.return_value = _make_response(FENCED_NEW_FACTOR_YAML)
+
+            from src.llm.client import LLMClient
+
+            llm = LLMClient(api_key="test-key")
+            result = draft_strategy(
+                tickets=_make_tickets(),
+                pool_path=pool_path,
+                reference_date="2026-05-06",
+                llm_client=llm,
+                output_dir=output_dir,
+            )
+
+        config = StrategyConfigV1.from_yaml(result)
+        factor_ids = [factor.factor_id for factor in config.factors]
+        assert config.universe == "auto"
+        assert factor_ids == ["roe", "rel_strength_20d"]
+        assert sum(factor.weight for factor in config.factors) == pytest.approx(1.0)
+
+    def test_no_usable_active_factors_raises_value_error(self, tmp_path: Path) -> None:
+        """Drafts with only unknown or non-positive factors fail with a clear error."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+        bad_yaml = """\
+version: StrategyConfigV1
+name: impossible_low_vol
+factors:
+  - factor_id: volatility_20d
+    weight: 1.0
+"""
+
+        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.return_value = _make_response(bad_yaml)
+
+            from src.llm.client import LLMClient
+
+            llm = LLMClient(api_key="test-key")
+            with pytest.raises(ValueError, match="no usable positive-weight factors"):
+                draft_strategy(
+                    tickets=_make_tickets(),
+                    pool_path=pool_path,
+                    reference_date="2026-05-06",
+                    llm_client=llm,
+                    output_dir=output_dir,
+                )
+
+    def test_prose_wrapped_colon_text_yaml_is_parsed(self, tmp_path: Path) -> None:
+        """Common CLI-provider prose and colon text still produce a valid draft."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+
+        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.messages.create.return_value = _make_response(PROSE_WRAPPED_COLON_YAML)
+
+            from src.llm.client import LLMClient
+
+            llm = LLMClient(api_key="test-key")
+            result = draft_strategy(
+                tickets=_make_tickets(),
+                pool_path=pool_path,
+                reference_date="2026-05-06",
+                llm_client=llm,
+                output_dir=output_dir,
+            )
+
+        config = StrategyConfigV1.from_yaml(result)
+        assert config.name == "momentum_colon_text"
+        assert "confidence: 0.72" in config.hypothesis
+        assert "ticket_20260506_001:" in config.source_idea

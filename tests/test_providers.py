@@ -167,7 +167,7 @@ class TestGeminiCliProvider:
 
 
 class TestCodexCliProvider:
-    @patch("src.llm.providers.base.subprocess.run")
+    @patch("src.llm.providers.codex_cli_provider.subprocess.run")
     def test_execute_success(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="codex result", stderr="")
         provider = CodexCliProvider()
@@ -175,13 +175,26 @@ class TestCodexCliProvider:
 
         assert result.output == "codex result"
         assert result.provider == "codex_cli"
+        assert mock_run.call_args.args[0][:4] == [
+            "codex",
+            "exec",
+            "--color",
+            "never",
+        ]
 
-    @patch("src.llm.providers.base.subprocess.run")
+    @patch("src.llm.providers.codex_cli_provider.subprocess.run")
     def test_execute_raises_on_failure(self, mock_run):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="bad")
         provider = CodexCliProvider()
         with pytest.raises(RuntimeError, match="codex_cli exited 1"):
             provider.execute("test")
+
+    def test_build_command_includes_model_when_configured(self):
+        provider = CodexCliProvider(model="gpt-5.5")
+        cmd = provider.build_command("test", "/tmp/out.txt")
+
+        assert cmd[:6] == ["codex", "exec", "--color", "never", "--model", "gpt-5.5"]
+        assert "--output-last-message" in cmd
 
 
 # ---------------------------------------------------------------------------
