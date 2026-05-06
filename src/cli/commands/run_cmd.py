@@ -20,6 +20,7 @@ _LLM_RUN_ROLES = (
     "strategy_architect",
     "reviewer",
 )
+_ENGINEERING_ROLES = ("engineer", "bugfix")
 
 
 def run_cmd(
@@ -138,6 +139,7 @@ def run_cmd(
         gen_max_iterations=config.strategy_generation.max_iterations,
         gen_cooldown_seconds=config.strategy_generation.cooldown_seconds,
         auto_build_strategy_inputs=True,
+        engineering_config=config.engineering,
     )
 
     # --- Output ---
@@ -162,6 +164,11 @@ def _role_overrides(config) -> dict[str, dict] | None:
     if default_provider:
         for role_name in _LLM_RUN_ROLES:
             overrides.setdefault(role_name, {}).setdefault("provider", default_provider)
+    if config.engineering.enabled:
+        engineering_provider = (config.engineering.provider or "").strip()
+        if engineering_provider:
+            for role_name in _ENGINEERING_ROLES:
+                overrides.setdefault(role_name, {}).setdefault("provider", engineering_provider)
     return overrides or None
 
 

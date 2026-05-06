@@ -44,6 +44,8 @@ roles/*.yaml          skills/*/             src/llm/providers/
 
 用户可通过修改 `gemstar.yaml` 的 `llm.provider` 设置 run-time LLM 阶段的默认后端，也可通过 `roles:` 覆盖单个角色 provider，无需改代码。
 
+`engineer` / `bugfix` 属于 engineering scope，不属于默认日线 LLM 阶段。它们只能使用 CLI provider，并受 `engineering` 路径策略约束：回测引擎、指标和评估规则默认冻结，Agent 只能修改配置允许的扩展点。
+
 #### 角色配置
 
 | 角色 | Provider | Skills | Timeout |
@@ -210,6 +212,18 @@ llm:
   enabled: true               # 默认启用 LLM 阶段；也可用 gemstar run --llm 临时启用
   provider: claude_code       # run-time LLM 角色的默认 provider
 
+engineering:
+  enabled: false              # 工程自愈默认关闭
+  provider: codex_cli         # engineer / bugfix 默认 CLI provider
+  auto_execute: true          # enabled 后 pipeline 自动执行 engineering task
+  auto_apply: false           # 只产出 patch/task，需人工批准合入
+  forbidden_paths:
+    - src/engine/**
+    - src/judge/**
+    - src/portfolio/cost.py
+    - src/schemas/metrics.py
+    - src/schemas/verdict.py
+
 roles:
   engineer:
     provider: gemini_cli      # 工程师改用 Gemini
@@ -218,6 +232,18 @@ roles:
 ```
 
 `llm.enabled` 只表示是否启用 LLM 阶段，不表示 Anthropic API key 是否可用；具体后端由 `llm.provider` / `roles.*.provider` 决定。
+
+`engineering.provider` 是 `engineer` / `bugfix` 的默认 provider，只接受 `claude_code` / `gemini_cli` / `codex_cli`。`roles.engineer.provider` 或 `roles.bugfix.provider` 仍然可以单独覆盖它。
+
+Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角色 `allowed_paths`。如果一次修复需要修改 frozen core（例如 `src/engine/**` 或 `src/judge/**`），应转为人工处理，而不是自动自愈。
+
+启用 `engineering.enabled` 后，策略级失败会被转成 `engineering_task_*.json` artifact：
+
+- validation 发现缺失因子或不支持的新策略模板 → `engineer`
+- strategy input / backtest 的局部代码异常 → `bugfix`
+- 普通坏策略（如空 factors）不会创建工程任务
+
+默认情况下，`engineering.enabled: true` 后 pipeline 会自动执行这些 task，并在执行后用路径策略校验 diff，禁止触碰 frozen core。`gemstar engineering run ... --dry-run` 仍可用于调试 prompt 或重放单个 task。
 
 只需配置你实际使用的 provider。只跑不带 LLM 的 pipeline（`gemstar run` 且 `llm.enabled: false`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm` 或 `llm.enabled: true`）则需额外配置对应 provider。
 
@@ -232,6 +258,12 @@ gemstar run --date 20260503 --llm
 
 # 指定策略
 gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
+
+# 预览工程自愈 task 会发给 agent 的 prompt（不改代码）
+gemstar engineering run artifacts/<run_id>/engineering_task_x.json --dry-run
+
+# 手动执行工程自愈 task；要求 git worktree 干净，执行后校验 changed paths
+gemstar engineering run artifacts/<run_id>/engineering_task_x.json
 
 # 拉取数据
 gemstar fetch --start 20240101 --end 20260503

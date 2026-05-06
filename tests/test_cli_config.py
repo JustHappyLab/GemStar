@@ -31,6 +31,12 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg.data_cache_dir == "data/raw"
     assert cfg.llm.enabled is False
     assert cfg.llm.provider == "api"
+    assert cfg.engineering.enabled is False
+    assert cfg.engineering.provider == "codex_cli"
+    assert cfg.engineering.auto_execute is True
+    assert "src/engine/**" in cfg.engineering.forbidden_paths
+    assert "src/ranker/**" in cfg.engineering.engineer.allowed_paths
+    assert "src/data/**" in cfg.engineering.bugfix.allowed_paths
     assert cfg.strategies == []
 
 
@@ -49,6 +55,20 @@ data_cache_dir: cache/raw
 llm:
   enabled: true
   provider: claude_code
+engineering:
+  enabled: true
+  provider: codex_cli
+  auto_execute: false
+  auto_apply: false
+  max_attempts: 2
+  forbidden_paths:
+    - src/engine/**
+  engineer:
+    allowed_paths:
+      - src/factors/**
+  bugfix:
+    allowed_paths:
+      - src/data/**
 strategies:
   - strategies/s1/config.yaml
   - strategies/s2/config.yaml
@@ -65,6 +85,13 @@ strategies:
     assert cfg.data_cache_dir == "cache/raw"
     assert cfg.llm.enabled is True
     assert cfg.llm.provider == "claude_code"
+    assert cfg.engineering.enabled is True
+    assert cfg.engineering.provider == "codex_cli"
+    assert cfg.engineering.auto_execute is False
+    assert cfg.engineering.max_attempts == 2
+    assert cfg.engineering.forbidden_paths == ["src/engine/**"]
+    assert cfg.engineering.engineer.allowed_paths == ["src/factors/**"]
+    assert cfg.engineering.bugfix.allowed_paths == ["src/data/**"]
     assert cfg.strategies == [
         "strategies/s1/config.yaml",
         "strategies/s2/config.yaml",
@@ -116,6 +143,8 @@ def test_write_template_creates_file(tmp_path):
     assert "tushare_token: ${TUSHARE_TOKEN}" in text
     assert "benchmark: auto" in text
     assert "llm:" in text
+    assert "engineering:" in text
+    assert "src/engine/**" in text
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +234,15 @@ def test_invalid_llm_provider_is_rejected(tmp_path):
     """Unknown LLM providers fail during config loading."""
     cfg_path = tmp_path / "gemstar.yaml"
     cfg_path.write_text("llm:\n  provider: openai\n")
+
+    with pytest.raises(Exception, match="provider"):
+        load_config(cfg_path)
+
+
+def test_engineering_provider_rejects_api(tmp_path):
+    """Engineering automation must use a CLI provider because it can edit files."""
+    cfg_path = tmp_path / "gemstar.yaml"
+    cfg_path.write_text("engineering:\n  enabled: true\n  provider: api\n")
 
     with pytest.raises(Exception, match="provider"):
         load_config(cfg_path)

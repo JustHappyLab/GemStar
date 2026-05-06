@@ -57,6 +57,41 @@ strategy_generation:
   max_iterations: 10                # 最大迭代次数
   cooldown_seconds: 300             # 每轮冷却（秒）
 
+# ─── 工程自愈安全边界 ─────────────────────────────────────
+# Engineer/Bugfix 只能在 allowed_paths 内改代码；forbidden_paths 永远优先
+# 回测引擎、指标、规则等核心评估逻辑默认冻结
+engineering:
+  enabled: false                    # true = 允许创建/执行工程自愈任务
+  provider: codex_cli               # 仅支持 CLI provider: claude_code / gemini_cli / codex_cli
+  auto_execute: true                # true = pipeline 中自动执行 engineer/bugfix task
+  auto_apply: false                 # false = 只产出 patch/task，需人工批准合入
+  max_attempts: 1
+  forbidden_paths:
+    - src/engine/**
+    - src/judge/**
+    - src/portfolio/cost.py
+    - src/schemas/metrics.py
+    - src/schemas/verdict.py
+  engineer:
+    allowed_paths:
+      - src/ranker/**
+      - src/factors/**
+      - src/orchestrator/signals.py
+      - src/orchestrator/universe.py
+      - src/strategies/**
+      - src/schemas/strategy.py
+      - factors/pool.json
+      - strategies/drafts/**
+      - tests/**
+  bugfix:
+    allowed_paths:
+      - src/data/**
+      - src/orchestrator/**
+      - src/strategies/**
+      - src/ranker/**
+      - src/factors/**
+      - tests/**
+
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
 # 按角色切换 LLM 后端，无需改 roles/*.yaml
 # 可选值: api, claude_code, gemini_cli, codex_cli
@@ -82,6 +117,34 @@ strategies:
 
 _ENV_RE = re.compile(r"\$\{(\w+)}")
 ProviderName = Literal["api", "claude_code", "gemini_cli", "codex_cli"]
+CliProviderName = Literal["claude_code", "gemini_cli", "codex_cli"]
+
+DEFAULT_ENGINEERING_FORBIDDEN_PATHS = [
+    "src/engine/**",
+    "src/judge/**",
+    "src/portfolio/cost.py",
+    "src/schemas/metrics.py",
+    "src/schemas/verdict.py",
+]
+DEFAULT_ENGINEER_ALLOWED_PATHS = [
+    "src/ranker/**",
+    "src/factors/**",
+    "src/orchestrator/signals.py",
+    "src/orchestrator/universe.py",
+    "src/strategies/**",
+    "src/schemas/strategy.py",
+    "factors/pool.json",
+    "strategies/drafts/**",
+    "tests/**",
+]
+DEFAULT_BUGFIX_ALLOWED_PATHS = [
+    "src/data/**",
+    "src/orchestrator/**",
+    "src/strategies/**",
+    "src/ranker/**",
+    "src/factors/**",
+    "tests/**",
+]
 
 # ── Schedule presets ──────────────────────────────────────────
 _PRESETS: dict[str, dict[str, str]] = {
@@ -103,6 +166,35 @@ class RoleOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: ProviderName | None = None
+
+
+class EngineeringRolePolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_paths: list[str] = Field(default_factory=list)
+
+
+class EngineeringConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    provider: CliProviderName = "codex_cli"
+    auto_execute: bool = True
+    auto_apply: bool = False
+    max_attempts: int = Field(default=1, ge=1, le=5)
+    forbidden_paths: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_ENGINEERING_FORBIDDEN_PATHS)
+    )
+    engineer: EngineeringRolePolicy = Field(
+        default_factory=lambda: EngineeringRolePolicy(
+            allowed_paths=list(DEFAULT_ENGINEER_ALLOWED_PATHS)
+        )
+    )
+    bugfix: EngineeringRolePolicy = Field(
+        default_factory=lambda: EngineeringRolePolicy(
+            allowed_paths=list(DEFAULT_BUGFIX_ALLOWED_PATHS)
+        )
+    )
 
 
 class DataConfig(BaseModel):
@@ -155,6 +247,7 @@ class GemStarConfig(BaseModel):
     data_cache_dir: str = "data/raw"
     log_path: str = "logs/gemstar.log"
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    engineering: EngineeringConfig = Field(default_factory=EngineeringConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     strategy_generation: StrategyGenConfig = Field(default_factory=StrategyGenConfig)
     schedule: ScheduleConfig | None = None

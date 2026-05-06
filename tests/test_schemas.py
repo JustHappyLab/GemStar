@@ -31,6 +31,11 @@ from src.schemas.metrics import (
 from src.schemas.verdict import HardGateResultV1, VerdictV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 from src.schemas.report import DailyReportV1, ReportStrategyEntry
+from src.schemas.engineering import (
+    EngineeringExecutionV1,
+    EngineeringPathViolationV1,
+    EngineeringTaskV1,
+)
 
 
 def _roundtrip(model):
@@ -122,6 +127,34 @@ def test_report_schemas():
         market_summary="ChiNext up 1.2%",
         leaderboard=[
             ReportStrategyEntry(name="test", rank=1, sharpe=1.35, cagr=0.28),
+        ],
+    ))
+
+
+def test_engineering_schema():
+    _roundtrip(EngineeringTaskV1(
+        task_id="task_001",
+        run_id="run_001",
+        role="engineer",
+        reason="unsupported_capability",
+        source_step="strategy_validation",
+        strategy_id="new_factor_strategy",
+        strategy_path="artifacts/run_001/drafts/new_factor.yaml",
+        allowed_paths=["src/factors/**"],
+        forbidden_paths=["src/engine/**"],
+    ))
+    _roundtrip(EngineeringExecutionV1(
+        task_id="task_001",
+        run_id="run_001",
+        role="engineer",
+        status="rejected",
+        changed_paths=["src/engine/backtest.py"],
+        violations=[
+            EngineeringPathViolationV1(
+                path="src/engine/backtest.py",
+                reason="forbidden path",
+                pattern="src/engine/**",
+            )
         ],
     ))
 

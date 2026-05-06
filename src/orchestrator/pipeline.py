@@ -29,13 +29,21 @@ SIDE EFFECTS:
 """
 
 import logging
+import traceback
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
+from src.engineering.executor import execute_engineering_task
 from src.data.cleaner import apply_adjusted_prices
 from src.data_quality.gate import run_data_quality_gate
+from src.engineering.tasks import (
+    artifact_name as engineering_task_artifact_name,
+    task_from_exception,
+    task_from_validation_failure,
+)
 from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
 from src.orchestrator.benchmark import describe_benchmark_resolution
@@ -50,6 +58,8 @@ from src.reporter.builder import build_report, ReportStrategyEntry
 from src.roles.registry import RoleRegistry
 from src.scanner.event_scanner import scan_events
 from src.scanner.macro_analyst import analyze_market_regime
+from src.schemas.engineering import EngineeringTaskV1
+from src.schemas.engineering import EngineeringExecutionV1
 from src.schemas.metrics import BacktestResultV1
 from src.schemas.strategy import StrategyConfigV1
 from src.schemas.verdict import VerdictV1
@@ -85,6 +95,7 @@ def run_daily_pipeline(
     gen_max_iterations: int = 10,
     gen_cooldown_seconds: int = 300,
     auto_build_strategy_inputs: bool = False,
+    engineering_config: object | None = None,
 ) -> dict:
     """Execute the full daily pipeline.
 
@@ -148,6 +159,8 @@ def run_daily_pipeline(
         "tickets": [],
         "review_notes": [],
         "incident": None,
+        "engineering_tasks": [],
+        "engineering_executions": [],
         "backtest_results": [],
         "verdicts": [],
         "universe_resolutions": [],
@@ -251,6 +264,8 @@ def run_daily_pipeline(
 
         backtest_results: list[BacktestResultV1] = []
         verdicts: list[VerdictV1] = []
+        engineering_tasks: list[EngineeringTaskV1] = result["engineering_tasks"]
+        engineering_executions: list[EngineeringExecutionV1] = result["engineering_executions"]
         universe_resolutions: list[dict] = []
         universe_notes: list[str] = []
         collected_candidates: list[tuple[Path, BacktestResultV1, VerdictV1]] = []
@@ -263,17 +278,54 @@ def run_daily_pipeline(
             verdict_v = validate_strategy(strat_path, pool_path, strategy_id=strat_path.stem)
             write_artifact(run_id, f"validation_{strat_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
             if verdict_v.recommended_state == "rejected":
+                _record_engineering_task(
+                    task_from_validation_failure(
+                        run_id=run_id,
+                        strategy_path=strat_path,
+                        verdict=verdict_v,
+                        engineering_config=engineering_config,
+                    ),
+                    engineering_tasks,
+                    engineering_executions,
+                    run_id,
+                    artifacts_dir,
+                    engineering_config,
+                    role_overrides,
+                )
                 continue
-            strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
-                strat_path=strat_path,
-                data=data,
-                daily_df=daily_df,
-                index_df=index_df,
-                reference_date=reference_date,
-                explicit_signals=signals,
-                explicit_rankings=rankings,
-                auto_build=auto_build_strategy_inputs,
-            )
+            try:
+                strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
+                    strat_path=strat_path,
+                    data=data,
+                    daily_df=daily_df,
+                    index_df=index_df,
+                    reference_date=reference_date,
+                    explicit_signals=signals,
+                    explicit_rankings=rankings,
+                    auto_build=auto_build_strategy_inputs,
+                )
+            except Exception as exc:
+                task = task_from_exception(
+                    run_id=run_id,
+                    strategy_path=strat_path,
+                    source_step="strategy_inputs",
+                    error=exc,
+                    traceback_text=traceback.format_exc(),
+                    engineering_config=engineering_config,
+                )
+                if task is None:
+                    raise
+                logger.warning("Strategy input build failed for %s; engineering task created", strat_path, exc_info=True)
+                _record_engineering_task(
+                    task,
+                    engineering_tasks,
+                    engineering_executions,
+                    run_id,
+                    artifacts_dir,
+                    engineering_config,
+                    role_overrides,
+                )
+                continue
             _record_universe_resolution(
                 run_id,
                 strat_path.stem,
@@ -283,7 +335,30 @@ def run_daily_pipeline(
                 artifacts_dir,
             )
             if strat_signals is not None and strat_rankings is not None:
-                bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                try:
+                    bt = run_strategy_from_yaml(path=strat_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                except Exception as exc:
+                    task = task_from_exception(
+                        run_id=run_id,
+                        strategy_path=strat_path,
+                        source_step="backtesting",
+                        error=exc,
+                        traceback_text=traceback.format_exc(),
+                        engineering_config=engineering_config,
+                    )
+                    if task is None:
+                        raise
+                    logger.warning("Backtest failed for %s; engineering task created", strat_path, exc_info=True)
+                    _record_engineering_task(
+                        task,
+                        engineering_tasks,
+                        engineering_executions,
+                        run_id,
+                        artifacts_dir,
+                        engineering_config,
+                        role_overrides,
+                    )
+                    continue
                 bt.run_id = run_id
                 backtest_results.append(bt)
                 write_artifact(run_id, f"backtest_{strat_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
@@ -318,19 +393,56 @@ def run_daily_pipeline(
                         verdict_v = validate_strategy(draft_path, pool_path, strategy_id=draft_path.stem)
                         write_artifact(run_id, f"validation_{draft_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
                         if verdict_v.recommended_state == "rejected":
+                            _record_engineering_task(
+                                task_from_validation_failure(
+                                    run_id=run_id,
+                                    strategy_path=draft_path,
+                                    verdict=verdict_v,
+                                    engineering_config=engineering_config,
+                                ),
+                                engineering_tasks,
+                                engineering_executions,
+                                run_id,
+                                artifacts_dir,
+                                engineering_config,
+                                role_overrides,
+                            )
                             continue
 
                         # Backtest
-                        strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
-                            strat_path=draft_path,
-                            data=data,
-                            daily_df=daily_df,
-                            index_df=index_df,
-                            reference_date=reference_date,
-                            explicit_signals=signals,
-                            explicit_rankings=rankings,
-                            auto_build=auto_build_strategy_inputs,
-                        )
+                        try:
+                            strat_signals, strat_rankings, universe_resolution = _strategy_inputs(
+                                strat_path=draft_path,
+                                data=data,
+                                daily_df=daily_df,
+                                index_df=index_df,
+                                reference_date=reference_date,
+                                explicit_signals=signals,
+                                explicit_rankings=rankings,
+                                auto_build=auto_build_strategy_inputs,
+                            )
+                        except Exception as exc:
+                            task = task_from_exception(
+                                run_id=run_id,
+                                strategy_path=draft_path,
+                                source_step="strategy_inputs",
+                                error=exc,
+                                traceback_text=traceback.format_exc(),
+                                engineering_config=engineering_config,
+                            )
+                            if task is None:
+                                raise
+                            logger.warning("Strategy input build failed for %s; engineering task created", draft_path, exc_info=True)
+                            _record_engineering_task(
+                                task,
+                                engineering_tasks,
+                                engineering_executions,
+                                run_id,
+                                artifacts_dir,
+                                engineering_config,
+                                role_overrides,
+                            )
+                            continue
                         _record_universe_resolution(
                             run_id,
                             draft_path.stem,
@@ -342,7 +454,30 @@ def run_daily_pipeline(
                         if strat_signals is None or strat_rankings is None:
                             continue
 
-                        bt = run_strategy_from_yaml(path=draft_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                        try:
+                            bt = run_strategy_from_yaml(path=draft_path, daily_df=daily_df, signals=strat_signals, rankings=strat_rankings, benchmark_nav=benchmark_nav, ic_df=ic_df)
+                        except Exception as exc:
+                            task = task_from_exception(
+                                run_id=run_id,
+                                strategy_path=draft_path,
+                                source_step="backtesting",
+                                error=exc,
+                                traceback_text=traceback.format_exc(),
+                                engineering_config=engineering_config,
+                            )
+                            if task is None:
+                                raise
+                            logger.warning("Backtest failed for %s; engineering task created", draft_path, exc_info=True)
+                            _record_engineering_task(
+                                task,
+                                engineering_tasks,
+                                engineering_executions,
+                                run_id,
+                                artifacts_dir,
+                                engineering_config,
+                                role_overrides,
+                            )
+                            continue
                         bt.run_id = run_id
                         backtest_results.append(bt)
                         write_artifact(run_id, f"backtest_{draft_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
@@ -441,6 +576,53 @@ def run_daily_pipeline(
         finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
 
     return result
+
+
+def _record_engineering_task(
+    task: EngineeringTaskV1 | None,
+    tasks: list[EngineeringTaskV1],
+    executions: list[EngineeringExecutionV1],
+    run_id: str,
+    artifacts_dir: str,
+    engineering_config: object | None,
+    role_overrides: dict[str, dict] | None,
+) -> None:
+    if task is None:
+        return
+    if any(existing.task_id == task.task_id for existing in tasks):
+        return
+    tasks.append(task)
+    task_uri = write_artifact(
+        run_id,
+        engineering_task_artifact_name(task),
+        task.model_dump(),
+        base_dir=artifacts_dir,
+        step_id="engineering_task_created",
+    )
+    if not _should_auto_execute_engineering(engineering_config):
+        return
+
+    execution_config = SimpleNamespace(
+        artifacts_dir=artifacts_dir,
+        engineering=engineering_config,
+        roles={},
+    )
+    execution = execute_engineering_task(
+        task_path=task_uri,
+        config=execution_config,
+        registry=RoleRegistry(overrides=role_overrides),
+        repo_root=Path.cwd(),
+        artifacts_dir=artifacts_dir,
+    )
+    executions.append(execution)
+
+
+def _should_auto_execute_engineering(engineering_config: object | None) -> bool:
+    return bool(
+        engineering_config
+        and getattr(engineering_config, "enabled", False)
+        and getattr(engineering_config, "auto_execute", False)
+    )
 
 
 def _build_leaderboard(

@@ -17,7 +17,7 @@ import yaml
 from typer.testing import CliRunner
 
 from src.cli.app import app
-from src.cli.config import GemStarConfig, LLMConfig, RoleOverride
+from src.cli.config import EngineeringConfig, GemStarConfig, LLMConfig, RoleOverride
 from src.cli.commands.run_cmd import _role_overrides
 
 
@@ -116,6 +116,7 @@ def test_run_prints_effective_llm_from_config(tmp_path, monkeypatch):
     assert "LLM:  on" in result.output
     assert captured["llm_available"] is True
     assert captured["role_overrides"]["macro_analyst"]["provider"] == "api"
+    assert captured["engineering_config"].enabled is False
 
 
 def test_role_overrides_apply_global_llm_provider():
@@ -142,3 +143,28 @@ def test_role_overrides_keep_explicit_role_provider():
 
     assert overrides["macro_analyst"]["provider"] == "claude_code"
     assert overrides["reviewer"]["provider"] == "api"
+
+
+def test_role_overrides_apply_engineering_provider_when_enabled():
+    """engineering.provider is the default provider for engineering roles."""
+    config = GemStarConfig(
+        engineering=EngineeringConfig(enabled=True, provider="codex_cli"),
+    )
+
+    overrides = _role_overrides(config)
+
+    assert overrides["engineer"]["provider"] == "codex_cli"
+    assert overrides["bugfix"]["provider"] == "codex_cli"
+
+
+def test_role_overrides_keep_explicit_engineering_role_provider():
+    """Per-role overrides still take precedence over engineering.provider."""
+    config = GemStarConfig(
+        engineering=EngineeringConfig(enabled=True, provider="codex_cli"),
+        roles={"bugfix": RoleOverride(provider="gemini_cli")},
+    )
+
+    overrides = _role_overrides(config)
+
+    assert overrides["engineer"]["provider"] == "codex_cli"
+    assert overrides["bugfix"]["provider"] == "gemini_cli"

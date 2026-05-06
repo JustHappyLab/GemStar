@@ -15,7 +15,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src.cli.config import EngineeringConfig
 from src.orchestrator.pipeline import run_daily_pipeline
+from src.schemas.engineering import EngineeringExecutionV1
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +307,162 @@ def test_pipeline_rejects_invalid_strategy():
         # Pipeline completes, but no backtests run
         assert result["run_status"] == "completed"
         assert len(result["backtest_results"]) == 0
+        assert result["engineering_tasks"] == []
+
+
+def test_pipeline_creates_engineering_task_for_missing_factor():
+    """Missing factor support becomes an Engineer task when engineering is enabled."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bad_config = {
+            "version": "StrategyConfigV1",
+            "name": "new_factor_strat",
+            "universe": "chinext",
+            "timer": {"mode": "full"},
+            "factors": [
+                {"factor_id": "new_alpha_factor", "weight": 1.0},
+            ],
+            "top_n": 3,
+            "rebalance": "daily",
+            "backtest": {"start": "20220101", "end": "20220301", "capital": 100000.0},
+        }
+        bad_path = Path(tmpdir) / "new_factor.yaml"
+        bad_path.write_text(yaml.dump(bad_config))
+
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+        artifacts_dir = str(Path(tmpdir) / "artifacts")
+
+        result = run_daily_pipeline(
+            run_id="run_test_engineering_validation",
+            data=data,
+            strategies=[bad_path],
+            pool_path=pool_path,
+            reference_date="20220301",
+            benchmark_nav=benchmark_nav,
+            signals=signals,
+            rankings=rankings,
+            db_path=str(Path(tmpdir) / "test.db"),
+            artifacts_dir=artifacts_dir,
+            engineering_config=EngineeringConfig(enabled=True, auto_execute=False),
+        )
+
+        assert result["run_status"] == "completed"
+        assert len(result["backtest_results"]) == 0
+        assert len(result["engineering_tasks"]) == 1
+        task = result["engineering_tasks"][0]
+        assert task.role == "engineer"
+        assert task.reason == "unsupported_capability"
+        assert task.source_step == "strategy_validation"
+        assert "new_alpha_factor" in task.error_message
+        task_artifacts = [
+            p for p in (Path(artifacts_dir) / "run_test_engineering_validation").glob("engineering_task_*.json")
+            if not p.name.endswith(".manifest.json")
+        ]
+        assert len(task_artifacts) == 1
+
+
+def test_pipeline_creates_bugfix_task_for_strategy_backtest_exception():
+    """A strategy-local backtest exception becomes a Bugfix task and does not fail the run."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        strategy_path = _make_strategy_yaml(tmpdir)
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+
+        with patch(
+            "src.orchestrator.pipeline.run_strategy_from_yaml",
+            side_effect=ValueError("simulated trade alignment bug"),
+        ):
+            result = run_daily_pipeline(
+                run_id="run_test_engineering_bugfix",
+                data=data,
+                strategies=[strategy_path],
+                pool_path=pool_path,
+                reference_date="20220301",
+                benchmark_nav=benchmark_nav,
+                signals=signals,
+                rankings=rankings,
+                db_path=str(Path(tmpdir) / "test.db"),
+                artifacts_dir=str(Path(tmpdir) / "artifacts"),
+                engineering_config=EngineeringConfig(enabled=True, auto_execute=False),
+            )
+
+        assert result["run_status"] == "completed"
+        assert len(result["backtest_results"]) == 0
+        assert len(result["engineering_tasks"]) == 1
+        task = result["engineering_tasks"][0]
+        assert task.role == "bugfix"
+        assert task.reason == "code_bug"
+        assert task.source_step == "backtesting"
+        assert "simulated trade alignment bug" in task.error_message
+
+
+def test_pipeline_auto_executes_engineering_task_when_enabled():
+    """engineering.enabled auto-executes created tasks unless auto_execute is disabled."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bad_config = {
+            "version": "StrategyConfigV1",
+            "name": "auto_engineer_strat",
+            "universe": "chinext",
+            "timer": {"mode": "full"},
+            "factors": [{"factor_id": "new_alpha_factor", "weight": 1.0}],
+            "top_n": 3,
+            "rebalance": "daily",
+            "backtest": {"start": "20220101", "end": "20220301", "capital": 100000.0},
+        }
+        bad_path = Path(tmpdir) / "auto_engineer.yaml"
+        bad_path.write_text(yaml.dump(bad_config))
+
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+
+        captured = {}
+
+        def fake_execute_engineering_task(**kwargs):
+            captured.update(kwargs)
+            return EngineeringExecutionV1(
+                task_id="fake_exec_task",
+                run_id="run_test_engineering_auto",
+                role="engineer",
+                status="completed",
+                provider="codex_cli",
+                changed_paths=["src/factors/new_alpha.py"],
+            )
+
+        with patch(
+            "src.orchestrator.pipeline.execute_engineering_task",
+            side_effect=fake_execute_engineering_task,
+        ):
+            result = run_daily_pipeline(
+                run_id="run_test_engineering_auto",
+                data=data,
+                strategies=[bad_path],
+                pool_path=pool_path,
+                reference_date="20220301",
+                benchmark_nav=benchmark_nav,
+                signals=signals,
+                rankings=rankings,
+                db_path=str(Path(tmpdir) / "test.db"),
+                artifacts_dir=str(Path(tmpdir) / "artifacts"),
+                engineering_config=EngineeringConfig(enabled=True),
+            )
+
+        assert result["run_status"] == "completed"
+        assert len(result["engineering_tasks"]) == 1
+        assert len(result["engineering_executions"]) == 1
+        assert result["engineering_executions"][0].status == "completed"
+        assert "engineering_task_" in str(captured["task_path"])
 
 
 def _make_index_df() -> pd.DataFrame:

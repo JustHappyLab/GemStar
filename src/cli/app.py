@@ -26,6 +26,12 @@ scheduler_app = typer.Typer(
     no_args_is_help=True,
 )
 
+engineering_app = typer.Typer(
+    name="engineering",
+    help="Inspect and execute bounded engineering tasks.",
+    no_args_is_help=True,
+)
+
 
 @app.callback()
 def _global_options(
@@ -53,6 +59,7 @@ from src.cli.commands.daemon_cmd import (  # noqa: E402
 from src.cli.commands.doctor_cmd import doctor_cmd  # noqa: E402
 from src.cli.commands.cleanup_cmd import cleanup_cmd  # noqa: E402
 from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
+from src.cli.commands.engineering_cmd import engineering_run_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -68,6 +75,8 @@ scheduler_app.command("status")(daemon_status_cmd)
 scheduler_app.command("stop")(stop_cmd)
 scheduler_app.command("restart")(restart_cmd)
 app.add_typer(scheduler_app, name="scheduler")
+engineering_app.command("run")(engineering_run_cmd)
+app.add_typer(engineering_app, name="engineering")
 app.command("start", hidden=True)(start_cmd)
 app.command("stop", hidden=True)(stop_cmd)
 app.command("restart", hidden=True)(restart_cmd)
