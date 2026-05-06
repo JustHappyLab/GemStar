@@ -29,7 +29,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg.db_path == "state.db"
     assert cfg.artifacts_dir == "artifacts"
     assert cfg.data_cache_dir == "data/raw"
-    assert cfg.llm.available is False
+    assert cfg.llm.enabled is False
     assert cfg.llm.provider == "api"
     assert cfg.strategies == []
 
@@ -47,8 +47,8 @@ db_path: custom.db
 artifacts_dir: out
 data_cache_dir: cache/raw
 llm:
-  available: true
-  provider: openai
+  enabled: true
+  provider: claude_code
 strategies:
   - strategies/s1/config.yaml
   - strategies/s2/config.yaml
@@ -63,8 +63,8 @@ strategies:
     assert cfg.db_path == "custom.db"
     assert cfg.artifacts_dir == "out"
     assert cfg.data_cache_dir == "cache/raw"
-    assert cfg.llm.available is True
-    assert cfg.llm.provider == "openai"
+    assert cfg.llm.enabled is True
+    assert cfg.llm.provider == "claude_code"
     assert cfg.strategies == [
         "strategies/s1/config.yaml",
         "strategies/s2/config.yaml",
@@ -86,11 +86,11 @@ def test_env_var_expansion_string(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4. ${VAR} expansion in nested dict (llm.available, llm.provider)
+# 4. ${VAR} expansion in nested dict (llm.enabled, llm.provider)
 # ---------------------------------------------------------------------------
 
 def test_env_var_expansion_nested(tmp_path, monkeypatch):
-    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("LLM_PROVIDER", "claude_code")
     yaml_content = """\
 llm:
   provider: ${LLM_PROVIDER}
@@ -99,7 +99,7 @@ llm:
     cfg_path.write_text(yaml_content)
 
     cfg = load_config(cfg_path)
-    assert cfg.llm.provider == "anthropic"
+    assert cfg.llm.provider == "claude_code"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def test_invalid_yaml_returns_defaults(tmp_path):
     cfg = load_config(cfg_path)
     assert cfg.tushare_token == ""
     assert cfg.benchmark == "auto"
-    assert cfg.llm.available is False
+    assert cfg.llm.enabled is False
     assert cfg.strategies == []
 
 
@@ -188,6 +188,32 @@ def test_empty_yaml_returns_defaults(tmp_path):
     cfg = load_config(cfg_path)
     assert cfg.tushare_token == ""
     assert cfg.benchmark == "auto"
-    assert cfg.llm.available is False
+    assert cfg.llm.enabled is False
     assert cfg.llm.provider == "api"
-    assert cfg.strategies == []
+
+
+def test_llm_available_is_rejected(tmp_path):
+    """Old llm.available config is rejected instead of silently supported."""
+    cfg_path = tmp_path / "gemstar.yaml"
+    cfg_path.write_text("llm:\n  available: true\n")
+
+    with pytest.raises(Exception, match="available"):
+        load_config(cfg_path)
+
+
+def test_invalid_llm_provider_is_rejected(tmp_path):
+    """Unknown LLM providers fail during config loading."""
+    cfg_path = tmp_path / "gemstar.yaml"
+    cfg_path.write_text("llm:\n  provider: openai\n")
+
+    with pytest.raises(Exception, match="provider"):
+        load_config(cfg_path)
+
+
+def test_data_auto_fetch_is_rejected(tmp_path):
+    """Old data.auto_fetch is rejected; scheduler_prefetch is the supported field."""
+    cfg_path = tmp_path / "gemstar.yaml"
+    cfg_path.write_text("data:\n  auto_fetch: true\n")
+
+    with pytest.raises(Exception, match="auto_fetch"):
+        load_config(cfg_path)

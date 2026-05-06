@@ -28,7 +28,7 @@ def roles_cmd() -> None:
                     "name": data.get("name", f.stem),
                     "provider": data.get("provider", "api"),
                     "skills": ", ".join(data.get("skills", [])),
-                    "approval": data.get("approval", False),
+                    "timeout": data.get("timeout", 120),
                 })
 
     if fmt == "json":

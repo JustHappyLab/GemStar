@@ -35,26 +35,26 @@ roles/*.yaml          skills/*/             src/llm/providers/
 ├── provider: api     ├── prompt.txt        ├── api_provider.py
 ├── skills:           ├── sop.md            ├── claude_code_provider.py
 │   - analyze_market  └── schema.json       ├── gemini_cli_provider.py
-└── approval: true                            └── codex_cli_provider.py
+└── timeout: 120                              └── codex_cli_provider.py
 ```
 
-- **Role** — YAML 配置，定义使用哪个 provider、加载哪些 skill、是否需要人工批准
+- **Role** — YAML 配置，定义使用哪个 provider、加载哪些 skill、执行超时时间
 - **Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），多个 role 可共享
 - **Provider** — 统一的 agent 执行接口（API / Claude Code / Gemini CLI / Codex CLI）
 
-用户可通过修改 `roles/*.yaml` 中的 `provider` 字段切换 LLM 后端，无需改代码。
+用户可通过修改 `gemstar.yaml` 的 `llm.provider` 设置 run-time LLM 阶段的默认后端，也可通过 `roles:` 覆盖单个角色 provider，无需改代码。
 
 #### 角色配置
 
-| 角色 | Provider | Skills | 需要批准 |
-|------|----------|--------|----------|
-| macro_analyst | api | analyze_market | 否 |
-| event_scanner | api | scan_events | 否 |
-| research_analyst | api | generate_tickets | 否 |
-| strategy_architect | api | draft_strategy | 否 |
-| reviewer | api | review_verdict | 否 |
-| engineer | claude_code | write_code, fix_bug | 是 |
-| bugfix | claude_code | fix_bug | 是 |
+| 角色 | Provider | Skills | Timeout |
+|------|----------|--------|---------|
+| macro_analyst | api | analyze_market | 120s |
+| event_scanner | api | scan_events | 120s |
+| research_analyst | api | generate_tickets | 120s |
+| strategy_architect | api | draft_strategy | 120s |
+| reviewer | api | review_verdict | 120s |
+| engineer | claude_code | write_code, fix_bug | 600s |
+| bugfix | claude_code | fix_bug | 300s |
 
 #### Skill 目录
 
@@ -206,14 +206,20 @@ gemstar init
 在 `gemstar.yaml` 中覆盖角色 provider：
 
 ```yaml
+llm:
+  enabled: true               # 默认启用 LLM 阶段；也可用 gemstar run --llm 临时启用
+  provider: claude_code       # run-time LLM 角色的默认 provider
+
 roles:
   engineer:
     provider: gemini_cli      # 工程师改用 Gemini
-  macro_analyst:
-    provider: claude_code     # 宏观分析改用 Claude Code
+  reviewer:
+    provider: api             # 单角色覆盖优先于 llm.provider
 ```
 
-只需配置你实际使用的 provider。只跑不带 LLM 的 pipeline（`gemstar run`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm`）则需额外配置对应 provider。
+`llm.enabled` 只表示是否启用 LLM 阶段，不表示 Anthropic API key 是否可用；具体后端由 `llm.provider` / `roles.*.provider` 决定。
+
+只需配置你实际使用的 provider。只跑不带 LLM 的 pipeline（`gemstar run` 且 `llm.enabled: false`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm` 或 `llm.enabled: true`）则需额外配置对应 provider。
 
 ### CLI 命令
 
@@ -324,7 +330,7 @@ schedule: "收盘后"              # 预设：收盘后 / 盘前 / 深夜
 
 ```yaml
 data:
-  auto_fetch: true             # pipeline 前自动拉取缺失数据
+  scheduler_prefetch: true     # scheduler 在 run 前额外执行 gemstar fetch
   lookback_years: 2            # 训练数据回溯年数
 ```
 

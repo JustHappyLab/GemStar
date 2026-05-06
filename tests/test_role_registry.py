@@ -56,7 +56,6 @@ def sample_role(tmp_roles_dir: Path) -> Path:
             "description": "Market regime assessment",
             "provider": "api",
             "skills": ["analyze_market"],
-            "approval": False,
             "timeout": 120,
         })
     )
@@ -73,7 +72,6 @@ class TestRoleConfig:
         cfg = RoleConfig(name="test")
         assert cfg.provider == "api"
         assert cfg.skills == []
-        assert cfg.approval is False
         assert cfg.timeout == 120
 
     def test_custom(self):
@@ -82,12 +80,15 @@ class TestRoleConfig:
             description="Code engineer",
             provider="claude_code",
             skills=["write_code", "fix_bug"],
-            approval=True,
             timeout=600,
         )
         assert cfg.provider == "claude_code"
         assert len(cfg.skills) == 2
-        assert cfg.approval is True
+        assert cfg.timeout == 600
+
+    def test_rejects_unknown_fields(self):
+        with pytest.raises(Exception, match="approval"):
+            RoleConfig(name="engineer", approval=True)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +163,7 @@ class TestRoleRegistryExecute:
 
         assert result.output == '{"regime": "bullish"}'
         mock_provider.execute.assert_called_once()
+        mock_get.assert_called_once_with("api", timeout=120)
         call_args = mock_provider.execute.call_args
         assert call_args[0][0] == "evaluate market"
         assert "system" in call_args[1]["context"]
@@ -208,13 +210,34 @@ class TestRoleRegistryExecute:
         assert events[0].event_type == "started"
         assert events[1].event_type == "failed"
 
-    def test_execute_unknown_provider_raises(self, tmp_roles_dir, tmp_skills_dir):
+    def test_load_unknown_provider_raises(self, tmp_roles_dir, tmp_skills_dir):
         role_file = tmp_roles_dir / "bad.yaml"
         role_file.write_text(yaml.dump({"name": "bad_role", "provider": "unknown_provider", "skills": []}))
+
+        with pytest.raises(Exception, match="provider"):
+            RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
+
+    def test_unknown_override_role_raises(self, tmp_roles_dir, tmp_skills_dir, sample_role):
+        with pytest.raises(KeyError, match="unknown role"):
+            RoleRegistry(
+                roles_dir=tmp_roles_dir,
+                skills_dir=tmp_skills_dir,
+                overrides={"typo_role": {"provider": "api"}},
+            )
+
+    def test_cli_provider_uses_role_timeout(self, tmp_roles_dir, tmp_skills_dir):
+        role_file = tmp_roles_dir / "engineer.yaml"
+        role_file.write_text(yaml.dump({
+            "name": "engineer",
+            "provider": "claude_code",
+            "skills": [],
+            "timeout": 777,
+        }))
         reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
 
-        with pytest.raises(ValueError, match="Unknown provider"):
-            reg.execute_role("bad_role", {"task": "test"})
+        provider = reg.get_provider("claude_code", timeout=reg.get_role("engineer").timeout)
+
+        assert provider._timeout == 777
 
 
 # ---------------------------------------------------------------------------

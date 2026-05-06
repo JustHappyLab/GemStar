@@ -9,15 +9,20 @@ SIDE EFFECTS:
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+ProviderName = Literal["api", "claude_code", "gemini_cli", "codex_cli"]
 
 
 class RoleConfig(BaseModel):
     """Configuration for a single role loaded from YAML."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     description: str = ""
-    provider: str = "api"
+    provider: ProviderName = "api"
     skills: list[str] = Field(default_factory=list)
-    approval: bool = False
-    timeout: int = 120
+    timeout: int = Field(default=120, gt=0, le=3600)

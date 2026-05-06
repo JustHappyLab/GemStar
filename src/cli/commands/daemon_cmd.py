@@ -196,8 +196,8 @@ def _print_summary(config) -> None:
     console.print(f"[cyan]GemStar scheduler[/cyan]")
     console.print(f"  Fetch: {config.schedule.fetch}")
     console.print(f"  Run:   {config.schedule.run}")
-    console.print(f"  LLM:   {'on' if config.llm.available else 'off'}")
-    console.print(f"  Auto-fetch: {'on' if config.data.auto_fetch else 'off'}")
+    console.print(f"  LLM:   {'on' if config.llm.enabled else 'off'}")
+    console.print(f"  Scheduler prefetch: {'on' if config.data.scheduler_prefetch else 'off'}")
     console.print()
 
 
@@ -298,7 +298,7 @@ def _run_loop(config, stop_event: threading.Event, config_path: str | None = Non
             break
 
         # Fetch data
-        if config.data.auto_fetch:
+        if config.data.scheduler_prefetch:
             logger.info("Fetching data...")
             ok = _run_subcommand("fetch", config, stop_event, config_path=config_path)
             if not ok:
@@ -313,7 +313,7 @@ def _run_loop(config, stop_event: threading.Event, config_path: str | None = Non
         # Run pipeline with retries
         for attempt in range(1, _MAX_RETRIES + 1):
             logger.info("Running pipeline (attempt %d/%d)...", attempt, _MAX_RETRIES)
-            ok = _run_subcommand("run", config, stop_event, llm=config.llm.available, config_path=config_path)
+            ok = _run_subcommand("run", config, stop_event, llm=config.llm.enabled, config_path=config_path)
             if ok:
                 logger.info("Pipeline completed")
                 break

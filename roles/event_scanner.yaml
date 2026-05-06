@@ -3,5 +3,4 @@ description: 市场事件扫描
 provider: api
 skills:
   - scan_events
-approval: false
 timeout: 120

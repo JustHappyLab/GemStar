@@ -93,7 +93,7 @@ def test_run_subcommand_forwards_config_path(monkeypatch, tmp_path):
 
     ok = daemon_cmd._run_subcommand(
         "run",
-        config=SimpleNamespace(llm=SimpleNamespace(available=True)),
+        config=SimpleNamespace(llm=SimpleNamespace(enabled=True)),
         stop_event=None,
         llm=True,
         config_path=str(tmp_path / "custom.yaml"),

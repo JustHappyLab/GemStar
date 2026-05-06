@@ -57,6 +57,8 @@ def _read_or_default(path: Path, default: str = "") -> str:
 
 def _validate_role_provider(role_name: str, provider: str) -> None:
     """Raise ValueError if a filesystem role is assigned a text-only provider."""
+    if provider not in _PROVIDER_MAP:
+        raise ValueError(f"Unknown provider: {provider}")
     if role_name in _FILESYSTEM_ROLES and provider in _TEXT_ONLY_PROVIDERS:
         cli_providers = sorted(set(_PROVIDER_MAP) - _TEXT_ONLY_PROVIDERS)
         raise ValueError(
@@ -97,7 +99,7 @@ class RoleRegistry:
         self._event_callback = event_callback
         self._roles: dict[str, RoleConfig] = {}
         self._skills: dict[str, SkillContent] = {}
-        self._providers: dict[str, AgentProvider] = {}
+        self._providers: dict[tuple[str, int | None], AgentProvider] = {}
         self._overrides = overrides or {}
         self._base_url = base_url
 
@@ -119,7 +121,9 @@ class RoleRegistry:
     def _apply_overrides(self) -> None:
         """Apply gemstar.yaml role overrides to loaded role configs."""
         for role_name, override in self._overrides.items():
-            if role_name in self._roles and "provider" in override:
+            if role_name not in self._roles:
+                raise KeyError(f"Role override references unknown role: {role_name}")
+            if "provider" in override:
                 provider = override["provider"]
                 _validate_role_provider(role_name, provider)
                 role = self._roles[role_name]
@@ -133,17 +137,20 @@ class RoleRegistry:
             if path.is_dir():
                 self._skills[path.name] = SkillContent(path.name, path)
 
-    def get_provider(self, provider_name: str) -> AgentProvider:
+    def get_provider(self, provider_name: str, timeout: int | None = None) -> AgentProvider:
         """Get or create a provider instance (lazy init)."""
-        if provider_name not in self._providers:
+        cache_key = (provider_name, timeout if provider_name != "api" else None)
+        if cache_key not in self._providers:
             cls = _PROVIDER_MAP.get(provider_name)
             if cls is None:
                 raise ValueError(f"Unknown provider: {provider_name}")
             kwargs = {}
             if provider_name == "api" and self._base_url:
                 kwargs["base_url"] = self._base_url
-            self._providers[provider_name] = cls(**kwargs)
-        return self._providers[provider_name]
+            if provider_name != "api" and timeout is not None:
+                kwargs["timeout"] = timeout
+            self._providers[cache_key] = cls(**kwargs)
+        return self._providers[cache_key]
 
     def _emit(self, event: RoleEvent) -> None:
         """Emit a role event to the callback if registered."""
@@ -172,7 +179,7 @@ class RoleRegistry:
             AgentResult from the provider.
         """
         role = self.get_role(name)
-        provider = self.get_provider(role.provider)
+        provider = self.get_provider(role.provider, timeout=role.timeout)
 
         # Compose system prompt from all skills
         skill_prompts = []

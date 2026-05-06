@@ -150,7 +150,7 @@ def init_tushare(token: str | None = None):
     resolved_token = candidate.strip()
     if not resolved_token:
         raise ValueError(
-            "TUSHARE_TOKEN is not set. Export it in your shell or create .env and run ./run.sh."
+            "TUSHARE_TOKEN is not set. Export it in your shell or set it in .env."
         )
     ts.set_token(resolved_token)
     return ts.pro_api()
