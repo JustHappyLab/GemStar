@@ -5,21 +5,43 @@ CALLING SPEC:
         daily_merged=pd.DataFrame,
         index_daily=pd.DataFrame,
         fina_all=pd.DataFrame,
+        expression_factors=list[tuple[str, str]] | None,
     ) -> pd.DataFrame
         Returns factor rows by `ts_code` and `trade_date`.
         All market-derived factors are lagged by one trading day so a
         ranking used on trade date `t` only depends on information
         available by the close of `t-1`.
 
+        expression_factors: optional list of (name, expr) pairs from
+        pool.json candidates.  Each expression is evaluated via the
+        factor expression engine and appended as an additional column.
+        Expression factors are also lagged by one day (same policy as
+        market factors) so they only use information available at t-1.
+        Expressions that fail to compute are silently skipped.
+
 SIDE EFFECTS:
     None.
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 
+logger = logging.getLogger(__name__)
 
-def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, fina_all: pd.DataFrame) -> pd.DataFrame:
+_RAW_FIELDS = {
+    "close", "open", "high", "low", "volume", "amount",
+    "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv",
+}
+
+
+def compute_all_factors(
+    daily_merged: pd.DataFrame,
+    index_daily: pd.DataFrame,
+    fina_all: pd.DataFrame,
+    expression_factors: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
     df = daily_merged.copy()
     df['trade_date'] = pd.to_datetime(df['trade_date'])
     df = df.sort_values(['ts_code', 'trade_date']).reset_index(drop=True)
@@ -89,6 +111,23 @@ def compute_all_factors(daily_merged: pd.DataFrame, index_daily: pd.DataFrame, f
     factor_cols = market_factor_cols + fundamental_factor_cols
     df[market_factor_cols] = df.groupby('ts_code')[market_factor_cols].shift(1)
 
+    # --- Expression-based candidate factors ---
+    expression_factor_cols: list[str] = []
+    if expression_factors:
+        from src.factors.engine import compute_factor_expression
+
+        available_fields = _RAW_FIELDS & set(df.columns)
+        for name, expr in expression_factors:
+            if name in df.columns:
+                continue
+            try:
+                series = compute_factor_expression(expr, df, available_fields)
+                df[name] = series.values
+                df[name] = df.groupby('ts_code')[name].shift(1)
+                expression_factor_cols.append(name)
+            except Exception:
+                logger.warning("Skipping expression factor %r: failed to compute", name)
+
     df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
-    cols = ['ts_code', 'trade_date', *factor_cols]
+    cols = ['ts_code', 'trade_date', *factor_cols, *expression_factor_cols]
     return df[cols]

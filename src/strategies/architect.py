@@ -111,8 +111,9 @@ def _normalize_factors(
     factors: Any,
     pool: FactorPoolV1,
 ) -> list[dict[str, float | str]]:
-    """Keep only executable positive-weight factors from the active pool."""
+    """Keep only executable positive-weight factors from the active + candidate pool."""
     active_names = {entry.name for entry in pool.active}
+    candidate_names = {entry.name for entry in pool.candidates if entry.expression}
     normalized: list[dict[str, float | str]] = []
 
     if not isinstance(factors, list):
@@ -122,7 +123,7 @@ def _normalize_factors(
         if not isinstance(item, dict):
             continue
         factor_id = item.get("factor_id")
-        if factor_id not in active_names:
+        if factor_id not in active_names and factor_id not in candidate_names:
             continue
         weight = _as_positive_float(item.get("weight"))
         if weight is None:
@@ -180,17 +181,28 @@ def _build_user_prompt(
     factors_block = "\n".join(
         f"- {e.name} ({e.source})" for e in pool.active
     )
+    candidate_factors = [e for e in pool.candidates if e.expression]
+    candidates_block = "\n".join(
+        f"- {e.name}: {e.hypothesis or e.expression} (IC_IR={e.ic_ir:.2f})" if e.ic_ir is not None
+        else f"- {e.name}: {e.hypothesis or e.expression}"
+        for e in candidate_factors
+    )
     tickets_block = "\n".join(
         f"- [{t.ticket_type}] {t.hypothesis} (confidence: {t.confidence})"
         for t in tickets
     ) or "(no tickets — produce a baseline strategy)"
 
-    return (
+    prompt = (
         f"## Reference date\n{reference_date}\n\n"
         f"## Active factor pool\n{factors_block}\n\n"
+    )
+    if candidates_block:
+        prompt += f"## Candidate factors (newly mined, usable)\n{candidates_block}\n\n"
+    prompt += (
         f"## Research tickets\n{tickets_block}\n\n"
         f"## Backtest period hint\nstart: 20220101, end: {reference_date.replace('-', '')}"
     )
+    return prompt
 
 
 def draft_strategy(

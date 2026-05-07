@@ -27,9 +27,10 @@ backtest:
 
 Rules:
 - Respond with ONLY the YAML. No markdown fences, no explanation, no prose before or after.
-- ALL factor_id values must be from the provided active factor pool.
-- If a ticket requests a new factor that is not in the active factor pool, DO NOT output that new factor.
-- For unavailable new factors, draft an executable proxy strategy using only active factors and mention the proxy decision in source_idea or hypothesis.
+- ALL factor_id values must be from the provided active factor pool OR the candidate factors list (if present).
+- Candidate factors are newly mined expressions that passed IC validation — treat them as fully usable.
+- If a ticket requests a new factor that is not in the active or candidate pool, DO NOT output that new factor.
+- For unavailable new factors, draft an executable proxy strategy using only active/candidate factors and mention the proxy decision in source_idea or hypothesis.
 - Weights must be non-negative and sum to 1.0.
 - "name" should be descriptive and lowercase with underscores (e.g. "growth_momentum_v2").
 - "top_n" between 1 and 10.

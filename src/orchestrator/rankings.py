@@ -8,6 +8,7 @@ CALLING SPEC:
         factors=list[FactorWeightV1],
         top_n=int,
         trade_dates=list[str],
+        expression_factors=list[tuple[str, str]] | None,
     ) -> dict[str, list[str]]
         Returns {trade_date: [stock_code, ...]} mapping.
 """
@@ -33,6 +34,7 @@ def build_rankings(
     *,
     universe: str | UniverseResolution = "auto",
     stock_basic: pd.DataFrame | None = None,
+    expression_factors: list[tuple[str, str]] | None = None,
 ) -> dict[str, list[str]]:
     """Compute per-date stock rankings from factor scores.
 
@@ -55,6 +57,8 @@ def build_rankings(
     stock_basic : DataFrame, optional
         Stock metadata with list_date / delist_date used for point-in-time
         active-universe filtering.
+    expression_factors : list of (name, expr) pairs, optional
+        Candidate factors from pool.json to compute dynamically.
 
     Returns
     -------
@@ -65,8 +69,8 @@ def build_rankings(
 
     weights = {f.factor_id: f.weight for f in factors}
 
-    # Compute cross-sectional factors
-    factor_df = compute_all_factors(daily_df, index_daily, fina_df)
+    # Compute cross-sectional factors (including any expression-based candidates)
+    factor_df = compute_all_factors(daily_df, index_daily, fina_df, expression_factors)
     if factor_df.empty:
         return {}
 
