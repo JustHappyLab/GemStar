@@ -253,12 +253,85 @@ def run_daily_pipeline(
             result["factor_health"] = factor_health
             write_artifact(run_id, "factor_health_report", factor_health.model_dump(), base_dir=artifacts_dir, step_id="factor_monitoring")
 
-        # --- STRATEGY_IDEATION ---
-        fsm.transition("strategy_ideation")
-        daily_df = apply_adjusted_prices(
+        # --- FACTOR_MINING ---
+        from src.factors.pool import load_pool, save_pool
+        from src.schemas.factor import FactorPoolV1
+        current_pool: FactorPoolV1 = load_pool(pool_path)
+        mined_factor_entries: list = []
+
+        daily_df_for_mining = apply_adjusted_prices(
             data.get("daily", pd.DataFrame()),
             data.get("adj_factor"),
         )
+        mining_ready = (
+            llm_available
+            and _reg is not None
+            and not daily_df_for_mining.empty
+            and "factor_miner" in (_reg.list_roles() if hasattr(_reg, "list_roles") else [])
+        )
+        if mining_ready:
+            try:
+                from src.factors.miner import evaluate_proposals, mine_factors, register_accepted
+
+                miner_llm = RoleLLMAdapter(_reg, "factor_miner")
+                raw_fields = {c for c in daily_df_for_mining.columns if c not in {"ts_code", "trade_date"}}
+                proposals = mine_factors(current_pool, sorted(raw_fields), miner_llm)
+                logger.info("FactorMiner proposed %d factors", len(proposals))
+
+                if proposals:
+                    evaluations = evaluate_proposals(
+                        proposals=proposals,
+                        df=daily_df_for_mining.sort_values(["ts_code", "trade_date"]).reset_index(drop=True),
+                        raw_fields=raw_fields,
+                        daily_df=daily_df_for_mining,
+                        min_ic_ir=0.2,
+                        min_coverage=0.6,
+                        max_redundancy=0.85,
+                    )
+                    accepted_count = sum(1 for e in evaluations if e.accepted)
+                    logger.info("FactorMiner accepted %d/%d proposals", accepted_count, len(evaluations))
+
+                    current_pool, mined_factor_entries = register_accepted(evaluations, current_pool, run_id)
+                    if mined_factor_entries:
+                        save_pool(current_pool, pool_path)
+                        logger.info("Saved %d new candidate factors to pool", len(mined_factor_entries))
+
+                    write_artifact(
+                        run_id,
+                        "factor_mining_report",
+                        {
+                            "proposed": len(proposals),
+                            "accepted": accepted_count,
+                            "entries": [e.model_dump() for e in mined_factor_entries],
+                            "evaluations": [
+                                {
+                                    "name": ev.proposal.name,
+                                    "accepted": ev.accepted,
+                                    "reason": ev.reason,
+                                    "ic_ir": ev.ic_ir,
+                                    "coverage": ev.coverage,
+                                }
+                                for ev in evaluations
+                            ],
+                        },
+                        base_dir=artifacts_dir,
+                        step_id="factor_monitoring",
+                    )
+            except Exception:
+                logger.warning("Factor mining failed; continuing without new factors", exc_info=True)
+
+        result["mined_factors"] = mined_factor_entries
+
+        # Build expression_factors list from all current candidates
+        expression_factors: list[tuple[str, str]] = [
+            (e.name, e.expression)
+            for e in current_pool.candidates
+            if e.expression
+        ]
+
+        # --- STRATEGY_IDEATION ---
+        fsm.transition("strategy_ideation")
+        daily_df = daily_df_for_mining
         data = dict(data)
         data["daily"] = daily_df
         regime = None
@@ -338,6 +411,7 @@ def run_daily_pipeline(
                     explicit_signals=signals,
                     explicit_rankings=rankings,
                     auto_build=auto_build_strategy_inputs,
+                    expression_factors=expression_factors,
                 )
             except Exception as exc:
                 task = task_from_exception(
@@ -455,6 +529,7 @@ def run_daily_pipeline(
                                 explicit_signals=signals,
                                 explicit_rankings=rankings,
                                 auto_build=auto_build_strategy_inputs,
+                                expression_factors=expression_factors,
                             )
                         except Exception as exc:
                             task = task_from_exception(
@@ -777,6 +852,7 @@ def _strategy_inputs(
     explicit_signals: pd.DataFrame | None,
     explicit_rankings: dict[str, list[str]] | None,
     auto_build: bool,
+    expression_factors: list[tuple[str, str]] | None = None,
 ) -> tuple[pd.DataFrame | None, dict[str, list[str]] | None, UniverseResolution | None]:
     """Resolve signals/rankings for one strategy."""
     try:
@@ -809,6 +885,7 @@ def _strategy_inputs(
         trade_dates=trade_dates,
         universe=resolution,
         stock_basic=data.get("stock_basic"),
+        expression_factors=expression_factors,
     )
     return signals, rankings, resolution
 

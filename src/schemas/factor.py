@@ -20,6 +20,8 @@ class FactorRegistryEntryV1(BaseModel):
     name: str
     source: str = ""
     computation: str = ""
+    expression: str = ""
+    hypothesis: str = ""
     ic_mean: float | None = None
     ic_ir: float | None = None
     ic_positive_rate: float | None = None
@@ -28,6 +30,7 @@ class FactorRegistryEntryV1(BaseModel):
     horizon: str = "1d"
     universe: str = "a_share_core"
     last_updated: str = ""
+    discovered_in_run: str = ""
     status: Literal[
         "candidate",
         "implemented",
