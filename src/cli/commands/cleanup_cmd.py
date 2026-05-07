@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -13,6 +14,7 @@ from src.cli.config import load_config
 from src.cli.output import console, emit
 
 _DEFAULT_CLEAN_STATUSES = ("failed", "manual_attention")
+_STALE_THRESHOLD_HOURS = 2.0
 
 
 def cleanup_cmd(
@@ -27,6 +29,11 @@ def cleanup_cmd(
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n",
         help="Show what would be deleted without actually deleting.",
+    ),
+    stale: bool = typer.Option(
+        False, "--stale", "-S",
+        help="Clean orphaned 'running' records older than 2 hours "
+             "(pipeline crashed without finalizing).",
     ),
 ) -> None:
     """Remove failed or stale run artifacts and DB records."""
@@ -52,12 +59,22 @@ def cleanup_cmd(
         "SELECT run_id, status, started_at FROM runs ORDER BY started_at DESC"
     ).fetchall()
 
+    now = datetime.now()
     targets = []
     for i, row in enumerate(all_runs):
         if keep and i < keep:
             continue
         if row["status"] in clean_statuses:
             targets.append(row)
+        elif stale and row["status"] == "running":
+            # Detect orphaned "running" records by age
+            try:
+                started = datetime.fromisoformat(row["started_at"])
+            except (ValueError, TypeError):
+                continue
+            age_hours = (now - started).total_seconds() / 3600
+            if age_hours > _STALE_THRESHOLD_HOURS:
+                targets.append(row)
 
     if not targets:
         console.print("[green]Nothing to clean.[/green]")

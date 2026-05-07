@@ -28,7 +28,10 @@ SIDE EFFECTS:
     Writes to state.db (via record_step) and artifacts/<run_id>/.
 """
 
+import atexit
 import logging
+import os
+import signal
 import traceback
 from datetime import date
 from pathlib import Path
@@ -168,6 +171,36 @@ def run_daily_pipeline(
         "report": None,
         "markdown": "",
     }
+
+    # --- Signal / crash handlers ---
+    # Guard against orphaned "running" rows when the pipeline process is killed
+    # (SIGTERM, SIGINT, or unhandled exception that skips the normal finally path).
+    _finalized = False
+    _original_handlers: dict[int, object] = {}
+
+    def _panic_finalize() -> None:
+        nonlocal _finalized
+        if not _finalized:
+            _finalized = True
+            try:
+                if not fsm.is_terminal():
+                    fsm.transition("failed")
+            except Exception:
+                pass
+            try:
+                finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
+            except Exception:
+                pass
+
+    def _signal_handler(signum: int, frame: object) -> None:
+        _panic_finalize()
+        # Restore default and re-raise so the process exits with the right signal
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        _original_handlers[sig] = signal.signal(sig, _signal_handler)
+    atexit.register(_panic_finalize)
 
     # Resolve registry once for all LLM stages
     _reg = registry or (RoleRegistry(overrides=role_overrides, base_url=llm_base_url) if llm_available else None)
@@ -551,6 +584,7 @@ def run_daily_pipeline(
         # --- COMPLETED ---
         fsm.transition("completed")
         result["run_status"] = "completed"
+        _finalized = True
         finalize_run(run_id, "completed", db_path=db_path, artifacts_dir=artifacts_dir)
 
     except Exception as exc:
@@ -573,9 +607,12 @@ def run_daily_pipeline(
         result["incident"] = incident
         write_artifact(run_id, "incident", incident.model_dump(), base_dir=artifacts_dir, step_id="failed")
 
+        _finalized = True
         finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
 
-    return result
+    finally:
+        for sig, handler in _original_handlers.items():
+            signal.signal(sig, handler)
 
 
 def _record_engineering_task(
