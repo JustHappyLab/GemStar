@@ -59,6 +59,7 @@ def leaderboard_cmd(
             rows.append({
                 "rank": f"#{e['rank']}",
                 "strategy": e["name"],
+                "status": e.get("status", "candidate"),
                 "sharpe": f"{e['sharpe']:.2f}",
                 "cagr": f"{e['cagr']:.2%}",
                 "max_dd": f"{e['max_drawdown']:.2%}",

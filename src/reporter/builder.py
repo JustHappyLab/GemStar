@@ -36,11 +36,12 @@ def _rank_change_symbol(change: str) -> str:
 def _build_leaderboard_lines(entries: list[ReportStrategyEntry]) -> str:
     if not entries:
         return "_No strategies on the leaderboard._\n"
-    lines = ["| Rank | Strategy | Sharpe | CAGR | MaxDD | Alpha | Trend |", "|---:|:---|---:|---:|---:|---:|:---:|"]
+    lines = ["| Rank | Strategy | Status | Sharpe | CAGR | MaxDD | Alpha | Trend |", "|---:|:---|:---:|---:|---:|---:|---:|:---:|"]
     for e in sorted(entries, key=lambda x: x.rank):
         sym = _rank_change_symbol(e.rank_change)
+        status_badge = "✅" if e.status == "candidate" else "❌"
         lines.append(
-            f"| {e.rank} | {e.name} | {e.sharpe:.2f} | {e.cagr:.2%} "
+            f"| {e.rank} | {e.name} | {status_badge} | {e.sharpe:.2f} | {e.cagr:.2%} "
             f"| {e.max_drawdown:.2%} | {e.alpha:.2%} | {sym} |"
         )
     return "\n".join(lines) + "\n"

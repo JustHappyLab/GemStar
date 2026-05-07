@@ -29,9 +29,11 @@ SIDE EFFECTS:
 """
 
 import atexit
+import json
 import logging
 import os
 import signal
+import sqlite3
 import traceback
 from datetime import date
 from pathlib import Path
@@ -563,7 +565,8 @@ def run_daily_pipeline(
 
         # --- LEADERBOARD_BUILDING ---
         fsm.transition("leaderboard_building")
-        leaderboard = _build_leaderboard(backtest_results, verdicts)
+        prev_lb = _load_previous_leaderboard(run_id, db_path, artifacts_dir)
+        leaderboard = _build_leaderboard(backtest_results, verdicts, previous_leaderboard=prev_lb)
         write_artifact(run_id, "leaderboard", {"entries": [e.model_dump() for e in leaderboard]}, base_dir=artifacts_dir, step_id="leaderboard_building")
 
         # --- REPORTING ---
@@ -662,16 +665,71 @@ def _should_auto_execute_engineering(engineering_config: object | None) -> bool:
     )
 
 
+def _load_previous_leaderboard(
+    current_run_id: str, db_path: str, artifacts_dir: str
+) -> list[dict] | None:
+    """Load the leaderboard entries from the most recent completed run before this one."""
+    try:
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT run_id FROM runs WHERE status = 'completed' AND run_id != ? "
+            "ORDER BY started_at DESC LIMIT 1",
+            (current_run_id,),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return None
+        prev_run_id = row[0]
+        lb_path = Path(artifacts_dir) / prev_run_id / "leaderboard.json"
+        if not lb_path.exists():
+            return None
+        return json.loads(lb_path.read_text()).get("entries", [])
+    except Exception:
+        return None
+
+
 def _build_leaderboard(
     backtest_results: list[BacktestResultV1],
     verdicts: list[VerdictV1],
+    previous_leaderboard: list[dict] | None = None,
 ) -> list[ReportStrategyEntry]:
-    """Rank strategies by Sharpe and build leaderboard entries."""
+    """Rank strategies by Sharpe and build leaderboard entries.
+
+    All backtested strategies are included regardless of Judge verdict.
+    The ``status`` field reflects Judge outcome; ``rank_change`` is computed
+    by comparing against the previous run's leaderboard.
+    """
     verdict_map = {v.strategy_id: v for v in verdicts}
+
+    # Build previous rank lookup: strategy_name -> rank
+    prev_rank_map: dict[str, int] = {}
+    if previous_leaderboard:
+        for entry in previous_leaderboard:
+            prev_rank_map[entry["name"]] = entry["rank"]
+
+    # Sort by Sharpe descending, tie-break by name for determinism
+    sorted_results = sorted(
+        backtest_results,
+        key=lambda r: (-r.metrics.sharpe, r.strategy_name),
+    )
+
     entries: list[ReportStrategyEntry] = []
-    for i, bt in enumerate(sorted(backtest_results, key=lambda r: r.metrics.sharpe, reverse=True), start=1):
+    for i, bt in enumerate(sorted_results, start=1):
         v = verdict_map.get(bt.strategy_name)
-        rank_change = "new" if v and v.recommended_state == "candidate" else "stable"
+        status = v.recommended_state if v else "rejected"
+
+        # Determine rank change relative to previous leaderboard
+        if bt.strategy_name not in prev_rank_map:
+            rank_change = "new"
+        else:
+            prev_rank = prev_rank_map[bt.strategy_name]
+            if i < prev_rank:
+                rank_change = "up"
+            elif i > prev_rank:
+                rank_change = "down"
+            else:
+                rank_change = "stable"
+
         entries.append(ReportStrategyEntry(
             name=bt.strategy_name,
             rank=i,
@@ -680,6 +738,7 @@ def _build_leaderboard(
             max_drawdown=bt.metrics.max_drawdown,
             alpha=bt.metrics.alpha,
             rank_change=rank_change,
+            status=status,
         ))
     return entries
 

@@ -22,6 +22,7 @@ class ReportStrategyEntry(BaseModel):
     max_drawdown: float = 0.0
     alpha: float = 0.0
     rank_change: str = ""  # e.g. "new", "up", "down", "stable"
+    status: str = "candidate"  # "candidate" or "rejected"
 
 
 class DailyReportV1(BaseModel):
