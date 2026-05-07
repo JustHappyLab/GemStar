@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" font-family="JetBrains Mono, monospace">
+  <defs>
+    <linearGradient id="cyan-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00e5ff;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#00e5ff;stop-opacity:0.05"/>
+    </linearGradient>
+    <linearGradient id="green-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#39ff14;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#39ff14;stop-opacity:0.05"/>
+    </linearGradient>
+    <linearGradient id="amber-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffab00;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#ffab00;stop-opacity:0.05"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="700" fill="#0a0a0f"/>
+
+  <!-- Grid -->
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e1e2e" stroke-width="0.5"/>
+  </pattern>
+  <rect width="1000" height="700" fill="url(#grid)" opacity="0.4"/>
+
+  <!-- Title -->
+  <text x="500" y="45" text-anchor="middle" fill="#00e5ff" font-size="20" font-weight="700">GemStar Architecture</text>
+  <text x="500" y="68" text-anchor="middle" fill="#55556a" font-size="11">AI-Driven Automated Quantitative Research Framework</text>
+
+  <!-- ─── FSM Pipeline (top) ─── -->
+  <rect x="40" y="90" width="920" height="100" rx="12" fill="url(#cyan-grad)" stroke="#1e1e2e"/>
+  <text x="60" y="115" fill="#00e5ff" font-size="12" font-weight="600">DailyFSM — 14 States</text>
+
+  <!-- Pipeline nodes -->
+  <g transform="translate(60, 130)">
+    <rect x="0" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="50" y="22" text-anchor="middle" fill="#8888a0" font-size="8">COLLECTING</text>
+
+    <line x1="100" y1="18" x2="120" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="120" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="170" y="22" text-anchor="middle" fill="#8888a0" font-size="7">QUALITY_CHECK</text>
+
+    <line x1="220" y1="18" x2="240" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="240" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="290" y="22" text-anchor="middle" fill="#8888a0" font-size="7">FACTOR_MONITOR</text>
+
+    <line x1="340" y1="18" x2="360" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="360" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="410" y="22" text-anchor="middle" fill="#8888a0" font-size="7">STRATEGY_IDEA</text>
+
+    <line x1="460" y1="18" x2="480" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="480" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="530" y="22" text-anchor="middle" fill="#8888a0" font-size="7">STRATEGY_VALID</text>
+
+    <line x1="580" y1="18" x2="600" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="600" y="0" width="100" height="36" rx="6" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="650" y="22" text-anchor="middle" fill="#8888a0" font-size="8">BACKTESTING</text>
+
+    <line x1="700" y1="18" x2="720" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="720" y="0" width="80" height="36" rx="6" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="760" y="22" text-anchor="middle" fill="#8888a0" font-size="8">JUDGING</text>
+
+    <line x1="800" y1="18" x2="820" y2="18" stroke="#00e5ff" stroke-opacity="0.3" stroke-dasharray="3"/>
+
+    <rect x="820" y="0" width="80" height="36" rx="6" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="860" y="22" text-anchor="middle" fill="#8888a0" font-size="7">REPORTING</text>
+  </g>
+
+  <!-- Error states -->
+  <g transform="translate(60, 170)">
+    <rect x="0" y="0" width="70" height="16" rx="4" fill="#ff5f57" fill-opacity="0.1" stroke="#ff5f57" stroke-opacity="0.3"/>
+    <text x="35" y="12" text-anchor="middle" fill="#ff5f57" font-size="7">FAILED</text>
+    <rect x="80" y="0" width="90" height="16" rx="4" fill="#ffab00" fill-opacity="0.1" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="125" y="12" text-anchor="middle" fill="#ffab00" font-size="7">DEGRADED</text>
+    <rect x="180" y="0" width="130" height="16" rx="4" fill="#ff5f57" fill-opacity="0.1" stroke="#ff5f57" stroke-opacity="0.3"/>
+    <text x="245" y="12" text-anchor="middle" fill="#ff5f57" font-size="7">MANUAL_ATTENTION</text>
+  </g>
+
+  <!-- ─── Role Layer (middle) ─── -->
+  <text x="60" y="230" fill="#00e5ff" font-size="12" font-weight="600">Roles (8)</text>
+
+  <!-- Analysis roles -->
+  <g transform="translate(40, 240)">
+    <rect x="0" y="0" width="860" height="70" rx="10" fill="url(#cyan-grad)" stroke="#1e1e2e"/>
+
+    <rect x="12" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="72" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">macro_analyst</text>
+    <text x="72" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">api</text>
+
+    <rect x="144" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="204" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">event_scanner</text>
+    <text x="204" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">api</text>
+
+    <rect x="276" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="336" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">research_analyst</text>
+    <text x="336" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">api</text>
+
+    <rect x="408" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="468" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">strategy_architect</text>
+    <text x="468" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">api</text>
+
+    <rect x="540" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="600" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">factor_miner</text>
+    <text x="600" y="44" text-anchor="middle" fill="#39ff14" font-size="7">api</text>
+
+    <rect x="672" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="732" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">reviewer</text>
+    <text x="732" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">api</text>
+
+    <text x="920" y="40" fill="#55556a" font-size="8">Analysis</text>
+  </g>
+
+  <!-- Engineering roles -->
+  <g transform="translate(40, 318)">
+    <rect x="0" y="0" width="320" height="70" rx="10" fill="url(#green-grad)" stroke="#1e1e2e"/>
+
+    <rect x="12" y="10" width="140" height="48" rx="8" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="82" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">engineer</text>
+    <text x="82" y="44" text-anchor="middle" fill="#39ff14" font-size="7">claude_code</text>
+
+    <rect x="164" y="10" width="140" height="48" rx="8" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="234" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">bugfix</text>
+    <text x="234" y="44" text-anchor="middle" fill="#39ff14" font-size="7">claude_code</text>
+
+    <text x="360" y="40" fill="#55556a" font-size="8">Engineering (needs file access)</text>
+  </g>
+
+  <!-- ─── Skills Layer ─── -->
+  <text x="60" y="428" fill="#39ff14" font-size="12" font-weight="600">Skills (8)</text>
+
+  <g transform="translate(40, 438)">
+    <rect x="0" y="0" width="860" height="50" rx="10" fill="url(#green-grad)" stroke="#1e1e2e"/>
+
+    <rect x="12" y="10" width="95" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="59" y="28" text-anchor="middle" fill="#8888a0" font-size="7">analyze_market</text>
+
+    <rect x="117" y="10" width="85" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="159" y="28" text-anchor="middle" fill="#8888a0" font-size="7">scan_events</text>
+
+    <rect x="212" y="10" width="110" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="267" y="28" text-anchor="middle" fill="#8888a0" font-size="7">generate_tickets</text>
+
+    <rect x="332" y="10" width="100" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="382" y="28" text-anchor="middle" fill="#8888a0" font-size="7">draft_strategy</text>
+
+    <rect x="442" y="10" width="105" height="28" rx="6" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="494" y="28" text-anchor="middle" fill="#39ff14" font-size="7">discover_factors</text>
+
+    <rect x="557" y="10" width="95" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="604" y="28" text-anchor="middle" fill="#8888a0" font-size="7">review_verdict</text>
+
+    <rect x="662" y="10" width="80" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="702" y="28" text-anchor="middle" fill="#8888a0" font-size="7">write_code</text>
+
+    <rect x="752" y="10" width="65" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
+    <text x="784" y="28" text-anchor="middle" fill="#8888a0" font-size="7">fix_bug</text>
+  </g>
+
+  <!-- ─── Provider Layer ─── -->
+  <text x="60" y="528" fill="#ffab00" font-size="12" font-weight="600">Providers (4)</text>
+
+  <g transform="translate(40, 538)">
+    <rect x="0" y="0" width="860" height="50" rx="10" fill="url(#amber-grad)" stroke="#1e1e2e"/>
+
+    <rect x="12" y="10" width="180" height="28" rx="6" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="102" y="28" text-anchor="middle" fill="#00e5ff" font-size="8">api (Anthropic API)</text>
+
+    <rect x="202" y="10" width="160" height="28" rx="6" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="282" y="28" text-anchor="middle" fill="#39ff14" font-size="8">claude_code (CLI)</text>
+
+    <rect x="372" y="10" width="150" height="28" rx="6" fill="#111119" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="447" y="28" text-anchor="middle" fill="#ffab00" font-size="8">gemini_cli (CLI)</text>
+
+    <rect x="532" y="10" width="140" height="28" rx="6" fill="#111119" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="602" y="28" text-anchor="middle" fill="#ffab00" font-size="8">codex_cli (CLI)</text>
+  </g>
+
+  <!-- ─── Supporting Systems ─── -->
+  <text x="60" y="628" fill="#55556a" font-size="12" font-weight="600">Supporting Systems</text>
+
+  <g transform="translate(40, 638)">
+    <rect x="0" y="0" width="200" height="40" rx="8" fill="#111119" stroke="#1e1e2e"/>
+    <text x="100" y="18" text-anchor="middle" fill="#8888a0" font-size="8" font-weight="600">IncidentFSM</text>
+    <text x="100" y="32" text-anchor="middle" fill="#55556a" font-size="7">7 states — auto-healing</text>
+
+    <rect x="220" y="0" width="200" height="40" rx="8" fill="#111119" stroke="#1e1e2e"/>
+    <text x="320" y="18" text-anchor="middle" fill="#8888a0" font-size="8" font-weight="600">FactorMiner</text>
+    <text x="320" y="32" text-anchor="middle" fill="#55556a" font-size="7">discover → evaluate → register</text>
+
+    <rect x="440" y="0" width="200" height="40" rx="8" fill="#111119" stroke="#1e1e2e"/>
+    <text x="540" y="18" text-anchor="middle" fill="#8888a0" font-size="8" font-weight="600">Scheduler</text>
+    <text x="540" y="32" text-anchor="middle" fill="#55556a" font-size="7">trade-day aware, auto-retry</text>
+
+    <rect x="660" y="0" width="200" height="40" rx="8" fill="#111119" stroke="#1e1e2e"/>
+    <text x="760" y="18" text-anchor="middle" fill="#8888a0" font-size="8" font-weight="600">RuleJudge</text>
+    <text x="760" y="32" text-anchor="middle" fill="#55556a" font-size="7">5 hard gates (Sharpe/Calmar/...)</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(860, 638)">
+    <text x="0" y="12" fill="#55556a" font-size="7">Color Legend:</text>
+    <circle cx="10" cy="26" r="4" fill="#00e5ff" opacity="0.5"/>
+    <text x="20" y="30" fill="#55556a" font-size="7">API provider</text>
+    <circle cx="10" cy="40" r="4" fill="#39ff14" opacity="0.5"/>
+    <text x="20" y="44" fill="#55556a" font-size="7">CLI provider</text>
+    <circle cx="10" cy="54" r="4" fill="#ffab00" opacity="0.5"/>
+    <text x="20" y="58" fill="#55556a" font-size="7">Other CLI</text>
+  </g>
+</svg>

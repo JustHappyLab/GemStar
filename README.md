@@ -2,6 +2,10 @@
 
 AI 驱动的自动化量化研究框架。FSM 驱动的多 Agent 日频 Pipeline，自动完成数据质检 → 因子监控 → 策略生成 → 回测 → 评审。
 
+<p align="center">
+  <img src="docs/images/pipeline-flow.svg" alt="GemStar Pipeline Flow" width="100%"/>
+</p>
+
 ---
 
 ## Pipeline
@@ -20,6 +24,7 @@ REPORTING → COMPLETED
 |------|------|
 | DataQualityGate | 数据完整性检查，输出 pass/degraded/abort |
 | FactorHealthMonitor | 基于 IC/IR 的因子健康度分析 |
+| FactorMiner | LLM 自动发现新因子表达式，IC 验证后注册入池 |
 | MacroAnalyst | LLM 评估市场宏观状态（regime + style bias） |
 | EventScanner | LLM 扫描近期市场事件信号 |
 | ResearchAnalyst | LLM 生成研究 ticket（假设 + 因子关联） |
@@ -42,6 +47,10 @@ roles/*.yaml          skills/*/             src/llm/providers/
 - **Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），多个 role 可共享
 - **Provider** — 统一的 agent 执行接口（API / Claude Code / Gemini CLI / Codex CLI）
 
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="GemStar Architecture" width="100%"/>
+</p>
+
 用户可通过修改 `gemstar.yaml` 的 `llm.provider` 设置 run-time LLM 阶段的默认后端，也可通过 `roles:` 覆盖单个角色 provider，无需改代码。
 
 `engineer` / `bugfix` 属于 engineering scope，不属于默认日线 LLM 阶段。它们只能使用 CLI provider，并受 `engineering` 路径策略约束：回测引擎、指标和评估规则默认冻结，Agent 只能修改配置允许的扩展点。
@@ -54,6 +63,7 @@ roles/*.yaml          skills/*/             src/llm/providers/
 | event_scanner | api | scan_events | 120s |
 | research_analyst | api | generate_tickets | 120s |
 | strategy_architect | api | draft_strategy | 120s |
+| factor_miner | api | discover_factors | 120s |
 | reviewer | api | review_verdict | 120s |
 | engineer | claude_code | write_code, fix_bug | 600s |
 | bugfix | claude_code | fix_bug | 300s |
@@ -74,6 +84,7 @@ roles/*.yaml          skills/*/             src/llm/providers/
 | scan_events | 扫描近期市场事件信号 |
 | generate_tickets | 从市场上下文生成研究 ticket |
 | draft_strategy | 从 research ticket 草拟策略 YAML |
+| discover_factors | LLM 自动发现新因子表达式（factor_miner 角色使用） |
 | review_verdict | 生成回测评审意见（解释 + 风险 + 置信度） |
 | write_code | 代码编写（engineer 角色使用） |
 | fix_bug | Bug 修复（engineer/bugfix 角色使用） |
@@ -103,8 +114,8 @@ GemStar/
 ├── tools/                      # 附属工具
 │   ├── backtest.py             # 独立回测 CLI（数据→训练→回测→报告）
 │   └── tracking/               # SwanLab 实验追踪
-├── roles/                      # Role YAML 配置（7 个角色）
-├── skills/                     # Skill 目录（7 个 skill，各含 prompt.txt + sop.md + schema.json）
+├── roles/                      # Role YAML 配置（8 个角色）
+├── skills/                     # Skill 目录（8 个 skill，各含 prompt.txt + sop.md + schema.json）
 ├── strategies/                 # 策略 YAML 配置
 ├── factors/                    # 因子池 (pool.json)
 ├── src/
@@ -123,8 +134,9 @@ GemStar/
 │   │   ├── adapter.py          # AgentProvider → LLMClient 桥接
 │   │   └── providers/          # 4 个 provider 实现
 │   ├── roles/                  # Role 配置加载 + 注册 + 事件流
-│   ├── orchestrator/           # DailyFSM + IncidentFSM + pipeline
+│   ├── orchestrator/           # DailyFSM + IncidentFSM + pipeline + scheduler
 │   ├── strategies/             # 策略验证 + YAML 运行器
+│   ├── engineering/            # 工程自愈：task 定义 + 路径策略 + 执行器
 │   ├── judge/                  # 规则引擎
 │   ├── reviewer/               # LLM 评审
 │   ├── research/               # LLM 研究 ticket 生成
@@ -199,6 +211,7 @@ gemstar init
 | event_scanner | `api` | 任意 | 事件扫描（返回 JSON） |
 | research_analyst | `api` | 任意 | 研究工单生成（返回 JSON） |
 | strategy_architect | `api` | 任意 | 策略草稿（返回 YAML） |
+| factor_miner | `api` | 任意 | 因子挖掘（返回 JSON） |
 | reviewer | `api` | 任意 | 回测评审（返回 JSON） |
 | engineer | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | 代码编写（需写文件） |
 | bugfix | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | Bug 修复（需写文件） |
@@ -291,6 +304,19 @@ gemstar history
 gemstar roles
 gemstar strategies
 gemstar factors
+
+# 查看策略排行榜
+gemstar leaderboard                # 最新一次 run
+gemstar leaderboard --run 20260503-001
+
+# 环境检查（Python / uv / .env / gemstar.yaml / LLM 认证）
+gemstar doctor
+
+# 清理失败或过期的运行记录
+gemstar cleanup                    # 清理 failed + manual_attention
+gemstar cleanup --stale            # 额外清理超过 2 小时的 running 记录
+gemstar cleanup --keep 5           # 保留最近 5 次运行
+gemstar cleanup --dry-run          # 预览，不实际删除
 ```
 
 所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
@@ -438,6 +464,40 @@ uv run python -m pytest tests/ -v
 
 **数据完整性** — 无未来信息泄露（财务因子用 ann_date + merge_asof；市场因子 shift(1)）、无幸存者偏差（含已退市股票）、adj_factor 后复权、T+1 交割正确。
 
+### Factor Miner
+
+LLM 驱动的自动因子发现管线，从原始字段组合出新 alpha 因子并验证入池：
+
+<p align="center">
+  <img src="docs/images/factor-miner-flow.svg" alt="Factor Miner Flow" width="100%"/>
+</p>
+
+```
+discover_factors (LLM) → evaluate_proposals (IC 验证) → register_accepted (入池)
+```
+
+- **输入**：现有因子池 + 原始字段（close/open/high/low/volume/amount/turnover_rate/pe_ttm/pb/total_mv/circ_mv）
+- **DSL**：支持时序操作（ts_mean/ts_std/ts_rank/ts_delta/ts_corr 等）和截面操作（cs_rank/cs_zscore）
+- **验收门**：IC IR ≥ 0.3、覆盖率 ≥ 60%、与现有因子相关性 ≤ 0.85
+
+```bash
+# 通过 factor_miner 角色在 pipeline 中自动执行
+gemstar run --llm
+
+# 或通过 Python API 调用
+from src.factors.miner import FactorMiner
+```
+
+### Leaderboard
+
+每次 pipeline 运行后自动生成策略排行榜，包含排名、Sharpe、CAGR、最大回撤、Alpha 和排名变化：
+
+```bash
+gemstar leaderboard                # 最新一次 run 的排行榜
+gemstar leaderboard --run 20260503-001
+gemstar -o json leaderboard        # JSON 输出
+```
+
 ---
 
 ## 技术栈
@@ -451,6 +511,11 @@ uv run python -m pytest tests/ -v
 | scikit-learn | 数据预处理 |
 | Pydantic v2 | Schema 校验 |
 | Anthropic SDK | LLM API 调用 |
+| typer / rich | CLI 框架 + 终端美化 |
+| pyyaml | YAML 配置解析 |
+| pyarrow | Parquet 数据读写 |
+| matplotlib | 回测图表生成 |
+| swanlab | 实验追踪（独立回测工具） |
 
 ---
 

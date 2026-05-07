@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 350" font-family="JetBrains Mono, monospace">
+  <defs>
+    <linearGradient id="cyan-g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00e5ff;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#00e5ff;stop-opacity:0.05"/>
+    </linearGradient>
+    <linearGradient id="green-g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#39ff14;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#39ff14;stop-opacity:0.05"/>
+    </linearGradient>
+    <linearGradient id="amber-g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffab00;stop-opacity:0.2"/>
+      <stop offset="100%" style="stop-color:#ffab00;stop-opacity:0.05"/>
+    </linearGradient>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#00e5ff" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="350" fill="#0a0a0f"/>
+  <pattern id="g" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e1e2e" stroke-width="0.5"/>
+  </pattern>
+  <rect width="800" height="350" fill="url(#g)" opacity="0.3"/>
+
+  <text x="400" y="35" text-anchor="middle" fill="#00e5ff" font-size="16" font-weight="700">Factor Miner Pipeline</text>
+  <text x="400" y="55" text-anchor="middle" fill="#55556a" font-size="10">LLM-driven factor discovery → IC validation → pool registration</text>
+
+  <!-- Input -->
+  <g transform="translate(30, 80)">
+    <rect x="0" y="0" width="160" height="80" rx="10" fill="url(#cyan-g)" stroke="#1e1e2e"/>
+    <text x="80" y="22" text-anchor="middle" fill="#00e5ff" font-size="10" font-weight="600">Inputs</text>
+    <text x="80" y="40" text-anchor="middle" fill="#8888a0" font-size="8">Existing factor pool</text>
+    <text x="80" y="54" text-anchor="middle" fill="#8888a0" font-size="8">Raw fields (11)</text>
+    <text x="80" y="68" text-anchor="middle" fill="#55556a" font-size="7">close, volume, pe_ttm, pb...</text>
+  </g>
+
+  <line x1="190" y1="120" x2="230" y2="120" stroke="#00e5ff" stroke-opacity="0.4" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- Step 1: LLM Discovery -->
+  <g transform="translate(230, 80)">
+    <rect x="0" y="0" width="180" height="80" rx="10" fill="url(#amber-g)" stroke="#ffab00" stroke-opacity="0.3"/>
+    <text x="90" y="20" text-anchor="middle" fill="#ffab00" font-size="10" font-weight="600">1. discover_factors</text>
+    <text x="90" y="38" text-anchor="middle" fill="#e8e8ed" font-size="9">FactorMiner LLM</text>
+    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">Composes expressions over</text>
+    <text x="90" y="66" text-anchor="middle" fill="#55556a" font-size="7">raw fields using DSL ops</text>
+  </g>
+
+  <line x1="410" y1="120" x2="450" y2="120" stroke="#00e5ff" stroke-opacity="0.4" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- Step 2: Evaluate -->
+  <g transform="translate(450, 80)">
+    <rect x="0" y="0" width="180" height="80" rx="10" fill="url(#green-g)" stroke="#39ff14" stroke-opacity="0.3"/>
+    <text x="90" y="20" text-anchor="middle" fill="#39ff14" font-size="10" font-weight="600">2. evaluate_proposals</text>
+    <text x="90" y="38" text-anchor="middle" fill="#e8e8ed" font-size="9">IC/IR Validation</text>
+    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">IC IR ≥ 0.3</text>
+    <text x="90" y="66" text-anchor="middle" fill="#55556a" font-size="7">Coverage ≥ 60%, Redundancy ≤ 0.85</text>
+  </g>
+
+  <line x1="630" y1="120" x2="670" y2="120" stroke="#00e5ff" stroke-opacity="0.4" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- Step 3: Register -->
+  <g transform="translate(670, 80)">
+    <rect x="0" y="0" width="100" height="80" rx="10" fill="url(#cyan-g)" stroke="#00e5ff" stroke-opacity="0.3"/>
+    <text x="50" y="22" text-anchor="middle" fill="#00e5ff" font-size="10" font-weight="600">3. register</text>
+    <text x="50" y="40" text-anchor="middle" fill="#e8e8ed" font-size="9">Accepted</text>
+    <text x="50" y="56" text-anchor="middle" fill="#55556a" font-size="7">→ pool.json</text>
+    <text x="50" y="68" text-anchor="middle" fill="#55556a" font-size="7">candidates[]</text>
+  </g>
+
+  <!-- Output details -->
+  <g transform="translate(30, 200)">
+    <text x="0" y="15" fill="#55556a" font-size="10" font-weight="600">Expression DSL (per-stock time-series operations):</text>
+
+    <g transform="translate(0, 28)">
+      <rect x="0" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="60" y="16" text-anchor="middle" fill="#8888a0" font-size="7">ts_mean(x, d)</text>
+
+      <rect x="130" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="190" y="16" text-anchor="middle" fill="#8888a0" font-size="7">ts_std(x, d)</text>
+
+      <rect x="260" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="320" y="16" text-anchor="middle" fill="#8888a0" font-size="7">ts_rank(x, d)</text>
+
+      <rect x="390" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="450" y="16" text-anchor="middle" fill="#8888a0" font-size="7">ts_delta(x, d)</text>
+
+      <rect x="520" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="580" y="16" text-anchor="middle" fill="#8888a0" font-size="7">ts_corr(x, y, d)</text>
+
+      <rect x="650" y="0" width="120" height="24" rx="4" fill="#111119" stroke="#1e1e2e"/>
+      <text x="710" y="16" text-anchor="middle" fill="#8888a0" font-size="7">cs_rank(x)</text>
+    </g>
+  </g>
+
+  <!-- Example output -->
+  <g transform="translate(30, 270)">
+    <text x="0" y="15" fill="#55556a" font-size="10" font-weight="600">Example discovered factor:</text>
+
+    <g transform="translate(0, 25)">
+      <rect x="0" y="0" width="740" height="40" rx="8" fill="#111119" stroke="#39ff14" stroke-opacity="0.2"/>
+      <text x="16" y="18" fill="#39ff14" font-size="9">momentum_vol_ratio_v1</text>
+      <text x="16" y="33" fill="#8888a0" font-size="8">expression: ts_delta(close, 20) / ts_std(close, 20)</text>
+      <text x="500" y="18" fill="#55556a" font-size="8">direction: positive</text>
+      <text x="500" y="33" fill="#55556a" font-size="8">hypothesis: momentum normalized by volatility</text>
+    </g>
+  </g>
+</svg>

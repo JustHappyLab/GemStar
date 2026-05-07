@@ -1207,6 +1207,150 @@ nav .container {
   font-size: 1rem;
 }
 
+/* ── Commands Section ──────────────────────────────── */
+
+.commands-section {
+  padding: 100px 0;
+}
+
+.cmd-tabs {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+}
+
+.cmd-tab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 8px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.cmd-tab:hover {
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+}
+
+.cmd-tab.active {
+  background: var(--cyan-dim);
+  border-color: var(--cyan);
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.cmd-panel {
+  display: none;
+}
+
+.cmd-panel.active {
+  display: block;
+}
+
+.cmd-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.cmd-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cmd-header .dots {
+  display: flex;
+  gap: 6px;
+}
+
+.cmd-header .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.cmd-header .dot:nth-child(1) { background: #ff5f57; }
+.cmd-header .dot:nth-child(2) { background: #febc2e; }
+.cmd-header .dot:nth-child(3) { background: #28c840; }
+
+.cmd-header .title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.cmd-body {
+  padding: 20px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.9;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.cmd-body .cmd-line {
+  display: flex;
+  gap: 8px;
+}
+
+.cmd-body .prompt {
+  color: var(--cyan);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.cmd-body .cmd {
+  color: var(--text-primary);
+}
+
+.cmd-body .output {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.cmd-body .success {
+  color: var(--green);
+  font-size: 0.78rem;
+}
+
+.cmd-body .warn {
+  color: var(--amber);
+  font-size: 0.78rem;
+}
+
+.cmd-body .comment {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.cmd-body .json-output {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  padding-left: 1em;
+}
+
+.cmd-body .header-line {
+  color: var(--cyan);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
 /* ── Quick Start ─────────────────────────────────── */
 
 .quickstart {
@@ -1418,6 +1562,7 @@ footer a:hover {
       <li><a href="#roles">Roles</a></li>
       <li><a href="#feedback">Feedback</a></li>
       <li><a href="#capabilities">Features</a></li>
+      <li><a href="#commands">Commands</a></li>
       <li><a href="#quickstart">Quick Start</a></li>
     </ul>
     <a href="https://github.com/JustHappyLab/GemStar" target="_blank" class="nav-github">
@@ -1513,7 +1658,7 @@ footer a:hover {
         <div class="cap-icon">🤖</div>
         <h3 class="cap-title">多 Agent 协作</h3>
         <div class="cap-en">Multi-Agent</div>
-        <p class="cap-desc">7 个专业角色分工协作，4 种 LLM 后端可切换。通过 YAML 配置即可更换 Provider。</p>
+        <p class="cap-desc">8 个专业角色分工协作，4 种 LLM 后端可切换。通过 YAML 配置即可更换 Provider。</p>
       </div>
       <div class="cap-card reveal">
         <div class="cap-icon">📊</div>
@@ -1536,7 +1681,7 @@ footer a:hover {
   <div class="container">
     <div class="section-header reveal">
       <div class="section-label">// Multi-Agent</div>
-      <h2 class="section-title">7 个专业角色协作</h2>
+      <h2 class="section-title">8 个专业角色协作</h2>
       <p class="section-desc">每个角色专注一个领域，通过数据流串联，形成完整研究闭环</p>
     </div>
 
@@ -1598,6 +1743,17 @@ footer a:hover {
             <div class="role-desc">从 research ticket 草拟策略 YAML，输出可验证的策略配置</div>
             <div class="role-skills">
               <span class="role-skill">draft_strategy</span>
+            </div>
+          </div>
+          <div class="role-card" data-provider="api">
+            <div class="role-header">
+              <div class="role-icon">⛏️</div>
+              <span class="role-name">factor_miner</span>
+              <span class="role-provider api">api</span>
+            </div>
+            <div class="role-desc">LLM 自动发现新 alpha 因子表达式，IC 验证后注册入池</div>
+            <div class="role-skills">
+              <span class="role-skill">discover_factors</span>
             </div>
           </div>
         </div>
@@ -1799,8 +1955,10 @@ footer a:hover {
           <div class="arch-item">event_scanner</div>
           <div class="arch-item">research_analyst</div>
           <div class="arch-item">strategy_architect</div>
+          <div class="arch-item">factor_miner</div>
           <div class="arch-item">reviewer</div>
           <div class="arch-item">engineer</div>
+          <div class="arch-item">bugfix</div>
         </div>
       </div>
       <div class="arch-arrow">→</div>
@@ -1811,8 +1969,10 @@ footer a:hover {
           <div class="arch-item">scan_events</div>
           <div class="arch-item">generate_tickets</div>
           <div class="arch-item">draft_strategy</div>
+          <div class="arch-item">discover_factors</div>
           <div class="arch-item">review_verdict</div>
           <div class="arch-item">write_code</div>
+          <div class="arch-item">fix_bug</div>
         </div>
       </div>
       <div class="arch-arrow">→</div>
@@ -1846,6 +2006,178 @@ footer a:hover {
       <div class="tech-badge"><span class="tech-icon">🐼</span> pandas</div>
       <div class="tech-badge"><span class="tech-icon">🔢</span> numpy</div>
       <div class="tech-badge"><span class="tech-icon">🤖</span> scikit-learn</div>
+    </div>
+  </div>
+</section>
+
+<!-- Commands -->
+<section class="commands-section" id="commands">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">// Commands</div>
+      <h2 class="section-title">常用命令</h2>
+      <p class="section-desc">CLI 命令速查，点击 tab 切换示例</p>
+    </div>
+
+    <div class="cmd-tabs reveal">
+      <div class="cmd-tab active" data-target="cmd-run">run</div>
+      <div class="cmd-tab" data-target="cmd-status">status</div>
+      <div class="cmd-tab" data-target="cmd-history">history</div>
+      <div class="cmd-tab" data-target="cmd-leaderboard">leaderboard</div>
+      <div class="cmd-tab" data-target="cmd-doctor">doctor</div>
+      <div class="cmd-tab" data-target="cmd-factors">factors</div>
+      <div class="cmd-tab" data-target="cmd-cleanup">cleanup</div>
+    </div>
+
+    <!-- gemstar run -->
+    <div class="cmd-panel active" id="cmd-run">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar run</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar run --date 20260508 --llm</span></div>
+          <div class="cmd-line"><span class="output">  [FSM] INITIALIZED → COLLECTING</span></div>
+          <div class="cmd-line"><span class="output">  [Data] fetched 4,812 stocks (Parquet cache hit)</span></div>
+          <div class="cmd-line"><span class="output">  [FSM] → QUALITY_CHECKING → FACTOR_MONITORING</span></div>
+          <div class="cmd-line"><span class="output">  [Factor] 24 factors healthy, 2 degraded</span></div>
+          <div class="cmd-line"><span class="output">  [FSM] → STRATEGY_IDEATION → STRATEGY_VALIDATION</span></div>
+          <div class="cmd-line"><span class="output">  [LLM] macro_analyst: regime=bullish, style=growth</span></div>
+          <div class="cmd-line"><span class="output">  [LLM] research_analyst: 3 tickets generated</span></div>
+          <div class="cmd-line"><span class="output">  [LLM] strategy_architect: drafted 3 strategies</span></div>
+          <div class="cmd-line"><span class="output">  [FSM] → BACKTESTING → JUDGING</span></div>
+          <div class="cmd-line"><span class="output">  [Judge] 1/3 passed (Sharpe=1.42, Calmar=1.1)</span></div>
+          <div class="cmd-line"><span class="output">  [FSM] → LEADERBOARD → REPORTING → COMPLETED</span></div>
+          <div class="cmd-line"><span class="success">  ✓ Pipeline completed (run_id: 20260508-001, 3m42s)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar status -->
+    <div class="cmd-panel" id="cmd-status">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar -o json status</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar -o json status</span></div>
+          <div class="cmd-line json-output">{</div>
+          <div class="cmd-line json-output">  "run_id": "20260508-001",</div>
+          <div class="cmd-line json-output">  "state": "COMPLETED",</div>
+          <div class="cmd-line json-output">  "date": "20260508",</div>
+          <div class="cmd-line json-output">  "strategies_tested": 3,</div>
+          <div class="cmd-line json-output">  "strategies_passed": 1,</div>
+          <div class="cmd-line json-output">  "duration_sec": 222,</div>
+          <div class="cmd-line json-output">  "llm_enabled": true</div>
+          <div class="cmd-line json-output">}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar history -->
+    <div class="cmd-panel" id="cmd-history">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar history</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar history</span></div>
+          <div class="cmd-line"><span class="header-line">  Run ID            Date      State        Strategies  Duration</span></div>
+          <div class="cmd-line"><span class="output">  20260508-001      20260508  COMPLETED    1/3         3m42s</span></div>
+          <div class="cmd-line"><span class="output">  20260507-001      20260507  COMPLETED    2/4         5m18s</span></div>
+          <div class="cmd-line"><span class="output">  20260506-001      20260506  FAILED       0/3         1m05s</span></div>
+          <div class="cmd-line"><span class="output">  20260505-001      20260505  COMPLETED    1/2         4m30s</span></div>
+          <div class="cmd-line"><span class="output">  20260502-001      20260502  COMPLETED    3/5         6m12s</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar leaderboard -->
+    <div class="cmd-panel" id="cmd-leaderboard">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar leaderboard</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar leaderboard</span></div>
+          <div class="cmd-line"><span class="header-line">  #  Strategy                  Status    Sharpe   CAGR     MaxDD    Alpha   ΔRank</span></div>
+          <div class="cmd-line"><span class="output">  1  chinext_momentum_v3       PASSED    1.42     18.7%    -12.3%   +6.2%    +2</span></div>
+          <div class="cmd-line"><span class="output">  2  star_mean_revert_v1       PASSED    1.18     15.2%    -15.8%   +3.1%    -1</span></div>
+          <div class="cmd-line"><span class="output">  3  mainboard_value_v2        REJECTED  0.76     8.4%     -22.1%   -1.2%     0</span></div>
+          <div class="cmd-line"><span class="comment">  </span></div>
+          <div class="cmd-line"><span class="comment">  # Filtered to latest run: 20260508-001</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar doctor -->
+    <div class="cmd-panel" id="cmd-doctor">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar doctor</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar doctor</span></div>
+          <div class="cmd-line"><span class="success">  ✓ Python 3.13.2</span></div>
+          <div class="cmd-line"><span class="success">  ✓ uv 0.6.0</span></div>
+          <div class="cmd-line"><span class="success">  ✓ .env file exists</span></div>
+          <div class="cmd-line"><span class="success">  ✓ TUSHARE_TOKEN set</span></div>
+          <div class="cmd-line"><span class="success">  ✓ gemstar.yaml valid</span></div>
+          <div class="cmd-line"><span class="success">  ✓ state.db exists</span></div>
+          <div class="cmd-line"><span class="success">  ✓ roles/*.yaml valid (8 roles)</span></div>
+          <div class="cmd-line"><span class="success">  ✓ claude CLI authenticated</span></div>
+          <div class="cmd-line"><span class="warn">  ⚠ codex CLI not found (optional)</span></div>
+          <div class="cmd-line"><span class="success">  ✓ data/raw/ cache exists (2.1 GB)</span></div>
+          <div class="cmd-line"><span class="comment">  </span></div>
+          <div class="cmd-line"><span class="output">  9/10 checks passed. 1 warning (non-blocking).</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar factors -->
+    <div class="cmd-panel" id="cmd-factors">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar factors</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar factors</span></div>
+          <div class="cmd-line"><span class="header-line">  Factor                    Category    IC IR   Status</span></div>
+          <div class="cmd-line"><span class="output">  mom_20d                   momentum    0.52    healthy</span></div>
+          <div class="cmd-line"><span class="output">  vol_20d                   volatility  0.41    healthy</span></div>
+          <div class="cmd-line"><span class="output">  turnover_5d               liquidity   0.38    healthy</span></div>
+          <div class="cmd-line"><span class="output">  pe_ttm_rank               value       0.35    healthy</span></div>
+          <div class="cmd-line"><span class="output">  pb_inverse                 value       0.29    degraded</span></div>
+          <div class="cmd-line"><span class="output">  momentum_vol_ratio_v1     momentum    0.44    candidate</span></div>
+          <div class="cmd-line"><span class="comment">  </span></div>
+          <div class="cmd-line"><span class="comment">  Pool: 24 healthy, 2 degraded, 1 candidate (newly mined)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- gemstar cleanup -->
+    <div class="cmd-panel" id="cmd-cleanup">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar cleanup --dry-run</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar cleanup --stale --dry-run</span></div>
+          <div class="cmd-line"><span class="output">  [DRY RUN] Would delete:</span></div>
+          <div class="cmd-line"><span class="output">    - artifacts/20260506-001/  (status=failed)</span></div>
+          <div class="cmd-line"><span class="output">    - artifacts/20260501-001/  (status=failed)</span></div>
+          <div class="cmd-line"><span class="output">    - artifacts/20260430-001/  (status=running, stale >2h)</span></div>
+          <div class="cmd-line"><span class="comment">  </span></div>
+          <div class="cmd-line"><span class="output">  3 runs would be removed. Run without --dry-run to execute.</span></div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -2013,6 +2345,22 @@ window.addEventListener('scroll', () => {
 
   lastScroll = scrollY;
 }, { passive: true });
+
+// ── Command Tabs ──────────────────────────────────
+
+document.querySelectorAll('.cmd-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const target = tab.dataset.target;
+
+    // Deactivate all tabs and panels
+    document.querySelectorAll('.cmd-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.cmd-panel').forEach(p => p.classList.remove('active'));
+
+    // Activate clicked tab and its panel
+    tab.classList.add('active');
+    document.getElementById(target).classList.add('active');
+  });
+});
 
 // ── Smooth scroll for anchor links ──────────────────
 
