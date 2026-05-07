@@ -123,13 +123,15 @@ class RoleRegistry:
         for role_name, override in self._overrides.items():
             if role_name not in self._roles:
                 raise KeyError(f"Role override references unknown role: {role_name}")
+            # override may be a Pydantic model or a plain dict
+            provider = override.get("provider") if isinstance(override, dict) else getattr(override, "provider", None)
+            model = override.get("model") if isinstance(override, dict) else getattr(override, "model", None)
             updates = {}
-            if "provider" in override:
-                provider = override["provider"]
+            if provider is not None:
                 _validate_role_provider(role_name, provider)
                 updates["provider"] = provider
-            if "model" in override:
-                updates["model"] = override["model"]
+            if model is not None:
+                updates["model"] = model
             if updates:
                 role = self._roles[role_name]
                 self._roles[role_name] = role.model_copy(update=updates)
