@@ -148,7 +148,7 @@ class RoleRegistry:
         self, provider_name: str, timeout: int | None = None, model: str | None = None
     ) -> AgentProvider:
         """Get or create a provider instance (lazy init)."""
-        cache_key = (provider_name, timeout if provider_name != "api" else None, model)
+        cache_key = (provider_name, timeout, model)
         if cache_key not in self._providers:
             cls = _PROVIDER_MAP.get(provider_name)
             if cls is None:
@@ -158,7 +158,7 @@ class RoleRegistry:
                 kwargs["model"] = model
             if provider_name == "api" and self._base_url:
                 kwargs["base_url"] = self._base_url
-            if provider_name != "api" and timeout is not None:
+            if timeout is not None:
                 kwargs["timeout"] = timeout
             self._providers[cache_key] = cls(**kwargs)
         return self._providers[cache_key]

@@ -1,7 +1,7 @@
 """Anthropic SDK wrapper with policy enforcement and structured-output retry.
 
 CALLING SPEC:
-    LLMClient(model, max_retries=3, api_key=None)
+    LLMClient(model, max_retries=3, api_key=None, timeout=None)
         .generate(prompt, system=None) -> str
             Sends prompt to the Anthropic Messages API.
             - Never passes tools (policy: allow_tools=false).
@@ -34,10 +34,11 @@ class LLMClient:
         max_retries: int = 3,
         api_key: str | None = None,
         base_url: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         self._model = model
         self._max_retries = max_retries
-        self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
+        self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url, timeout=timeout)
 
     def generate(self, prompt: str, system: str | None = None) -> str:
         """Generate a text response from the model.
