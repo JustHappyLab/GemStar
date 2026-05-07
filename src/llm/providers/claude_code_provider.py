@@ -11,6 +11,7 @@ SIDE EFFECTS:
 from __future__ import annotations
 
 import json
+import re
 
 from src.llm.providers.base import BaseCliProvider
 
@@ -40,6 +41,9 @@ class ClaudeCodeProvider(BaseCliProvider):
     def parse_output(self, stdout: str) -> str:
         try:
             data = json.loads(stdout)
-            return data.get("result", stdout)
+            text = data.get("result", stdout)
         except json.JSONDecodeError:
-            return stdout
+            text = stdout
+        # Strip markdown code fences the model may have added
+        m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        return m.group(1).strip() if m else text.strip()
