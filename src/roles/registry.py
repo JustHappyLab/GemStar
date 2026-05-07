@@ -123,11 +123,16 @@ class RoleRegistry:
         for role_name, override in self._overrides.items():
             if role_name not in self._roles:
                 raise KeyError(f"Role override references unknown role: {role_name}")
+            updates = {}
             if "provider" in override:
                 provider = override["provider"]
                 _validate_role_provider(role_name, provider)
+                updates["provider"] = provider
+            if "model" in override:
+                updates["model"] = override["model"]
+            if updates:
                 role = self._roles[role_name]
-                self._roles[role_name] = role.model_copy(update={"provider": provider})
+                self._roles[role_name] = role.model_copy(update=updates)
 
     def _load_skills(self) -> None:
         """Load all skill directories from skills_dir."""
@@ -137,14 +142,18 @@ class RoleRegistry:
             if path.is_dir():
                 self._skills[path.name] = SkillContent(path.name, path)
 
-    def get_provider(self, provider_name: str, timeout: int | None = None) -> AgentProvider:
+    def get_provider(
+        self, provider_name: str, timeout: int | None = None, model: str | None = None
+    ) -> AgentProvider:
         """Get or create a provider instance (lazy init)."""
-        cache_key = (provider_name, timeout if provider_name != "api" else None)
+        cache_key = (provider_name, timeout if provider_name != "api" else None, model)
         if cache_key not in self._providers:
             cls = _PROVIDER_MAP.get(provider_name)
             if cls is None:
                 raise ValueError(f"Unknown provider: {provider_name}")
-            kwargs = {}
+            kwargs: dict = {}
+            if model is not None:
+                kwargs["model"] = model
             if provider_name == "api" and self._base_url:
                 kwargs["base_url"] = self._base_url
             if provider_name != "api" and timeout is not None:
@@ -179,7 +188,7 @@ class RoleRegistry:
             AgentResult from the provider.
         """
         role = self.get_role(name)
-        provider = self.get_provider(role.provider, timeout=role.timeout)
+        provider = self.get_provider(role.provider, timeout=role.timeout, model=role.model)
 
         # Compose system prompt from all skills
         skill_prompts = []

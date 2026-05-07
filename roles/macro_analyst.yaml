@@ -3,4 +3,3 @@ description: 市场宏观状态评估
 provider: api
 skills:
   - analyze_market
-timeout: 120

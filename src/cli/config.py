@@ -93,8 +93,13 @@ engineering:
       - tests/**
 
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
-# 按角色切换 LLM 后端，无需改 roles/*.yaml
-# 可选值: api, claude_code, gemini_cli, codex_cli
+# 按角色切换 LLM 后端和模型，无需改 roles/*.yaml
+# provider 可选值: api, claude_code, gemini_cli, codex_cli
+# model 可选值（默认使用各家旗舰模型）:
+#   api          → 未指定 model 由 API 默认
+#   claude_code  → sonnet / opus / haiku
+#   gemini_cli   → gemini-2.5-pro / gemini-2.5-flash
+#   codex_cli    → 由 codex CLI 默认
 # 未列出的角色使用 roles/*.yaml 中的默认配置
 #
 # 安装与认证:
@@ -105,10 +110,10 @@ engineering:
 roles: {}
 #  engineer:
 #    provider: gemini_cli          # 工程师角色改用 Gemini
-#  bugfix:
-#    provider: codex_cli           # Bug 修复改用 Codex
+#    model: gemini-2.5-flash       # 使用轻量模型节省成本
 #  macro_analyst:
 #    provider: claude_code         # 宏观分析改用 Claude Code
+#    model: opus                   # 使用最强模型
 
 # ─── 策略 ─────────────────────────────────────────────────
 strategies:
@@ -166,6 +171,7 @@ class RoleOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: ProviderName | None = None
+    model: str | None = None
 
 
 class EngineeringRolePolicy(BaseModel):

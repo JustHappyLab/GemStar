@@ -3,4 +3,3 @@ description: 研究工单生成
 provider: api
 skills:
   - generate_tickets
-timeout: 120

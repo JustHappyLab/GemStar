@@ -3,4 +3,3 @@ description: 回测结果解读与风险评估
 provider: api
 skills:
   - review_verdict
-timeout: 120

@@ -4,4 +4,3 @@ provider: claude_code
 skills:
   - write_code
   - fix_bug
-timeout: 600

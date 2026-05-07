@@ -42,7 +42,7 @@ class AgentProvider(ABC):
 class BaseCliProvider(AgentProvider):
     """Base for CLI subprocess providers. Subclasses override build_command()."""
 
-    def __init__(self, provider_name: str, timeout: int = 300) -> None:
+    def __init__(self, provider_name: str, timeout: int = 3600) -> None:
         self._provider_name = provider_name
         self._timeout = timeout
 
