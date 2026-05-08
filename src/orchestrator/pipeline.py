@@ -16,8 +16,8 @@ CALLING SPEC:
 
     Executes the full daily pipeline through the FSM:
       COLLECTING → QUALITY_CHECKING → FACTOR_MONITORING →
-      STRATEGY_VALIDATION → BACKTESTING → JUDGING →
-      LEADERBOARD_BUILDING → REPORTING → COMPLETED
+      FACTOR_MINING → STRATEGY_IDEATION → STRATEGY_VALIDATION →
+      BACKTESTING → JUDGING → LEADERBOARD_BUILDING → REPORTING → COMPLETED
 
     Returns a dict with: report (DailyReportV1), markdown (str),
     verdicts (list[VerdictV1]), backtest_results (list[BacktestResultV1]),
@@ -254,6 +254,7 @@ def run_daily_pipeline(
             write_artifact(run_id, "factor_health_report", factor_health.model_dump(), base_dir=artifacts_dir, step_id="factor_monitoring")
 
         # --- FACTOR_MINING ---
+        # Load the pool once; FactorMiner appends new candidates and saves back.
         from src.factors.pool import load_pool, save_pool
         from src.schemas.factor import FactorPoolV1
         current_pool: FactorPoolV1 = load_pool(pool_path)
@@ -331,7 +332,7 @@ def run_daily_pipeline(
 
         # --- STRATEGY_IDEATION ---
         fsm.transition("strategy_ideation")
-        daily_df = daily_df_for_mining
+        daily_df = daily_df_for_mining  # reuse already-adjusted frame
         data = dict(data)
         data["daily"] = daily_df
         regime = None
