@@ -35,6 +35,10 @@ def cleanup_cmd(
         help="Clean orphaned 'running' records older than 2 hours "
              "(pipeline crashed without finalizing).",
     ),
+    all_runs: bool = typer.Option(
+        False, "--all", "-a",
+        help="Clean ALL run records and artifacts regardless of status.",
+    ),
 ) -> None:
     """Remove failed or stale run artifacts and DB records."""
     config = load_config()
@@ -44,6 +48,15 @@ def cleanup_cmd(
     if not Path(db_path).exists():
         console.print("[red]No state.db found. Run 'gemstar init' first.[/red]")
         raise typer.Exit(1)
+
+    if all_runs and not dry_run:
+        confirmed = typer.confirm(
+            f"This will delete ALL run records and artifacts{' (except the ' + str(keep) + ' most recent)' if keep else ''}. Continue?",
+            default=False,
+        )
+        if not confirmed:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
 
     clean_statuses = (
         tuple(s.strip() for s in status.split(","))
@@ -55,16 +68,18 @@ def cleanup_cmd(
     conn.row_factory = sqlite3.Row
 
     # Find runs matching target statuses, excluding the N most recent
-    all_runs = conn.execute(
+    db_runs = conn.execute(
         "SELECT run_id, status, started_at FROM runs ORDER BY started_at DESC"
     ).fetchall()
 
     now = datetime.now()
     targets = []
-    for i, row in enumerate(all_runs):
+    for i, row in enumerate(db_runs):
         if keep and i < keep:
             continue
-        if row["status"] in clean_statuses:
+        if all_runs:
+            targets.append(row)
+        elif row["status"] in clean_statuses:
             targets.append(row)
         elif stale and row["status"] == "running":
             # Detect orphaned "running" records by age
