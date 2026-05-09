@@ -32,12 +32,12 @@ class GeminiCliProvider(BaseCliProvider):
         ]
 
     def parse_output(self, stdout: str) -> str:
-        # --output-format json returns an object with a "result" field
+        # --output-format json returns {"session_id":..., "response":..., "stats":...}
         try:
             data = json.loads(stdout)
-            return data.get("result", stdout)
+            text = data.get("response", stdout)
         except json.JSONDecodeError:
-            pass
-        # Fallback: strip markdown code fences from text-mode output
-        m = re.search(r"```(?:json)?\s*\n(.*?)\n```", stdout.strip(), re.DOTALL)
-        return m.group(1).strip() if m else stdout.strip()
+            text = stdout
+        # Strip markdown code fences (gemini often wraps JSON in ```json ... ```)
+        m = re.search(r"```(?:json)?\s*\n(.*?)\n```", text.strip(), re.DOTALL)
+        return m.group(1).strip() if m else text.strip()

@@ -665,6 +665,7 @@ def run_daily_pipeline(
         result["run_status"] = "completed"
         _finalized = True
         finalize_run(run_id, "completed", db_path=db_path, artifacts_dir=artifacts_dir)
+        return result
 
     except Exception as exc:
         if not fsm.is_terminal():
@@ -688,6 +689,7 @@ def run_daily_pipeline(
 
         _finalized = True
         finalize_run(run_id, "failed", db_path=db_path, artifacts_dir=artifacts_dir)
+        return result
 
     finally:
         for sig, handler in _original_handlers.items():
