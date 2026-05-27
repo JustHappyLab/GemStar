@@ -66,7 +66,7 @@ from src.cli.commands.doctor_cmd import doctor_cmd  # noqa: E402
 from src.cli.commands.cleanup_cmd import cleanup_cmd  # noqa: E402
 from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
 from src.cli.commands.engineering_cmd import engineering_run_cmd  # noqa: E402
-from src.cli.commands.live_cmd import live_once_cmd  # noqa: E402
+from src.cli.commands.live_cmd import live_once_cmd, live_start_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -85,6 +85,7 @@ app.add_typer(scheduler_app, name="scheduler")
 engineering_app.command("run")(engineering_run_cmd)
 app.add_typer(engineering_app, name="engineering")
 live_app.command("once")(live_once_cmd)
+live_app.command("start")(live_start_cmd)
 app.add_typer(live_app, name="live")
 app.command("start", hidden=True)(start_cmd)
 app.command("stop", hidden=True)(stop_cmd)
