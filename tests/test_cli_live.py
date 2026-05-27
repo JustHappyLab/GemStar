@@ -85,6 +85,8 @@ def test_live_once_writes_notification_jsonl(tmp_path):
     assert rows[0]["action"] == "buy"
     assert rows[0]["symbols"] == ["300750.SZ"]
     assert rows[0]["decision_id"] == "20260527-300750.SZ-buy-200"
+    assert "Confidence: 0.80" in rows[0]["body"]
+    assert "Risk flags: none" in rows[0]["body"]
     assert datetime.fromisoformat(rows[0]["created_at"])
 
 

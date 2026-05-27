@@ -19,6 +19,7 @@ def notification_from_decision(decision: LiveDecisionV1) -> NotificationMessageV
     shares = decision.intent.shares
     price = decision.intent.reference_price
     price_text = "n/a" if price is None else f"{price:.2f}"
+    risk_text = ", ".join(decision.intent.risk_flags) if decision.intent.risk_flags else "none"
     return NotificationMessageV1(
         message_id=f"notify-{decision.decision_id}",
         created_at=decision.created_at,
@@ -27,6 +28,8 @@ def notification_from_decision(decision: LiveDecisionV1) -> NotificationMessageV
         body=(
             f"{decision.strategy_name}: {action} {shares} shares "
             f"of {decision.ts_code} near {price_text}. "
+            f"Confidence: {decision.intent.confidence:.2f}. "
+            f"Risk flags: {risk_text}. "
             f"Reason: {decision.intent.reason}"
         ),
         decision_id=decision.decision_id,
