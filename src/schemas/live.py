@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 TradeAction = Literal["buy", "sell", "reduce", "add", "hold", "blocked"]
 DecisionSeverity = Literal["info", "warning", "critical"]
+PaperTradeAction = Literal["buy", "sell", "reduce", "add"]
 
 
 class LivePositionV1(BaseModel):
@@ -102,3 +103,21 @@ class LiveDecisionV1(BaseModel):
     severity: DecisionSeverity = "info"
     intent: TradingIntentV1
     notify: bool = True
+
+
+class PaperTradeRecordV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["PaperTradeRecordV1"] = "PaperTradeRecordV1"
+    execution_id: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    created_at: datetime = Field(default_factory=datetime.now)
+    trade_date: str = Field(pattern=r"^\d{8}$")
+    strategy_name: str = Field(min_length=1)
+    ts_code: str = Field(min_length=6, max_length=16)
+    action: PaperTradeAction
+    shares: int = Field(gt=0, multiple_of=100)
+    fill_price: float = Field(gt=0.0)
+    confirmed: bool
+    executed: bool
+    position_after_shares: int = Field(ge=0, multiple_of=100)

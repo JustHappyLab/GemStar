@@ -5,6 +5,7 @@ from src.schemas.live import (
     LiveDecisionV1,
     LivePositionV1,
     MarketSnapshotV1,
+    PaperTradeRecordV1,
     TargetHoldingV1,
     TradingIntentV1,
 )
