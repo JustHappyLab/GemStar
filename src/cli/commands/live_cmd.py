@@ -95,8 +95,12 @@ def live_start_cmd(
         console.print(f"[yellow]Received signal {signum}, stopping live radar...[/yellow]")
         stop_event.set()
 
-    old_term = signal.signal(signal.SIGTERM, _handle_signal)
-    old_int = signal.signal(signal.SIGINT, _handle_signal)
+    install_signal_handlers = max_cycles is None
+    old_term = signal.getsignal(signal.SIGTERM)
+    old_int = signal.getsignal(signal.SIGINT)
+    if install_signal_handlers:
+        old_term = signal.signal(signal.SIGTERM, _handle_signal)
+        old_int = signal.signal(signal.SIGINT, _handle_signal)
 
     sink = LocalFileNotificationSink(notifications_path)
     try:
@@ -117,8 +121,9 @@ def live_start_cmd(
             ),
         )
     finally:
-        signal.signal(signal.SIGTERM, old_term)
-        signal.signal(signal.SIGINT, old_int)
+        if install_signal_handlers:
+            signal.signal(signal.SIGTERM, old_term)
+            signal.signal(signal.SIGINT, old_int)
 
     console.print(
         f"[green]Live radar stopped.[/green] cycles={result.cycles} "
