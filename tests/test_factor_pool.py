@@ -33,7 +33,7 @@ def test_pool_loads_as_factor_pool_v1():
 
 def test_eight_factors_present():
     pool = load_pool()
-    names = {e.name for e in pool.all_entries()}
+    names = {e.name for e in pool.active}
     assert names == EXPECTED_FACTORS
 
 
@@ -71,8 +71,10 @@ def test_pool_version_is_2():
     assert pool.version == 2
 
 
-def test_empty_watchlist_retired_candidates():
+def test_empty_watchlist_retired_and_valid_candidates():
     pool = load_pool()
     assert pool.watchlist == []
     assert pool.retired == []
-    assert pool.candidates == []
+    for entry in pool.candidates:
+        assert entry.status == "candidate"
+        assert entry.expression

@@ -267,6 +267,7 @@ def run_daily_pipeline(
         mining_ready = (
             llm_available
             and _reg is not None
+            and gen_target_count > 0
             and not daily_df_for_mining.empty
             and "factor_miner" in (_reg.list_roles() if hasattr(_reg, "list_roles") else [])
         )
@@ -482,14 +483,35 @@ def run_daily_pipeline(
         # Iterative LLM generation loop
         if use_loop:
             draft_dir = str(Path(artifacts_dir) / run_id / "drafts")
+            ticket_queue = [ticket for ticket in tickets if ticket.status == "draft"]
             iteration = 0
             while len(collected_candidates) < gen_target_count and iteration < gen_max_iterations:
                 iteration += 1
                 logger.info("Strategy generation iteration %d/%d (candidates: %d/%d)",
                             iteration, gen_max_iterations, len(collected_candidates), gen_target_count)
                 try:
-                    # Generate new tickets for this iteration
-                    iter_tickets = generate_tickets(regime, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
+                    # Consume the context-gathering tickets first; only ask
+                    # ResearchAnalyst for more ideas after the initial queue is
+                    # exhausted. This keeps strategy generation reproducible
+                    # and prevents duplicate ticket calls in the first loop.
+                    if ticket_queue:
+                        iter_tickets = ticket_queue
+                        ticket_queue = []
+                    else:
+                        iter_tickets = generate_tickets(
+                            regime,
+                            events,
+                            factor_health,
+                            pool_path,
+                            RoleLLMAdapter(_reg, "research_analyst"),
+                        )
+                        write_artifact(
+                            run_id,
+                            f"research_tickets_iter_{iteration}",
+                            [t.model_dump() for t in iter_tickets],
+                            base_dir=artifacts_dir,
+                            step_id="strategy_ideation",
+                        )
                     for ticket in iter_tickets:
                         if ticket.status != "draft":
                             continue

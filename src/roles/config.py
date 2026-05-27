@@ -26,4 +26,4 @@ class RoleConfig(BaseModel):
     provider: ProviderName = "api"
     model: str | None = None
     skills: list[str] = Field(default_factory=list)
-    timeout: int = Field(default=3600, gt=0, le=3600)
+    timeout: int = Field(default=120, gt=0, le=3600)

@@ -99,7 +99,7 @@ class RoleRegistry:
         self._event_callback = event_callback
         self._roles: dict[str, RoleConfig] = {}
         self._skills: dict[str, SkillContent] = {}
-        self._providers: dict[tuple[str, int | None], AgentProvider] = {}
+        self._providers: dict[tuple[str, int | None, str | None], AgentProvider] = {}
         self._overrides = overrides or {}
         self._base_url = base_url
 
@@ -190,7 +190,10 @@ class RoleRegistry:
             AgentResult from the provider.
         """
         role = self.get_role(name)
-        provider = self.get_provider(role.provider, timeout=role.timeout, model=role.model)
+        if role.model is None:
+            provider = self.get_provider(role.provider, timeout=role.timeout)
+        else:
+            provider = self.get_provider(role.provider, timeout=role.timeout, model=role.model)
 
         # Compose system prompt from all skills
         skill_prompts = []
