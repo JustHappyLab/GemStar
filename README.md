@@ -190,7 +190,53 @@ gemstar init
 | `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
 | `ANTHROPIC_API_KEY` | 否 | Anthropic API key，`api` provider 使用 |
 | `ANTHROPIC_BASE_URL` | 否 | Anthropic API 代理地址（中国大陆用户） |
+| `TELEGRAM_BOT_TOKEN` | 否 | Telegram Bot token，用于接收实时告警通知 |
+| `TELEGRAM_CHAT_ID` | 否 | Telegram Chat ID，告警消息的接收目标 |
 | `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
+
+#### Telegram 通知配置
+
+GemStar 支持通过 Telegram Bot 推送实时告警通知。配置步骤：
+
+**1. 创建 Telegram Bot**
+
+在 Telegram 中搜索 `@BotFather`，发送以下命令创建 Bot：
+
+```
+/newbot
+```
+
+按提示输入 Bot 名称（如 `GemStarAlert`）和用户名（如 `gemstar_alert_bot`）。创建成功后会获得一个 Bot Token（格式：`123456789:ABCdef...`）。
+
+**2. 获取 Chat ID**
+
+首先给你的 Bot 发一条消息（点击 Start 按钮），然后访问：
+
+```
+https://api.telegram.org/bot<你的Bot Token>/getUpdates
+```
+
+在返回的 JSON 中找到 `"chat":{"id": 123456789}`，这个数字就是你的 Chat ID。
+
+**3. 配置环境变量**
+
+在 `.env` 文件中添加：
+
+```bash
+TELEGRAM_BOT_TOKEN="你的Bot Token"
+TELEGRAM_CHAT_ID="你的Chat ID"
+```
+
+**4. 测试配置**
+
+```bash
+# 发送测试消息
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+  -H "Content-Type: application/json" \
+  -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"GemStar 通知测试\"}"
+```
+
+配置完成后，Pipeline 运行时的告警和通知会自动推送到你的 Telegram。
 
 #### LLM Provider 配置
 
