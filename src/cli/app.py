@@ -67,9 +67,11 @@ from src.cli.commands.cleanup_cmd import cleanup_cmd  # noqa: E402
 from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
 from src.cli.commands.engineering_cmd import engineering_run_cmd  # noqa: E402
 from src.cli.commands.live_cmd import live_once_cmd, live_start_cmd  # noqa: E402
+from src.cli.commands.trade_cmd import trade_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
+app.command("trade")(trade_cmd)
 app.command("fetch")(fetch_cmd)
 app.command("status")(status_cmd)
 app.command("run-status", hidden=True)(status_cmd)
