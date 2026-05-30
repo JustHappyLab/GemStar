@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 import pandas as pd
 
-from src.cli.app import get_output_format
+from src.cli.output import get_output_format
 from src.cli.config import load_config
 from src.cli.output import console, emit
 

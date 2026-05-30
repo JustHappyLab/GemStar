@@ -12,6 +12,18 @@ console = Console()
 
 OutputFormat = str  # "table" | "json"
 
+# Shared state: commands read this to decide output format.
+_output_format: OutputFormat = "table"
+
+
+def get_output_format() -> OutputFormat:
+    return _output_format
+
+
+def set_output_format(fmt: OutputFormat) -> None:
+    global _output_format
+    _output_format = fmt
+
 
 def emit(data: Any, *, format: OutputFormat = "table", title: str = "") -> None:
     """Emit *data* in the requested format.

@@ -59,7 +59,7 @@ class TelegramNotificationSink:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        response = self.opener(request, self.timeout)
+        response = self.opener(request, timeout=self.timeout)
         body = response.read().decode("utf-8")
         return json.loads(body)
 

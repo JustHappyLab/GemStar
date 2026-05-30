@@ -13,7 +13,7 @@ from pathlib import Path
 import typer
 import yaml
 
-from src.cli.app import get_output_format
+from src.cli.output import get_output_format
 from src.cli.config import find_config, load_config
 from src.cli.output import console, emit
 from src.roles.config import RoleConfig

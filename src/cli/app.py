@@ -4,15 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from src.cli.output import OutputFormat, console
-
-# Shared state: subcommands read this to decide output format.
-_output_format: OutputFormat = "table"
-
-
-def get_output_format() -> OutputFormat:
-    return _output_format
-
+from src.cli.output import OutputFormat, console, get_output_format, set_output_format  # noqa: F401
 
 app = typer.Typer(
     name="gemstar",
@@ -48,8 +40,7 @@ def _global_options(
     ),
 ) -> None:
     """Set global options."""
-    global _output_format
-    _output_format = output
+    set_output_format(output)
 
 
 # --- Register subcommands ---
