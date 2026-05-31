@@ -1578,22 +1578,22 @@ footer a:hover {
     <div class="hero-content">
       <div class="hero-badge">
         <span class="dot"></span>
-        Open Source Quant Framework
+        一条命令，帮你赚钱
       </div>
       <h1 class="hero-title">GemStar</h1>
-      <p class="hero-tagline">AI 驱动的自动化量化研究框架</p>
+      <p class="hero-tagline">AI 驱动的自动化量化投资助手</p>
       <p class="hero-subtitle">
-        FSM 驱动的多 Agent 日频 Pipeline
+        新闻事件扫描
         <span class="arrow">→</span>
-        自动完成数据质检
+        因子挖掘
         <span class="arrow">→</span>
-        因子监控
+        策略生成与回测
         <span class="arrow">→</span>
-        策略生成
+        策略评审
         <span class="arrow">→</span>
-        回测
+        实时信号监控
         <span class="arrow">→</span>
-        评审
+        Telegram 中文推送
       </p>
       <div class="hero-actions">
         <a href="#quickstart" class="btn btn-primary">Get Started</a>
@@ -1612,10 +1612,11 @@ footer a:hover {
         <div class="terminal-body">
           <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">uv sync</span></div>
           <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar init</span></div>
-          <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar run --llm</span></div>
-          <div class="terminal-line"><span class="comment">  → COLLECTING → QUALITY_CHECKING → ...</span></div>
-          <div class="terminal-line"><span class="comment">  → STRATEGY_IDEATION → BACKTESTING → ...</span></div>
-          <div class="terminal-line"><span class="output">  ✓ Pipeline completed (run_id: 20260505-001)</span></div>
+          <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar trade --capital 500000</span></div>
+          <div class="terminal-line"><span class="comment">  → 研究市场: scanning events, analyzing regime...</span></div>
+          <div class="terminal-line"><span class="comment">  → 策略生成: 3 candidates drafted, 14 backtested</span></div>
+          <div class="terminal-line"><span class="comment">  → 实时监控: 15 只标的, 30s 轮询</span></div>
+          <div class="terminal-line"><span class="output">  ✓ 15 signals, Telegram 已推送 (ledger=5)</span></div>
         </div>
       </div>
     </div>
@@ -1671,6 +1672,18 @@ footer a:hover {
         <h3 class="cap-title">回测引擎</h3>
         <div class="cap-en">Backtesting</div>
         <p class="cap-desc">真实 A 股约束：T+1、涨跌停、滑点。与聚宽验证 NAV 差异 0.0000%。</p>
+      </div>
+      <div class="cap-card reveal">
+        <div class="cap-icon">📡</div>
+        <h3 class="cap-title">实时信号监控</h3>
+        <div class="cap-en">Live Radar</div>
+        <p class="cap-desc">盘中 30s/盘外 300s 轮询，自动识别买卖信号。涨跌停/T+1 约束，Telegram 中文通知。</p>
+      </div>
+      <div class="cap-card reveal">
+        <div class="cap-icon">📒</div>
+        <h3 class="cap-title">持仓跟踪账本</h3>
+        <div class="cap-en">Paper Ledger</div>
+        <p class="cap-desc">JSONL 追加式账本，跨日持仓感知。信号不再是重复"买入"，而是持仓感知的增持/减持。</p>
       </div>
     </div>
   </div>
@@ -2020,7 +2033,8 @@ footer a:hover {
     </div>
 
     <div class="cmd-tabs reveal">
-      <div class="cmd-tab active" data-target="cmd-run">run</div>
+      <div class="cmd-tab active" data-target="cmd-trade">trade ⭐</div>
+      <div class="cmd-tab" data-target="cmd-run">run</div>
       <div class="cmd-tab" data-target="cmd-status">status</div>
       <div class="cmd-tab" data-target="cmd-history">history</div>
       <div class="cmd-tab" data-target="cmd-leaderboard">leaderboard</div>
@@ -2029,8 +2043,30 @@ footer a:hover {
       <div class="cmd-tab" data-target="cmd-cleanup">cleanup</div>
     </div>
 
+    <!-- gemstar trade -->
+    <div class="cmd-panel active" id="cmd-trade">
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <span class="title">gemstar trade --capital 500000</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-line"><span class="prompt">$</span> <span class="cmd">gemstar trade --capital 500000</span></div>
+          <div class="cmd-line"><span class="output">  [Research] running daily pipeline (LLM on)...</span></div>
+          <div class="cmd-line"><span class="output">  [Pipeline] COLLECTING → QUALITY_CHECKING → ... → COMPLETED</span></div>
+          <div class="cmd-line"><span class="output">  [Leaderboard] #1 chinext_lstm_mf8 Sharpe=1.17 CAGR=122%</span></div>
+          <div class="cmd-line"><span class="output">  [Targets] ready: 2 strategies, 15 只标的</span></div>
+          <div class="cmd-line"><span class="output">  [Live] 资本=500000 持仓=3 现金=482000</span></div>
+          <div class="cmd-line"><span class="output">  [Signal] [买入] 300750.SZ 200股 @101.50</span></div>
+          <div class="cmd-line"><span class="output">  [Signal] [加仓] 300216.SZ 100股 @45.32</span></div>
+          <div class="cmd-line"><span class="output">  [Telegram] 已推送中文通知 (ledger=5)</span></div>
+          <div class="cmd-line"><span class="success">  ✓ 监控中... (30s 轮询, Ctrl+C 退出)</span></div>
+        </div>
+      </div>
+    </div>
+
     <!-- gemstar run -->
-    <div class="cmd-panel active" id="cmd-run">
+    <div class="cmd-panel" id="cmd-run">
       <div class="cmd-card">
         <div class="cmd-header">
           <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
@@ -2188,7 +2224,7 @@ footer a:hover {
     <div class="section-header reveal">
       <div class="section-label">// Quick Start</div>
       <h2 class="section-title">快速开始</h2>
-      <p class="section-desc">4 条命令，从零到策略生成</p>
+      <p class="section-desc">4 条命令，从零到自动赚钱</p>
     </div>
     <div class="quickstart-card reveal">
       <div class="quickstart-header">
@@ -2202,10 +2238,9 @@ footer a:hover {
       <div class="quickstart-body">
         <div class="line"><span class="prompt">$</span> <span class="cmd">git clone https://github.com/JustHappyLab/GemStar.git</span></div>
         <div class="line"><span class="prompt">$</span> <span class="cmd">cd GemStar</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="cmd">uv sync</span> <span class="comment"># install dependencies</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar init</span> <span class="comment"># generate config</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar run</span> <span class="comment"># run pipeline</span></div>
-        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar scheduler start</span> <span class="comment"># start scheduler</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">uv sync</span> <span class="comment"># 安装依赖</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar init</span> <span class="comment"># 初始化配置</span></div>
+        <div class="line"><span class="prompt">$</span> <span class="cmd">gemstar trade --capital 500000</span> <span class="comment"># 一键启动 🚀</span></div>
       </div>
     </div>
   </div>
@@ -2214,7 +2249,7 @@ footer a:hover {
 <!-- Footer -->
 <footer>
   <div class="container">
-    <p>GemStar &mdash; <a href="https://github.com/JustHappyLab/GemStar" target="_blank">GitHub</a></p>
+    <p>GemStar &mdash; 一条命令，帮你赚钱 &mdash; <a href="https://github.com/JustHappyLab/GemStar" target="_blank">GitHub</a></p>
   </div>
 </footer>
 

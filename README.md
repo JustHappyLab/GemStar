@@ -1,6 +1,6 @@
 # GemStar
 
-AI 驱动的自动化量化研究框架。FSM 驱动的多 Agent 日频 Pipeline，自动完成数据质检 → 因子监控 → 策略生成 → 回测 → 评审。
+AI 驱动的自动化量化研究框架。一条命令完成：新闻事件扫描 → 策略生成 → 回测验证 → 实时信号监控 → Telegram 中文通知。持仓感知，跨日跟踪。
 
 <p align="center">
   <img src="docs/images/pipeline-flow.svg" alt="GemStar Pipeline Flow" width="100%"/>
@@ -10,7 +10,9 @@ AI 驱动的自动化量化研究框架。FSM 驱动的多 Agent 日频 Pipeline
 
 ## Pipeline
 
-14 状态有限状态机驱动，每个交易日自动执行完整研究流程：
+`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 实时监控信号 → Telegram 推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
+
+14 状态有限状态机驱动，每日研究流程：
 
 ```
 COLLECTING → QUALITY_CHECKING → FACTOR_MONITORING → STRATEGY_IDEATION →
@@ -32,6 +34,8 @@ REPORTING → COMPLETED
 | RuleJudge | 规则引擎评估回测结果（gate 通过/拒绝） |
 | Reviewer | LLM 生成评审意见（解释 + 风险 + 置信度） |
 | IncidentFSM | 7 状态故障分类与自愈流程 |
+| LiveRadar | 实时行情监控，信号识别，T+1/涨跌停约束 |
+| PaperLedger | 追加式 JSONL 账本，跨日持仓跟踪 |
 
 ### Role / Provider / Skill 三层架构
 
@@ -309,7 +313,21 @@ Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角�
 ### CLI 命令
 
 ```bash
-# 启动当日 pipeline（核心命令）
+# 🚀 一键启动：研究 → 策略生成 → 回测 → 实时监控 → Telegram 通知
+gemstar trade
+
+# 指定本金（默认 10 万）
+gemstar trade --capital 500000
+
+# 只跑一轮看效果
+gemstar trade --once
+
+# 跟踪 leaderboard 前 5 个策略
+gemstar trade --top 5
+
+# ─── 以下是内部子命令 ──────────────────────────────
+
+# 启动当日 pipeline（仅研究+回测，不启动实时监控）
 gemstar run --date 20260503
 
 # 启用 LLM 策略生成
@@ -354,6 +372,10 @@ gemstar factors
 # 查看策略排行榜
 gemstar leaderboard                # 最新一次 run
 gemstar leaderboard --run 20260503-001
+
+# 实时信号监控（底层命令，通常用 gemstar trade 代替）
+gemstar live once --account account.json --targets targets.json --snapshots snapshots.json
+gemstar live start --account account.json --targets targets.json --snapshots snapshots.json
 
 # 环境检查（Python / uv / .env / gemstar.yaml / LLM 认证）
 gemstar doctor
