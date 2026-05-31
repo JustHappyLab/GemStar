@@ -35,13 +35,18 @@ import yaml
 
 from src.cli.config import load_config
 from src.cli.output import console
+from src.live.decision_messages import notification_from_decision
+from src.live.ledger import append_paper_trade, read_paper_trades
 from src.live.loop import run_live_loop
+from src.live.signal_engine import build_live_decisions
 from src.live.snapshot import snapshots_from_daily_df
 from src.notify.local_file import LocalFileNotificationSink
 from src.notify.message import NotificationMessageV1
 from src.notify.telegram import TelegramNotificationSink
 from src.schemas.live import (
     LiveAccountStateV1,
+    LiveDecisionV1,
+    LivePositionV1,
     MarketSnapshotV1,
     TargetHoldingV1,
 )
@@ -74,10 +79,20 @@ def trade_cmd(
     notifications_path: str = typer.Option(
         "alerts/live.jsonl", "--notifications", help="Append-only notification JSONL path."
     ),
+    ledger_path: str = typer.Option(
+        "alerts/ledger.jsonl", "--ledger", help="Paper-trading ledger path (appends executed trades)."
+    ),
 ) -> None:
-    """One-command research → live monitor → notify."""
+    """One-command research → live monitor → notify.
+
+    On the first run, starts a fresh paper account with --capital (default 100k CNY).
+    Every trade confirmed by the signal engine is appended to --ledger. On subsequent
+    runs, the account state is reconstructed from the ledger so you see cumulative
+    position-aware signals (buy/add/reduce/sell), not just fresh buys every time.
+    """
     config = load_config(Path(config_path) if config_path else None)
     notifier = _build_notifier(notifications_path)
+    tracker = _LedgerTracker(ledger_path, capital)
 
     stop_event = threading.Event()
     _install_signal_handlers(stop_event)
@@ -87,6 +102,11 @@ def trade_cmd(
         cycle += 1
         ref_date = _today_str()
         console.print(f"\n[cyan]GemStar trade[/cyan] cycle={cycle} date={ref_date}")
+        account = tracker.load_account()
+        console.print(
+            f"  capital={account.total_value:.0f} positions={len(account.positions)} "
+            f"cash={account.cash:.0f}"
+        )
 
         run_id = _run_research(config_path, stop_event)
         if run_id is None:
@@ -131,14 +151,30 @@ def trade_cmd(
             symbols=symbols,
         ))
 
-        account = _paper_account(capital)
         snapshot_loader = _make_snapshot_loader(config, symbols)
 
+        # Wrap notifier so confirmed trades land in the ledger.
+        notified_decisions: list[LiveDecisionV1] = []
+        def _tracking_notify(notification: NotificationMessageV1) -> None:
+            notifier(notification)
+            # Rebuild the source decision for ledger tracking.
+            snapshots = snapshot_loader()
+            prices = {s.ts_code: s.last_price for s in snapshots}
+            for d in build_live_decisions(
+                account=tracker.load_account(),
+                targets=targets,
+                snapshots=snapshots,
+                strategy_name=strategies[0] if strategies else "trade",
+            ):
+                if d.decision_id == notification.decision_id:
+                    notified_decisions.append(d)
+                    break
+
         result = run_live_loop(
-            account_loader=lambda a=account: a,
-            targets_loader=lambda t=targets: t,
+            account_loader=lambda: tracker.load_account(),
+            targets_loader=lambda: targets,
             snapshots_loader=snapshot_loader,
-            notify=notifier,
+            notify=_tracking_notify,
             strategy_name=strategies[0] if strategies else "trade",
             stop_event=stop_event,
             active_interval=active_interval,
@@ -146,10 +182,15 @@ def trade_cmd(
             max_cycles=max_cycles,
             heartbeat_fn=_heartbeat,
         )
+        # Record confirmed trades to ledger so the next cycle sees updated positions.
+        for d in notified_decisions:
+            if d.intent.action in ("buy", "add", "sell", "reduce"):
+                tracker.record(d, snapshots=snapshot_loader())
+
         console.print(
             f"[green]Live cycle done.[/green] cycles={result.cycles} "
             f"decisions={result.decisions} notifications={result.notifications} "
-            f"deduped={result.deduped}"
+            f"deduped={result.deduped} ledger={len(tracker._trades)}"
         )
         if once or stop_event.is_set():
             break
@@ -492,15 +533,111 @@ def _latest_daily_parquet(cache_dir: Path) -> Path | None:
     return candidates[-1] if candidates else None
 
 
+# ── ledger-backed account tracker ─────────────────────────────
+
+
+class _LedgerTracker:
+    """Load / save account state from a JSONL paper-trading ledger.
+
+    On first invocation with an empty ledger, creates a fresh account
+    with *capital* cash and zero positions. Each confirmed trade is
+    appended to the ledger, and subsequent load_account() calls
+    reconstruct the account from all recorded trades.
+    """
+
+    def __init__(self, path: str, capital: float) -> None:
+        self._path = Path(path)
+        self._capital = capital
+        self._trades: list[object] = []  # PaperTradeRecordV1 instances
+
+    def load_account(self) -> LiveAccountStateV1:
+        """Reconstruct account state from the ledger (or fresh capital)."""
+        self._trades = read_paper_trades(self._path)
+        if not self._trades:
+            return LiveAccountStateV1(
+                cash=self._capital,
+                total_value=self._capital,
+                positions=[],
+            )
+        # Replay trades to compute current positions and cost basis.
+        positions: dict[str, LivePositionV1] = {}
+        cash_used = 0.0
+        for trade in self._trades:
+            code = trade.ts_code
+            if trade.action in ("buy", "add"):
+                pos = positions.get(code)
+                if pos is None:
+                    positions[code] = LivePositionV1(
+                        ts_code=code,
+                        shares=trade.shares,
+                        avg_cost=trade.fill_price,
+                        last_price=trade.fill_price,
+                        market_value=trade.shares * trade.fill_price,
+                    )
+                else:
+                    total_shares = pos.shares + trade.shares
+                    total_cost = pos.avg_cost * pos.shares + trade.fill_price * trade.shares
+                    positions[code] = LivePositionV1(
+                        ts_code=code,
+                        shares=total_shares,
+                        avg_cost=total_cost / total_shares,
+                        last_price=trade.fill_price,
+                        market_value=total_shares * trade.fill_price,
+                    )
+                cash_used += trade.shares * trade.fill_price
+            else:
+                # sell / reduce
+                pos = positions.get(code)
+                if pos is None:
+                    continue
+                remaining = pos.shares - trade.shares
+                if remaining <= 0:
+                    positions.pop(code, None)
+                else:
+                    positions[code] = LivePositionV1(
+                        ts_code=code,
+                        shares=remaining,
+                        avg_cost=pos.avg_cost,
+                        last_price=trade.fill_price,
+                        market_value=remaining * trade.fill_price,
+                    )
+                cash_used -= trade.shares * trade.fill_price
+
+        market_value = sum(p.market_value for p in positions.values())
+        cash = self._capital - cash_used
+        return LiveAccountStateV1(
+            cash=max(0.0, cash),
+            total_value=cash + market_value,
+            positions=list(positions.values()),
+        )
+
+    def record(self, decision: LiveDecisionV1, *, snapshots: list[MarketSnapshotV1]) -> None:
+        """Append an executed trade decision to the ledger."""
+        from src.live.ledger import build_paper_trade_record
+        from uuid import uuid4
+
+        prices = {s.ts_code: s.last_price for s in snapshots}
+        fill_price = prices.get(decision.ts_code, decision.intent.reference_price or 0.0)
+        if fill_price <= 0:
+            return  # can't record without a price
+
+        account = self.load_account()
+        try:
+            record = build_paper_trade_record(
+                account=account,
+                decision=decision,
+                execution_id=uuid4().hex[:12],
+                trade_date=datetime.now().strftime("%Y%m%d"),
+                fill_price=fill_price,
+                confirmed=True,
+            )
+            append_paper_trade(self._path, record)
+            self._trades.append(record)
+        except ValueError:
+            pass  # T+1 violation or duplicate — skip
+
+
 # ── account / signals / scheduling ─────────────────────────────
-
-
-def _paper_account(capital: float) -> LiveAccountStateV1:
-    return LiveAccountStateV1(
-        cash=capital,
-        total_value=capital,
-        positions=[],
-    )
 
 
 def _today_str() -> str:

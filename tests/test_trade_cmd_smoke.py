@@ -43,6 +43,7 @@ def test_trade_cmd_one_cycle(tmp_path):
             idle_interval=1,
             max_cycles=1,
             notifications_path=str(notif_path),
+            ledger_path=str(tmp_path / "ledger.jsonl"),
         )
 
     assert notif_path.exists(), "no notifications written"
