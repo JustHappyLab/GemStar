@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.schemas.research import ResearchTicketV1
 from src.schemas.strategy import StrategyConfigV1
 from src.strategies.architect import draft_strategy
+from tests.llm_fakes import FakeLLM
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -150,11 +148,6 @@ def _make_pool_json(tmpdir: Path) -> Path:
     return path
 
 
-def _make_response(text: str) -> SimpleNamespace:
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -168,21 +161,13 @@ class TestDraftStrategy:
         pool_path = _make_pool_json(tmp_path)
         output_dir = tmp_path / "drafts"
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(VALID_YAML)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            result = draft_strategy(
-                tickets=_make_tickets(),
-                pool_path=pool_path,
-                reference_date="2026-05-03",
-                llm_client=llm,
-                output_dir=output_dir,
-            )
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-03",
+            llm_client=FakeLLM(VALID_YAML),
+            output_dir=output_dir,
+        )
 
         assert result.exists()
         config = StrategyConfigV1.from_yaml(result)
@@ -194,21 +179,13 @@ class TestDraftStrategy:
         pool_path = _make_pool_json(tmp_path)
         output_dir = tmp_path / "drafts"
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(VALID_YAML)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            result = draft_strategy(
-                tickets=_make_tickets(),
-                pool_path=pool_path,
-                reference_date="2026-05-03",
-                llm_client=llm,
-                output_dir=output_dir,
-            )
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-03",
+            llm_client=FakeLLM(VALID_YAML),
+            output_dir=output_dir,
+        )
 
         assert result.exists()
         assert result.suffix == ".yaml"
@@ -217,47 +194,29 @@ class TestDraftStrategy:
         """Mock returns garbage; verify ValueError is raised."""
         pool_path = _make_pool_json(tmp_path)
         output_dir = tmp_path / "drafts"
+        llm = FakeLLM("not: valid: strategy: yaml: at: all:\n  nonsense: [")
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                "not: valid: strategy: yaml: at: all:\n  nonsense: ["
+        with pytest.raises(ValueError):
+            draft_strategy(
+                tickets=_make_tickets(),
+                pool_path=pool_path,
+                reference_date="2026-05-03",
+                llm_client=llm,
+                output_dir=output_dir,
             )
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-
-            with pytest.raises(ValueError):
-                draft_strategy(
-                    tickets=_make_tickets(),
-                    pool_path=pool_path,
-                    reference_date="2026-05-03",
-                    llm_client=llm,
-                    output_dir=output_dir,
-                )
 
     def test_no_tickets_still_works(self, tmp_path: Path) -> None:
         """Empty tickets list produces a valid baseline strategy."""
         pool_path = _make_pool_json(tmp_path)
         output_dir = tmp_path / "drafts"
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(VALID_YAML)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            result = draft_strategy(
-                tickets=[],
-                pool_path=pool_path,
-                reference_date="2026-05-03",
-                llm_client=llm,
-                output_dir=output_dir,
-            )
+        result = draft_strategy(
+            tickets=[],
+            pool_path=pool_path,
+            reference_date="2026-05-03",
+            llm_client=FakeLLM(VALID_YAML),
+            output_dir=output_dir,
+        )
 
         assert result.exists()
         config = StrategyConfigV1.from_yaml(result)
@@ -268,21 +227,13 @@ class TestDraftStrategy:
         pool_path = _make_pool_json(tmp_path)
         output_dir = tmp_path / "drafts"
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(FENCED_NEW_FACTOR_YAML)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            result = draft_strategy(
-                tickets=_make_tickets(),
-                pool_path=pool_path,
-                reference_date="2026-05-06",
-                llm_client=llm,
-                output_dir=output_dir,
-            )
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-06",
+            llm_client=FakeLLM(FENCED_NEW_FACTOR_YAML),
+            output_dir=output_dir,
+        )
 
         config = StrategyConfigV1.from_yaml(result)
         factor_ids = [factor.factor_id for factor in config.factors]
@@ -301,44 +252,29 @@ factors:
   - factor_id: volatility_20d
     weight: 1.0
 """
+        llm = FakeLLM(bad_yaml)
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(bad_yaml)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            with pytest.raises(ValueError, match="no usable positive-weight factors"):
-                draft_strategy(
-                    tickets=_make_tickets(),
-                    pool_path=pool_path,
-                    reference_date="2026-05-06",
-                    llm_client=llm,
-                    output_dir=output_dir,
-                )
-
-    def test_prose_wrapped_colon_text_yaml_is_parsed(self, tmp_path: Path) -> None:
-        """Common CLI-provider prose and colon text still produce a valid draft."""
-        pool_path = _make_pool_json(tmp_path)
-        output_dir = tmp_path / "drafts"
-
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(PROSE_WRAPPED_COLON_YAML)
-
-            from src.llm.client import LLMClient
-
-            llm = LLMClient(api_key="test-key")
-            result = draft_strategy(
+        with pytest.raises(ValueError, match="no usable positive-weight factors"):
+            draft_strategy(
                 tickets=_make_tickets(),
                 pool_path=pool_path,
                 reference_date="2026-05-06",
                 llm_client=llm,
                 output_dir=output_dir,
             )
+
+    def test_prose_wrapped_colon_text_yaml_is_parsed(self, tmp_path: Path) -> None:
+        """Common CLI-provider prose and colon text still produce a valid draft."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-06",
+            llm_client=FakeLLM(PROSE_WRAPPED_COLON_YAML),
+            output_dir=output_dir,
+        )
 
         config = StrategyConfigV1.from_yaml(result)
         assert config.name == "momentum_colon_text"

@@ -1,23 +1,16 @@
-"""Tests for src.scanner.event_scanner — mocked Anthropic API, no live requests."""
+"""Tests for src.scanner.event_scanner with an offline LLMGenerate fake."""
 
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.llm.client import LLMClient
 from src.schemas.signal import SignalEventV1
 from src.scanner.event_scanner import scan_events
-
-
-def _make_response(text: str) -> SimpleNamespace:
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
+from tests.llm_fakes import FakeLLM
 
 
 def _make_data() -> dict[str, pd.DataFrame]:
@@ -56,20 +49,9 @@ def _sample_event_dict() -> dict:
     }
 
 
-@pytest.fixture()
-def mock_llm() -> LLMClient:
-    with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-        mock_client = MagicMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create.return_value = _make_response("[]")
-        yield LLMClient(api_key="test-key")
-
-
 class TestScanEvents:
-    def test_valid_json_returns_events(self, mock_llm: LLMClient) -> None:
-        mock_llm._client.messages.create.return_value = _make_response(
-            json.dumps([_sample_event_dict()])
-        )
+    def test_valid_json_returns_events(self) -> None:
+        mock_llm = FakeLLM(json.dumps([_sample_event_dict()]))
         result = scan_events(_make_data(), "20260501", mock_llm)
 
         assert len(result) == 1
@@ -78,22 +60,20 @@ class TestScanEvents:
         assert result[0].event_type == "earnings_surprise"
         assert result[0].confidence == 0.85
 
-    def test_empty_array_returns_empty_list(self, mock_llm: LLMClient) -> None:
-        mock_llm._client.messages.create.return_value = _make_response("[]")
+    def test_empty_array_returns_empty_list(self) -> None:
+        mock_llm = FakeLLM("[]")
         result = scan_events(_make_data(), "20260501", mock_llm)
 
         assert result == []
 
-    def test_malformed_json_retries_then_raises(self, mock_llm: LLMClient) -> None:
-        mock_llm._client.messages.create.return_value = _make_response("not json")
+    def test_malformed_json_raises(self) -> None:
+        mock_llm = FakeLLM("not json")
         with pytest.raises(ValueError):
             scan_events(_make_data(), "20260501", mock_llm)
 
-    def test_event_type_is_valid(self, mock_llm: LLMClient) -> None:
+    def test_event_type_is_valid(self) -> None:
         events = [_sample_event_dict() for _ in range(3)]
-        mock_llm._client.messages.create.return_value = _make_response(
-            json.dumps(events)
-        )
+        mock_llm = FakeLLM(json.dumps(events))
         result = scan_events(_make_data(), "20260501", mock_llm)
 
         allowed = {

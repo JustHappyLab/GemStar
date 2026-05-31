@@ -4,7 +4,7 @@ CALLING SPEC:
     review_verdict(result, verdict, factor_health, llm_client) -> ReviewNotesV1
 
 SIDE EFFECTS:
-    Makes HTTP requests to the Anthropic API (via llm_client).
+    Delegates text generation to the supplied LLMGenerate implementation.
 """
 
 from __future__ import annotations

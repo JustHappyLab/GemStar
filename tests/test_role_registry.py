@@ -54,7 +54,7 @@ def sample_role(tmp_roles_dir: Path) -> Path:
         yaml.dump({
             "name": "macro_analyst",
             "description": "Market regime assessment",
-            "provider": "api",
+            "provider": "claude_code",
             "skills": ["analyze_market"],
             "timeout": 120,
         })
@@ -70,7 +70,7 @@ def sample_role(tmp_roles_dir: Path) -> Path:
 class TestRoleConfig:
     def test_defaults(self):
         cfg = RoleConfig(name="test")
-        assert cfg.provider == "api"
+        assert cfg.provider == "claude_code"
         assert cfg.skills == []
         assert cfg.timeout == 120
 
@@ -153,7 +153,7 @@ class TestRoleRegistryExecute:
     def test_execute_calls_provider(self, tmp_roles_dir, tmp_skills_dir, sample_role, sample_skill):
         reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
 
-        mock_result = AgentResult(output='{"regime": "bullish"}', provider="api", duration_seconds=1.0)
+        mock_result = AgentResult(output='{"regime": "bullish"}', provider="claude_code", duration_seconds=1.0)
         with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
             mock_provider.execute.return_value = mock_result
@@ -163,7 +163,7 @@ class TestRoleRegistryExecute:
 
         assert result.output == '{"regime": "bullish"}'
         mock_provider.execute.assert_called_once()
-        mock_get.assert_called_once_with("api", timeout=120)
+        mock_get.assert_called_once_with("claude_code", timeout=120)
         call_args = mock_provider.execute.call_args
         assert call_args[0][0] == "evaluate market"
         assert "system" in call_args[1]["context"]
@@ -177,7 +177,7 @@ class TestRoleRegistryExecute:
             event_callback=lambda e: events.append(e),
         )
 
-        mock_result = AgentResult(output="ok", provider="api", duration_seconds=0.5)
+        mock_result = AgentResult(output="ok", provider="claude_code", duration_seconds=0.5)
         with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
             mock_provider.execute.return_value = mock_result
@@ -200,10 +200,10 @@ class TestRoleRegistryExecute:
 
         with patch.object(reg, "get_provider") as mock_get:
             mock_provider = MagicMock()
-            mock_provider.execute.side_effect = RuntimeError("API down")
+            mock_provider.execute.side_effect = RuntimeError("provider down")
             mock_get.return_value = mock_provider
 
-            with pytest.raises(RuntimeError, match="API down"):
+            with pytest.raises(RuntimeError, match="provider down"):
                 reg.execute_role("macro_analyst", {"task": "test"})
 
         assert len(events) == 2
@@ -222,7 +222,7 @@ class TestRoleRegistryExecute:
             RoleRegistry(
                 roles_dir=tmp_roles_dir,
                 skills_dir=tmp_skills_dir,
-                overrides={"typo_role": {"provider": "api"}},
+                overrides={"typo_role": {"provider": "claude_code"}},
             )
 
     def test_cli_provider_uses_role_timeout(self, tmp_roles_dir, tmp_skills_dir):

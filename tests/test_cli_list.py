@@ -26,7 +26,7 @@ def test_roles_table(tmp_path, monkeypatch):
     roles_dir = tmp_path / "roles"
     roles_dir.mkdir()
     (roles_dir / "analyst.yaml").write_text(
-        "name: analyst\nprovider: api\nskills:\n  - research\ntimeout: 120\n"
+        "name: analyst\nprovider: claude_code\nskills:\n  - research\ntimeout: 120\n"
     )
     (roles_dir / "coder.yaml").write_text(
         "name: coder\nprovider: claude_code\nskills:\n  - write_code\ntimeout: 300\n"
@@ -46,7 +46,7 @@ def test_roles_json(tmp_path, monkeypatch):
     roles_dir = tmp_path / "roles"
     roles_dir.mkdir()
     (roles_dir / "analyst.yaml").write_text(
-        "name: analyst\nprovider: api\nskills:\n  - research\ntimeout: 120\n"
+        "name: analyst\nprovider: claude_code\nskills:\n  - research\ntimeout: 120\n"
     )
     monkeypatch.chdir(tmp_path)
     _reset_output_format()
@@ -162,8 +162,8 @@ def test_factors_no_pool_file(tmp_path, monkeypatch):
 # Role provider validation
 # ---------------------------------------------------------------------------
 
-def test_engineer_role_rejects_api_provider(tmp_path):
-    """RoleRegistry raises ValueError when a filesystem role uses 'api' provider."""
+def test_role_rejects_removed_provider(tmp_path):
+    """RoleRegistry rejects provider names removed from the single-provider model."""
     import yaml
     from src.roles.registry import RoleRegistry
 
@@ -176,12 +176,12 @@ def test_engineer_role_rejects_api_provider(tmp_path):
     }))
 
     import pytest
-    with pytest.raises(ValueError, match="requires file system access"):
+    with pytest.raises(ValueError, match="provider"):
         RoleRegistry(roles_dir=roles_dir, skills_dir=tmp_path / "skills")
 
 
-def test_override_rejects_api_for_engineer(tmp_path):
-    """RoleRegistry raises ValueError when override sets 'api' for a filesystem role."""
+def test_override_rejects_removed_provider(tmp_path):
+    """RoleRegistry rejects overrides that name removed providers."""
     import yaml
     from src.roles.registry import RoleRegistry
 
@@ -194,7 +194,7 @@ def test_override_rejects_api_for_engineer(tmp_path):
     }))
 
     import pytest
-    with pytest.raises(ValueError, match="requires file system access"):
+    with pytest.raises(ValueError, match="Unknown provider: api"):
         RoleRegistry(
             roles_dir=roles_dir,
             skills_dir=tmp_path / "skills",
@@ -202,22 +202,19 @@ def test_override_rejects_api_for_engineer(tmp_path):
         )
 
 
-def test_engineer_accepts_cli_providers(tmp_path):
-    """RoleRegistry accepts CLI providers for filesystem roles."""
+def test_engineer_accepts_claude_code_provider(tmp_path):
+    """RoleRegistry accepts the supported provider for filesystem roles."""
     import yaml
     from src.roles.registry import RoleRegistry
 
-    for provider in ("claude_code", "gemini_cli", "codex_cli"):
-        roles_dir = tmp_path / "roles"
-        if roles_dir.exists():
-            import shutil
-            shutil.rmtree(roles_dir)
-        roles_dir.mkdir()
-        roles_dir.joinpath("engineer.yaml").write_text(yaml.dump({
-            "name": "engineer",
-            "provider": provider,
-            "skills": ["write_code"],
-        }))
-        # Should not raise
-        reg = RoleRegistry(roles_dir=roles_dir, skills_dir=tmp_path / "skills")
-        assert reg.get_role("engineer").provider == provider
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    roles_dir.joinpath("engineer.yaml").write_text(yaml.dump({
+        "name": "engineer",
+        "provider": "claude_code",
+        "skills": ["write_code"],
+    }))
+
+    reg = RoleRegistry(roles_dir=roles_dir, skills_dir=tmp_path / "skills")
+
+    assert reg.get_role("engineer").provider == "claude_code"

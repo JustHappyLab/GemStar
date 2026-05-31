@@ -80,9 +80,9 @@ def test_run_live_loop_uses_active_interval_during_trading_time():
     assert result.cycles == 2
     assert result.notifications == 1
     assert result.deduped == 1
-    assert messages[0].title == "BUY 300750.SZ"
-    assert "Confidence: 0.80" in messages[0].body
-    assert "Risk flags: none" in messages[0].body
+    assert messages[0].title == "[买入] 300750.SZ"
+    assert "置信度：80%" in messages[0].body
+    assert "风险：无" in messages[0].body
 
 
 def test_run_live_loop_uses_idle_interval_outside_trading_time():

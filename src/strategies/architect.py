@@ -4,7 +4,7 @@ CALLING SPEC:
     draft_strategy(tickets, pool_path, reference_date, llm_client, output_dir) -> Path
 
 SIDE EFFECTS:
-    Makes HTTP requests to the Anthropic API (via llm_client).
+    Delegates text generation to the supplied LLMGenerate implementation.
     Writes a YAML file to output_dir.
 """
 

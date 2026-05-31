@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from src.scanner.macro_analyst import analyze_market_regime
-from src.llm.client import LLMClient
 from src.schemas.signal import MarketRegimeV1
-
-
-def _make_response(text: str) -> SimpleNamespace:
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
+from tests.llm_fakes import FakeLLM
 
 
 def _make_daily_df(n_stocks: int = 10, n_days: int = 20) -> pd.DataFrame:
@@ -62,13 +55,8 @@ def _valid_regime_json() -> str:
     })
 
 
-@patch("src.llm.client.anthropic.Anthropic")
-def test_valid_json_returns_market_regime(mock_anthropic_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_response(_valid_regime_json())
-
-    llm = LLMClient(api_key="test-key")
+def test_valid_json_returns_market_regime() -> None:
+    llm = FakeLLM(_valid_regime_json())
     result = analyze_market_regime(
         _make_daily_df(), _make_index_df(), "20260430", llm,
     )
@@ -80,13 +68,8 @@ def test_valid_json_returns_market_regime(mock_anthropic_cls: MagicMock) -> None
     assert result.style_bias == "成长"
 
 
-@patch("src.llm.client.anthropic.Anthropic")
-def test_as_of_date_matches_reference(mock_anthropic_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_response(_valid_regime_json())
-
-    llm = LLMClient(api_key="test-key")
+def test_as_of_date_matches_reference() -> None:
+    llm = FakeLLM(_valid_regime_json())
     result = analyze_market_regime(
         _make_daily_df(), _make_index_df(), "20260430", llm,
     )
@@ -94,13 +77,8 @@ def test_as_of_date_matches_reference(mock_anthropic_cls: MagicMock) -> None:
     assert str(result.as_of_date) == "2026-04-30"
 
 
-@patch("src.llm.client.anthropic.Anthropic")
-def test_regime_is_valid_enum(mock_anthropic_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_response(_valid_regime_json())
-
-    llm = LLMClient(api_key="test-key")
+def test_regime_is_valid_enum() -> None:
+    llm = FakeLLM(_valid_regime_json())
     result = analyze_market_regime(
         _make_daily_df(), _make_index_df(), "20260430", llm,
     )
@@ -108,16 +86,11 @@ def test_regime_is_valid_enum(mock_anthropic_cls: MagicMock) -> None:
     assert result.regime in {"bullish", "bearish", "neutral", "volatile", "defensive"}
 
 
-@patch("src.llm.client.anthropic.Anthropic")
-def test_malformed_json_raises(mock_anthropic_cls: MagicMock) -> None:
-    mock_client = MagicMock()
-    mock_anthropic_cls.return_value = mock_client
-    mock_client.messages.create.return_value = _make_response("NOT VALID JSON")
-
-    llm = LLMClient(max_retries=2, api_key="test-key")
+def test_malformed_json_raises() -> None:
+    llm = FakeLLM("NOT VALID JSON")
     with pytest.raises(ValueError):
         analyze_market_regime(
             _make_daily_df(), _make_index_df(), "20260430", llm,
         )
 
-    assert mock_client.messages.create.call_count == 1
+    assert len(llm.calls) == 1

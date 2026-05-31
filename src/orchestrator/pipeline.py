@@ -138,7 +138,8 @@ def run_daily_pipeline(
         ChiNext index daily data for MacroAnalyst.  If None, LLM ideation is skipped.
     llm_available : bool
         If True, run LLM-based strategy ideation (MacroAnalyst, EventScanner,
-        ResearchAnalyst, StrategyArchitect).  Requires ANTHROPIC_API_KEY.
+        ResearchAnalyst, StrategyArchitect). Requires a configured RoleRegistry
+        or a logged-in Claude Code CLI for the default registry.
     registry : RoleRegistry, optional
         Role registry for provider dispatch.  If None and llm_available=True,
         a default registry is created.

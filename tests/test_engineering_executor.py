@@ -27,7 +27,7 @@ class SequenceTracker:
 
 
 class StubRegistry:
-    def __init__(self, output: str = "done", provider: str = "codex_cli") -> None:
+    def __init__(self, output: str = "done", provider: str = "claude_code") -> None:
         self.output = output
         self.provider = provider
         self.calls: list[tuple[str, dict]] = []

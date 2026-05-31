@@ -8,8 +8,7 @@ import json
 import tempfile
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -18,6 +17,7 @@ import yaml
 from src.cli.config import EngineeringConfig
 from src.orchestrator.pipeline import run_daily_pipeline
 from src.schemas.engineering import EngineeringExecutionV1
+from tests.llm_fakes import FakeRoleRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +436,7 @@ def test_pipeline_auto_executes_engineering_task_when_enabled():
                 run_id="run_test_engineering_auto",
                 role="engineer",
                 status="completed",
-                provider="codex_cli",
+                provider="claude_code",
                 changed_paths=["src/factors/new_alpha.py"],
             )
 
@@ -476,13 +476,6 @@ def _make_index_df() -> pd.DataFrame:
         "low": [998.0 + i * 2 for i in range(len(dates))],
         "vol": [50000000.0] * len(dates),
     })
-
-
-def _make_llm_response(text: str) -> SimpleNamespace:
-    """Build a fake Anthropic API response."""
-    block = SimpleNamespace(type="text", text=text)
-    usage = SimpleNamespace(input_tokens=50, output_tokens=30)
-    return SimpleNamespace(content=[block], usage=usage)
 
 
 def test_pipeline_runs_strategy_ideation_with_llm():
@@ -534,34 +527,28 @@ def test_pipeline_runs_strategy_ideation_with_llm():
             "status": "draft",
         }])
 
-        call_count = 0
-        def _side_effect(**kwargs):
-            nonlocal call_count
-            call_count += 1
-            responses = [regime_json, events_json, tickets_json]
-            idx = min(call_count - 1, len(responses) - 1)
-            return _make_llm_response(responses[idx])
+        registry = FakeRoleRegistry({
+            "macro_analyst": regime_json,
+            "event_scanner": events_json,
+            "research_analyst": tickets_json,
+        })
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.side_effect = _side_effect
-
-            result = run_daily_pipeline(
-                run_id="run_test_005",
-                data=data,
-                strategies=[strategy_path],
-                pool_path=pool_path,
-                reference_date="20220301",
-                benchmark_nav=benchmark_nav,
-                ic_df=ic_df,
-                signals=signals,
-                rankings=rankings,
-                index_df=index_df,
-                llm_available=True,
-                db_path=str(Path(tmpdir) / "test.db"),
-                artifacts_dir=str(Path(tmpdir) / "artifacts"),
-            )
+        result = run_daily_pipeline(
+            run_id="run_test_005",
+            data=data,
+            strategies=[strategy_path],
+            pool_path=pool_path,
+            reference_date="20220301",
+            benchmark_nav=benchmark_nav,
+            ic_df=ic_df,
+            signals=signals,
+            rankings=rankings,
+            index_df=index_df,
+            llm_available=True,
+            registry=registry,
+            db_path=str(Path(tmpdir) / "test.db"),
+            artifacts_dir=str(Path(tmpdir) / "artifacts"),
+        )
 
         assert result["run_status"] == "completed"
         assert result["regime"] is not None
@@ -585,7 +572,7 @@ def test_pipeline_runs_reviewer_with_llm():
         ic_df = _make_ic_df(dates)
         index_df = _make_index_df()
 
-        # --- LLM responses for ideation (3 calls) + review (1 call) ---
+        # --- LLM responses for ideation (3 roles) + review ---
         regime_json = json.dumps({
             "version": "MarketRegimeV1",
             "as_of_date": "2022-03-01",
@@ -621,20 +608,6 @@ def test_pipeline_runs_reviewer_with_llm():
             "source_events": ["evt_001"],
             "status": "draft",
         }])
-        # MacroAnalyst may also produce a draft call, but we handle that
-        # generically via the side_effect index.  Call 4 = StrategyArchitect
-        # (returns a YAML-like string that gets saved to disk).
-        architect_yaml = (
-            "version: StrategyConfigV1\n"
-            "name: llm_strat\n"
-            "universe: chinext\n"
-            "timer: {mode: full}\n"
-            "factors:\n"
-            "  - {factor_id: momentum_20d, weight: 1.0}\n"
-            "top_n: 3\n"
-            "rebalance: daily\n"
-            "backtest: {start: '20220101', end: '20220301', capital: 100000}\n"
-        )
         review_json = json.dumps({
             "version": "ReviewNotesV1",
             "strategy_id": "test_strat",
@@ -645,37 +618,29 @@ def test_pipeline_runs_reviewer_with_llm():
             "confidence": 0.9,
         })
 
-        call_count = 0
+        registry = FakeRoleRegistry({
+            "macro_analyst": regime_json,
+            "event_scanner": events_json,
+            "research_analyst": tickets_json,
+            "reviewer": review_json,
+        })
 
-        def _side_effect(**kwargs):
-            nonlocal call_count
-            call_count += 1
-            # Ideation: calls 1-3 (regime, events, tickets), Review: call 4+
-            ideation_responses = [regime_json, events_json, tickets_json]
-            if call_count <= len(ideation_responses):
-                return _make_llm_response(ideation_responses[call_count - 1])
-            return _make_llm_response(review_json)
-
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.side_effect = _side_effect
-
-            result = run_daily_pipeline(
-                run_id="run_test_006",
-                data=data,
-                strategies=[strategy_path],
-                pool_path=pool_path,
-                reference_date="20220301",
-                benchmark_nav=benchmark_nav,
-                ic_df=ic_df,
-                signals=signals,
-                rankings=rankings,
-                index_df=index_df,
-                llm_available=True,
-                db_path=str(Path(tmpdir) / "test.db"),
-                artifacts_dir=str(Path(tmpdir) / "artifacts"),
-            )
+        result = run_daily_pipeline(
+            run_id="run_test_006",
+            data=data,
+            strategies=[strategy_path],
+            pool_path=pool_path,
+            reference_date="20220301",
+            benchmark_nav=benchmark_nav,
+            ic_df=ic_df,
+            signals=signals,
+            rankings=rankings,
+            index_df=index_df,
+            llm_available=True,
+            registry=registry,
+            db_path=str(Path(tmpdir) / "test.db"),
+            artifacts_dir=str(Path(tmpdir) / "artifacts"),
+        )
 
         assert result["run_status"] == "completed"
         # 2 strategies (original + LLM-drafted) → 2 backtests → 2 verdicts → 2 reviews

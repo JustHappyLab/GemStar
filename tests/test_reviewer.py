@@ -1,19 +1,17 @@
-"""Tests for src.reviewer.analysis — mocked Anthropic API, no live requests."""
+"""Tests for src.reviewer.analysis with an offline LLMGenerate fake."""
 
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.client import LLMClient
 from src.reviewer.analysis import review_verdict
 from src.schemas.factor import FactorHealthEntry, FactorHealthReportV1
 from src.schemas.metrics import BacktestResultV1, MetricsV1, SegmentMetricV1
 from src.schemas.review import ReviewNotesV1
 from src.schemas.verdict import HardGateResultV1, VerdictV1
+from tests.llm_fakes import FakeLLM
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +87,6 @@ def _make_factor_health() -> FactorHealthReportV1:
     )
 
 
-def _make_response(text: str) -> SimpleNamespace:
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
-
-
 def _valid_review_json() -> str:
     return json.dumps({
         "version": "ReviewNotesV1",
@@ -116,17 +109,10 @@ def _valid_review_json() -> str:
 class TestReviewVerdict:
 
     def test_valid_response_returns_review_notes(self) -> None:
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                _valid_review_json()
-            )
-
-            llm = LLMClient(api_key="test-key")
-            result = review_verdict(
-                _make_result(), _make_verdict(), _make_factor_health(), llm,
-            )
+        llm = FakeLLM(_valid_review_json())
+        result = review_verdict(
+            _make_result(), _make_verdict(), _make_factor_health(), llm,
+        )
 
         assert isinstance(result, ReviewNotesV1)
         assert result.strategy_id == "test_strat"
@@ -135,47 +121,27 @@ class TestReviewVerdict:
         assert result.confidence == pytest.approx(0.85)
 
     def test_verdict_summary_present(self) -> None:
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                _valid_review_json()
-            )
-
-            llm = LLMClient(api_key="test-key")
-            result = review_verdict(
-                _make_result(), _make_verdict(), _make_factor_health(), llm,
-            )
+        llm = FakeLLM(_valid_review_json())
+        result = review_verdict(
+            _make_result(), _make_verdict(), _make_factor_health(), llm,
+        )
 
         assert result.verdict_summary != ""
         assert "candidate" in result.verdict_summary
 
     def test_no_factor_health_still_works(self) -> None:
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                _valid_review_json()
-            )
-
-            llm = LLMClient(api_key="test-key")
-            result = review_verdict(
-                _make_result(), _make_verdict(), None, llm,
-            )
+        llm = FakeLLM(_valid_review_json())
+        result = review_verdict(
+            _make_result(), _make_verdict(), None, llm,
+        )
 
         assert isinstance(result, ReviewNotesV1)
         assert result.strategy_id == "test_strat"
 
     def test_malformed_json_retries_then_raises(self) -> None:
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                "not valid json"
-            )
+        llm = FakeLLM("not valid json")
 
-            llm = LLMClient(api_key="test-key")
-            with pytest.raises(ValueError):
-                review_verdict(
-                    _make_result(), _make_verdict(), None, llm,
-                )
+        with pytest.raises(ValueError):
+            review_verdict(
+                _make_result(), _make_verdict(), None, llm,
+            )

@@ -98,11 +98,11 @@ engineering:
 # 安装: npm i -g @anthropic-ai/claude-code → claude 登录
 roles: {}
 #  engineer:
-#    provider: gemini_cli          # 工程师角色改用 Gemini
-#    model: gemini-2.5-flash       # 使用轻量模型节省成本
+#    provider: claude_code
+#    model: opus                   # 工程任务可使用更强模型
 #  macro_analyst:
-#    provider: claude_code         # 宏观分析改用 Claude Code
-#    model: opus                   # 使用最强模型
+#    provider: claude_code
+#    model: sonnet                 # 未配置时默认 sonnet
 
 # ─── 策略 ─────────────────────────────────────────────────
 strategies:

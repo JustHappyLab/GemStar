@@ -30,9 +30,9 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg.artifacts_dir == "artifacts"
     assert cfg.data_cache_dir == "data/raw"
     assert cfg.llm.enabled is False
-    assert cfg.llm.provider == "api"
+    assert cfg.llm.provider == "claude_code"
     assert cfg.engineering.enabled is False
-    assert cfg.engineering.provider == "codex_cli"
+    assert cfg.engineering.provider == "claude_code"
     assert cfg.engineering.auto_execute is True
     assert "src/engine/**" in cfg.engineering.forbidden_paths
     assert "src/ranker/**" in cfg.engineering.engineer.allowed_paths
@@ -57,7 +57,7 @@ llm:
   provider: claude_code
 engineering:
   enabled: true
-  provider: codex_cli
+  provider: claude_code
   auto_execute: false
   auto_apply: false
   max_attempts: 2
@@ -86,7 +86,7 @@ strategies:
     assert cfg.llm.enabled is True
     assert cfg.llm.provider == "claude_code"
     assert cfg.engineering.enabled is True
-    assert cfg.engineering.provider == "codex_cli"
+    assert cfg.engineering.provider == "claude_code"
     assert cfg.engineering.auto_execute is False
     assert cfg.engineering.max_attempts == 2
     assert cfg.engineering.forbidden_paths == ["src/engine/**"]
@@ -218,7 +218,7 @@ def test_empty_yaml_returns_defaults(tmp_path):
     assert cfg.tushare_token == ""
     assert cfg.benchmark == "auto"
     assert cfg.llm.enabled is False
-    assert cfg.llm.provider == "api"
+    assert cfg.llm.provider == "claude_code"
 
 
 def test_llm_available_is_rejected(tmp_path):

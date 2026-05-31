@@ -115,7 +115,7 @@ def test_run_prints_effective_llm_from_config(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "LLM:  on" in result.output
     assert captured["llm_available"] is True
-    assert captured["role_overrides"]["macro_analyst"]["provider"] == "api"
+    assert captured["role_overrides"]["macro_analyst"]["provider"] == "claude_code"
     assert captured["engineering_config"].enabled is False
 
 
@@ -132,39 +132,41 @@ def test_role_overrides_apply_global_llm_provider():
     assert overrides["reviewer"]["provider"] == "claude_code"
 
 
-def test_role_overrides_keep_explicit_role_provider():
-    """Per-role overrides in gemstar.yaml take precedence over llm.provider."""
+def test_role_overrides_keep_explicit_role_model():
+    """Per-role overrides in gemstar.yaml keep role-specific model settings."""
     config = GemStarConfig(
         llm=LLMConfig(provider="claude_code"),
-        roles={"reviewer": RoleOverride(provider="api")},
+        roles={"reviewer": RoleOverride(provider="claude_code", model="opus")},
     )
 
     overrides = _role_overrides(config)
 
     assert overrides["macro_analyst"]["provider"] == "claude_code"
-    assert overrides["reviewer"]["provider"] == "api"
+    assert overrides["reviewer"]["provider"] == "claude_code"
+    assert overrides["reviewer"]["model"] == "opus"
 
 
 def test_role_overrides_apply_engineering_provider_when_enabled():
     """engineering.provider is the default provider for engineering roles."""
     config = GemStarConfig(
-        engineering=EngineeringConfig(enabled=True, provider="codex_cli"),
+        engineering=EngineeringConfig(enabled=True, provider="claude_code"),
     )
 
     overrides = _role_overrides(config)
 
-    assert overrides["engineer"]["provider"] == "codex_cli"
-    assert overrides["bugfix"]["provider"] == "codex_cli"
+    assert overrides["engineer"]["provider"] == "claude_code"
+    assert overrides["bugfix"]["provider"] == "claude_code"
 
 
-def test_role_overrides_keep_explicit_engineering_role_provider():
-    """Per-role overrides still take precedence over engineering.provider."""
+def test_role_overrides_keep_explicit_engineering_role_model():
+    """Per-role engineering overrides keep role-specific model settings."""
     config = GemStarConfig(
-        engineering=EngineeringConfig(enabled=True, provider="codex_cli"),
-        roles={"bugfix": RoleOverride(provider="gemini_cli")},
+        engineering=EngineeringConfig(enabled=True, provider="claude_code"),
+        roles={"bugfix": RoleOverride(provider="claude_code", model="opus")},
     )
 
     overrides = _role_overrides(config)
 
-    assert overrides["engineer"]["provider"] == "codex_cli"
-    assert overrides["bugfix"]["provider"] == "gemini_cli"
+    assert overrides["engineer"]["provider"] == "claude_code"
+    assert overrides["bugfix"]["provider"] == "claude_code"
+    assert overrides["bugfix"]["model"] == "opus"

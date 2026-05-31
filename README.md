@@ -41,34 +41,35 @@ REPORTING → COMPLETED
 
 ```
 roles/*.yaml          skills/*/             src/llm/providers/
-├── provider: api     ├── prompt.txt        ├── api_provider.py
-├── skills:           ├── sop.md            ├── claude_code_provider.py
-│   - analyze_market  └── schema.json       ├── gemini_cli_provider.py
-└── timeout: 120                              └── codex_cli_provider.py
+├── provider:         ├── prompt.txt        ├── base.py
+│   claude_code       ├── sop.md            └── claude_code_provider.py
+├── skills:           └── schema.json
+│   - analyze_market
+└── timeout: 120
 ```
 
 - **Role** — YAML 配置，定义使用哪个 provider、加载哪些 skill、执行超时时间
 - **Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），多个 role 可共享
-- **Provider** — 统一的 agent 执行接口（API / Claude Code / Gemini CLI / Codex CLI）
+- **Provider** — 统一的 agent 执行接口；当前实现为 `claude_code`
 
 <p align="center">
   <img src="docs/images/architecture.svg" alt="GemStar Architecture" width="100%"/>
 </p>
 
-用户可通过修改 `gemstar.yaml` 的 `llm.provider` 设置 run-time LLM 阶段的默认后端，也可通过 `roles:` 覆盖单个角色 provider，无需改代码。
+用户可通过 `gemstar.yaml` 的 `llm.provider` / `roles:` 保留 provider 配置扩展点；当前有效取值为 `claude_code`。
 
-`engineer` / `bugfix` 属于 engineering scope，不属于默认日线 LLM 阶段。它们只能使用 CLI provider，并受 `engineering` 路径策略约束：回测引擎、指标和评估规则默认冻结，Agent 只能修改配置允许的扩展点。
+`engineer` / `bugfix` 属于 engineering scope，不属于默认日线 LLM 阶段。它们同样通过 `claude_code` 执行，并受 `engineering` 路径策略约束：回测引擎、指标和评估规则默认冻结，Agent 只能修改配置允许的扩展点。
 
 #### 角色配置
 
 | 角色 | Provider | Skills | Timeout |
 |------|----------|--------|---------|
-| macro_analyst | api | analyze_market | 120s |
-| event_scanner | api | scan_events | 120s |
-| research_analyst | api | generate_tickets | 120s |
-| strategy_architect | api | draft_strategy | 120s |
-| factor_miner | api | discover_factors | 120s |
-| reviewer | api | review_verdict | 120s |
+| macro_analyst | claude_code | analyze_market | 120s |
+| event_scanner | claude_code | scan_events | 120s |
+| research_analyst | claude_code | generate_tickets | 120s |
+| strategy_architect | claude_code | draft_strategy | 120s |
+| factor_miner | claude_code | discover_factors | 120s |
+| reviewer | claude_code | review_verdict | 120s |
 | engineer | claude_code | write_code, fix_bug | 600s |
 | bugfix | claude_code | fix_bug | 300s |
 
@@ -97,10 +98,7 @@ roles/*.yaml          skills/*/             src/llm/providers/
 
 | Provider | 后端 | 说明 |
 |----------|------|------|
-| api | Anthropic API | 直接调用 Claude API，适合批量自动化 |
-| claude_code | Claude Code CLI | 子进程调用，适合需要文件操作的任务 |
-| gemini_cli | Gemini CLI | 子进程调用 Google Gemini |
-| codex_cli | Codex CLI | 子进程调用 OpenAI Codex |
+| claude_code | Claude Code CLI | 子进程调用 Claude Code，支持分析、生成策略和工程任务 |
 
 ### 事件流
 
@@ -134,9 +132,8 @@ GemStar/
 │   ├── portfolio/              # 交易成本 + 仓位分配
 │   ├── engine/                 # 回测引擎 + 绩效指标
 │   ├── llm/                    # LLM 抽象层
-│   │   ├── client.py           # Anthropic SDK wrapper
-│   │   ├── adapter.py          # AgentProvider → LLMClient 桥接
-│   │   └── providers/          # 4 个 provider 实现
+│   │   ├── adapter.py          # RoleRegistry → LLMGenerate 桥接
+│   │   └── providers/          # AgentProvider + Claude Code provider
 │   ├── roles/                  # Role 配置加载 + 注册 + 事件流
 │   ├── orchestrator/           # DailyFSM + IncidentFSM + pipeline + scheduler
 │   ├── strategies/             # 策略验证 + YAML 运行器
@@ -192,8 +189,6 @@ gemstar init
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
-| `ANTHROPIC_API_KEY` | 否 | Anthropic API key，`api` provider 使用 |
-| `ANTHROPIC_BASE_URL` | 否 | Anthropic API 代理地址（中国大陆用户） |
 | `TELEGRAM_BOT_TOKEN` | 否 | Telegram Bot token，用于接收实时告警通知 |
 | `TELEGRAM_CHAT_ID` | 否 | Telegram Chat ID，告警消息的接收目标 |
 | `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
@@ -244,29 +239,26 @@ curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 
 
 #### LLM Provider 配置
 
-不同角色使用不同的 LLM 后端，需安装对应 CLI 工具：
+当前所有 LLM 角色统一使用 Claude Code CLI：
 
 | Provider | 后端 | 安装方式 | 认证 | 文件系统 |
 |----------|------|----------|------|----------|
-| `api` | Anthropic API | `pip install anthropic` | `ANTHROPIC_API_KEY` 环境变量 | 否 |
 | `claude_code` | Claude Code CLI | `npm i -g @anthropic-ai/claude-code` | `claude` 登录后自动认证 | 是 |
-| `gemini_cli` | Gemini CLI | `npm i -g @google/gemini-cli` | `gemini` 登录后自动认证 | 是 |
-| `codex_cli` | Codex CLI | `npm i -g @openai/codex` | `OPENAI_API_KEY` 环境变量 | 是 |
 
 默认角色配置（`roles/*.yaml`）：
 
-| 角色 | 默认 Provider | 可切换到 | 说明 |
-|------|--------------|----------|------|
-| macro_analyst | `api` | 任意 | 市场宏观分析（返回 JSON） |
-| event_scanner | `api` | 任意 | 事件扫描（返回 JSON） |
-| research_analyst | `api` | 任意 | 研究工单生成（返回 JSON） |
-| strategy_architect | `api` | 任意 | 策略草稿（返回 YAML） |
-| factor_miner | `api` | 任意 | 因子挖掘（返回 JSON） |
-| reviewer | `api` | 任意 | 回测评审（返回 JSON） |
-| engineer | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | 代码编写（需写文件） |
-| bugfix | `claude_code` | `claude_code` / `gemini_cli` / `codex_cli` | Bug 修复（需写文件） |
+| 角色 | 默认 Provider | 说明 |
+|------|--------------|------|
+| macro_analyst | `claude_code` | 市场宏观分析（返回 JSON） |
+| event_scanner | `claude_code` | 事件扫描（返回 JSON） |
+| research_analyst | `claude_code` | 研究工单生成（返回 JSON） |
+| strategy_architect | `claude_code` | 策略草稿（返回 YAML） |
+| factor_miner | `claude_code` | 因子挖掘（返回 JSON） |
+| reviewer | `claude_code` | 回测评审（返回 JSON） |
+| engineer | `claude_code` | 代码编写（需写文件） |
+| bugfix | `claude_code` | Bug 修复（需写文件） |
 
-**Provider 约束**：`engineer` 和 `bugfix` 角色需要写文件到磁盘，只能使用 CLI 类 provider（`claude_code` / `gemini_cli` / `codex_cli`）。配置为 `api` 会报错。分析类角色无此限制，4 个 provider 均可使用。
+**Provider 约束**：当前配置 schema 只接受 `claude_code`。`roles.*.provider` 和 `engineering.provider` 保留为扩展点，但配置旧 provider 名称会在加载时失败。
 
 在 `gemstar.yaml` 中覆盖角色 provider：
 
@@ -277,7 +269,7 @@ llm:
 
 engineering:
   enabled: false              # 工程自愈默认关闭
-  provider: codex_cli         # engineer / bugfix 默认 CLI provider
+  provider: claude_code       # engineer / bugfix 默认 provider
   auto_execute: true          # enabled 后 pipeline 自动执行 engineering task
   auto_apply: false           # 只产出 patch/task，需人工批准合入
   forbidden_paths:
@@ -289,14 +281,16 @@ engineering:
 
 roles:
   engineer:
-    provider: gemini_cli      # 工程师改用 Gemini
+    provider: claude_code
+    model: opus               # 可按角色覆盖 Claude Code model
   reviewer:
-    provider: api             # 单角色覆盖优先于 llm.provider
+    provider: claude_code
+    model: sonnet
 ```
 
-`llm.enabled` 只表示是否启用 LLM 阶段，不表示 Anthropic API key 是否可用；具体后端由 `llm.provider` / `roles.*.provider` 决定。
+`llm.enabled` 只表示是否启用 LLM 阶段，不表示 Claude Code CLI 是否已登录；具体后端由 `llm.provider` / `roles.*.provider` 决定，目前只支持 `claude_code`。
 
-`engineering.provider` 是 `engineer` / `bugfix` 的默认 provider，只接受 `claude_code` / `gemini_cli` / `codex_cli`。`roles.engineer.provider` 或 `roles.bugfix.provider` 仍然可以单独覆盖它。
+`engineering.provider` 是 `engineer` / `bugfix` 的默认 provider，目前只接受 `claude_code`。`roles.engineer.model` 或 `roles.bugfix.model` 可以单独覆盖模型。
 
 Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角色 `allowed_paths`。如果一次修复需要修改 frozen core（例如 `src/engine/**` 或 `src/judge/**`），应转为人工处理，而不是自动自愈。
 
@@ -578,7 +572,7 @@ gemstar -o json leaderboard        # JSON 输出
 | tushare | A 股数据源 |
 | scikit-learn | 数据预处理 |
 | Pydantic v2 | Schema 校验 |
-| Anthropic SDK | LLM API 调用 |
+| Claude Code CLI | LLM provider 执行 |
 | typer / rich | CLI 框架 + 终端美化 |
 | pyyaml | YAML 配置解析 |
 | pyarrow | Parquet 数据读写 |

@@ -4,7 +4,7 @@ CALLING SPEC:
     analyze_market_regime(daily_df, index_df, reference_date, llm_client) -> MarketRegimeV1
 
 SIDE EFFECTS:
-    Makes HTTP requests to the Anthropic API (via llm_client).
+    Delegates text generation to the supplied LLMGenerate implementation.
 """
 
 from __future__ import annotations

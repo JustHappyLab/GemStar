@@ -1,19 +1,16 @@
-"""Tests for src.research.analyst — mocked Anthropic API, no live requests."""
+"""Tests for src.research.analyst with an offline LLMGenerate fake."""
 
 from __future__ import annotations
 
 import json
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.client import LLMClient
 from src.research.analyst import generate_tickets
-from src.schemas.factor import FactorHealthReportV1, FactorHealthEntry
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
+from tests.llm_fakes import FakeLLM
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +75,6 @@ def _valid_ticket_json() -> str:
     ])
 
 
-def _make_response(text: str) -> SimpleNamespace:
-    block = SimpleNamespace(type="text", text=text)
-    return SimpleNamespace(content=[block])
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -94,15 +86,8 @@ class TestGenerateTickets:
         regime = _make_regime()
         events = _make_events()
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                _valid_ticket_json()
-            )
-
-            llm = LLMClient(api_key="test-key")
-            result = generate_tickets(regime, events, None, pool_path, llm)
+        llm = FakeLLM(_valid_ticket_json())
+        result = generate_tickets(regime, events, None, pool_path, llm)
 
         assert len(result) == 1
         ticket = result[0]
@@ -114,15 +99,10 @@ class TestGenerateTickets:
     def test_empty_response_returns_empty_list(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response("[]")
-
-            llm = LLMClient(api_key="test-key")
-            result = generate_tickets(
-                _make_regime(), _make_events(), None, pool_path, llm
-            )
+        llm = FakeLLM("[]")
+        result = generate_tickets(
+            _make_regime(), _make_events(), None, pool_path, llm
+        )
 
         assert result == []
 
@@ -143,32 +123,19 @@ class TestGenerateTickets:
             }
         ])
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                ticket_with_bad_factor
-            )
-
-            llm = LLMClient(api_key="test-key")
-            result = generate_tickets(
-                _make_regime(), _make_events(), None, pool_path, llm
-            )
+        llm = FakeLLM(ticket_with_bad_factor)
+        result = generate_tickets(
+            _make_regime(), _make_events(), None, pool_path, llm
+        )
 
         assert result == []
 
     def test_malformed_json_retries_then_raises(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
 
-        with patch("src.llm.client.anthropic.Anthropic") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.messages.create.return_value = _make_response(
-                "not valid json"
-            )
+        llm = FakeLLM("not valid json")
 
-            llm = LLMClient(api_key="test-key")
-            with pytest.raises(ValueError):
-                generate_tickets(
-                    _make_regime(), _make_events(), None, pool_path, llm
-                )
+        with pytest.raises(ValueError):
+            generate_tickets(
+                _make_regime(), _make_events(), None, pool_path, llm
+            )

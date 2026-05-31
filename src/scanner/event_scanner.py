@@ -4,7 +4,7 @@ CALLING SPEC:
     scan_events(data, reference_date, llm_client) -> list[SignalEventV1]
 
 SIDE EFFECTS:
-    Makes HTTP requests to the Anthropic API (via llm_client).
+    Delegates text generation to the supplied LLMGenerate implementation.
 """
 
 from __future__ import annotations
