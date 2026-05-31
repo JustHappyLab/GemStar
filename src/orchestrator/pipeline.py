@@ -78,6 +78,17 @@ from src.strategies.validator import validate_strategy
 logger = logging.getLogger(__name__)
 
 
+def _empty_regime(reference_date: str) -> "MarketRegimeV1":
+    from src.schemas.signal import MarketRegimeV1
+    return MarketRegimeV1(
+        as_of_date=reference_date,
+        regime="unknown",
+        confidence=0.0,
+        key_drivers=[],
+        style_bias="unknown",
+    )
+
+
 def run_daily_pipeline(
     run_id: str,
     data: dict[str, pd.DataFrame | None],
@@ -93,7 +104,6 @@ def run_daily_pipeline(
     llm_available: bool = False,
     registry: RoleRegistry | None = None,
     role_overrides: dict[str, dict] | None = None,
-    llm_base_url: str | None = None,
     db_path: str = "state.db",
     artifacts_dir: str = "artifacts",
     gen_target_count: int = 0,
@@ -133,7 +143,7 @@ def run_daily_pipeline(
         Role registry for provider dispatch.  If None and llm_available=True,
         a default registry is created.
     role_overrides : dict, optional
-        Per-role config overrides from gemstar.yaml (e.g. {"engineer": {"provider": "gemini_cli"}}).
+        Per-role config overrides from gemstar.yaml (e.g. {"engineer": {"provider": "claude_code"}}).
     db_path : str
         Path to SQLite state database.
     artifacts_dir : str
@@ -205,7 +215,7 @@ def run_daily_pipeline(
     atexit.register(_panic_finalize)
 
     # Resolve registry once for all LLM stages
-    _reg = registry or (RoleRegistry(overrides=role_overrides, base_url=llm_base_url) if llm_available else None)
+    _reg = registry or (RoleRegistry(overrides=role_overrides) if llm_available else None)
 
     try:
         # --- COLLECTING ---
@@ -341,9 +351,12 @@ def run_daily_pipeline(
         tickets = []
 
         # --- LLM IDEATION (context gathering, once) ---
+        # Each LLM call is independent — one failure shouldn't block the rest.
+        # Only strategy_architect setup failure prevents the generation loop.
         llm_ready = False
         strategy_llm = None
         if llm_available and _reg is not None and index_df is not None and not daily_df.empty:
+
             try:
                 regime = analyze_market_regime(
                     daily_df,
@@ -352,16 +365,29 @@ def run_daily_pipeline(
                     RoleLLMAdapter(_reg, "macro_analyst"),
                 )
                 write_artifact(run_id, "market_regime", regime.model_dump(), base_dir=artifacts_dir, step_id="strategy_ideation")
+            except Exception:
+                logger.warning("macro_analyst failed", exc_info=True)
 
+            try:
                 events = scan_events(data, reference_date, RoleLLMAdapter(_reg, "event_scanner"))
                 write_artifact(run_id, "event_signals", [e.model_dump() for e in events], base_dir=artifacts_dir, step_id="strategy_ideation")
+            except Exception:
+                logger.warning("event_scanner failed", exc_info=True)
 
-                tickets = generate_tickets(regime, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
+            # Best-effort: strategy loop can work without pre-generated tickets.
+            try:
+                regime_context = regime or _empty_regime(reference_date)
+                tickets = generate_tickets(regime_context, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
                 write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
+            except Exception:
+                logger.warning("generate_tickets failed", exc_info=True)
+
+            # strategy_architect is critical — without it the generation loop can't run.
+            try:
                 strategy_llm = RoleLLMAdapter(_reg, "strategy_architect")
                 llm_ready = True
             except Exception:
-                logger.warning("LLM ideation context gathering failed", exc_info=True)
+                logger.warning("strategy_architect setup failed", exc_info=True)
 
         result["regime"] = regime
         result["events"] = events

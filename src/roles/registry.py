@@ -25,10 +25,7 @@ import yaml
 from src.llm.providers import (
     AgentProvider,
     AgentResult,
-    APIProvider,
     ClaudeCodeProvider,
-    CodexCliProvider,
-    GeminiCliProvider,
 )
 from src.roles.config import RoleConfig
 from src.roles.events import RoleEvent
@@ -36,15 +33,8 @@ from src.roles.events import RoleEvent
 logger = logging.getLogger(__name__)
 
 _PROVIDER_MAP: dict[str, type[AgentProvider]] = {
-    "api": APIProvider,
     "claude_code": ClaudeCodeProvider,
-    "gemini_cli": GeminiCliProvider,
-    "codex_cli": CodexCliProvider,
 }
-
-# Roles that write files to disk — must use a CLI provider (not `api`).
-_FILESYSTEM_ROLES = frozenset({"engineer", "bugfix"})
-_TEXT_ONLY_PROVIDERS = frozenset({"api"})
 
 
 def _read_or_default(path: Path, default: str = "") -> str:
@@ -56,15 +46,8 @@ def _read_or_default(path: Path, default: str = "") -> str:
 
 
 def _validate_role_provider(role_name: str, provider: str) -> None:
-    """Raise ValueError if a filesystem role is assigned a text-only provider."""
     if provider not in _PROVIDER_MAP:
         raise ValueError(f"Unknown provider: {provider}")
-    if role_name in _FILESYSTEM_ROLES and provider in _TEXT_ONLY_PROVIDERS:
-        cli_providers = sorted(set(_PROVIDER_MAP) - _TEXT_ONLY_PROVIDERS)
-        raise ValueError(
-            f"Role '{role_name}' requires file system access and cannot use "
-            f"provider '{provider}'. Use a CLI provider: {cli_providers}"
-        )
 
 
 class SkillContent:
@@ -92,7 +75,6 @@ class RoleRegistry:
         skills_dir: str | Path = "skills",
         event_callback: Callable[[RoleEvent], None] | None = None,
         overrides: dict[str, dict] | None = None,
-        base_url: str | None = None,
     ) -> None:
         self._roles_dir = Path(roles_dir)
         self._skills_dir = Path(skills_dir)
@@ -101,7 +83,6 @@ class RoleRegistry:
         self._skills: dict[str, SkillContent] = {}
         self._providers: dict[tuple[str, int | None, str | None], AgentProvider] = {}
         self._overrides = overrides or {}
-        self._base_url = base_url
 
         self._load_roles()
         self._apply_overrides()
@@ -156,8 +137,6 @@ class RoleRegistry:
             kwargs: dict = {}
             if model is not None:
                 kwargs["model"] = model
-            if provider_name == "api" and self._base_url:
-                kwargs["base_url"] = self._base_url
             if timeout is not None:
                 kwargs["timeout"] = timeout
             self._providers[cache_key] = cls(**kwargs)

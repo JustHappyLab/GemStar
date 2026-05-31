@@ -1,14 +1,13 @@
-"""LLM client package.
+"""LLM integration package.
 
 CALLING SPEC:
-    src.llm.client   — Anthropic SDK wrapper with policy enforcement and retry.
-    src.llm.adapter  — AgentProvider → LLMClient.generate() bridge.
-    src.llm.providers — AgentProvider ABC and implementations.
+    src.llm.adapter   — LLMGenerate Protocol + RoleLLMAdapter.
+    src.llm.providers — AgentProvider ABC and ClaudeCodeProvider.
 
 SIDE EFFECTS:
-    client makes HTTP calls to the Anthropic API.
+    ClaudeCodeProvider spawns `claude` CLI subprocess.
 """
 
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate, RoleLLMAdapter
 
-__all__ = ["LLMClient"]
+__all__ = ["LLMGenerate", "RoleLLMAdapter"]

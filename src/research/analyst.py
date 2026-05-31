@@ -10,9 +10,10 @@ SIDE EFFECTS:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.schemas.factor import FactorHealthReportV1, FactorPoolV1
 from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
@@ -25,7 +26,7 @@ def generate_tickets(
     events: list[SignalEventV1],
     factor_health: FactorHealthReportV1 | None,
     pool_path: Path,
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
 ) -> list[ResearchTicketV1]:
     """Generate research tickets from market context via LLM.
 
@@ -65,8 +66,11 @@ def generate_tickets(
     # 3. Call LLM
     raw = llm_client.generate(user_prompt, system=system_prompt)
 
-    # 4. Parse JSON response and validate each element
-    data = json.loads(raw)
+    # 4. Parse JSON response (strip markdown fences if present) and validate
+    text = raw.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    data = json.loads(text)
     tickets = [ResearchTicketV1.model_validate(item) for item in data]
 
     # 5. Load factor pool

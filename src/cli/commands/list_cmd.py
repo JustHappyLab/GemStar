@@ -26,7 +26,7 @@ def roles_cmd() -> None:
                 data = yaml.safe_load(f.read_text()) or {}
                 roles.append({
                     "name": data.get("name", f.stem),
-                    "provider": data.get("provider", "api"),
+                    "provider": data.get("provider", "claude_code"),
                     "skills": ", ".join(data.get("skills", [])),
                     "timeout": data.get("timeout", 120),
                 })

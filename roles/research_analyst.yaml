@@ -1,5 +1,5 @@
 name: research_analyst
 description: 研究工单生成
-provider: api
+provider: claude_code
 skills:
   - generate_tickets

@@ -4,7 +4,7 @@ CALLING SPEC:
     proposals = mine_factors(
         existing_pool: FactorPoolV1,
         raw_fields: list[str],
-        llm_client: LLMClient,
+        llm_client: LLMGenerate,
     ) -> list[FactorProposal]
         Asks the LLM for candidate factor expressions.
 
@@ -44,7 +44,7 @@ import pandas as pd
 from pydantic import BaseModel, ValidationError
 
 from src.factors.engine import compute_factor_expression, validate_expression
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.ranker.ic import compute_daily_rank_ic
 from src.schemas.factor import FactorPoolV1, FactorRegistryEntryV1
 
@@ -112,7 +112,7 @@ def _strip_json_fence(text: str) -> str:
 def mine_factors(
     existing_pool: FactorPoolV1,
     raw_fields: list[str],
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
 ) -> list[FactorProposal]:
     """Ask the LLM for candidate factor expressions."""
     from pathlib import Path

@@ -1,5 +1,5 @@
 name: reviewer
 description: 回测结果解读与风险评估
-provider: api
+provider: claude_code
 skills:
   - review_verdict

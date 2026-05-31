@@ -68,6 +68,11 @@ def finalize_run(
     )
     conn.commit()
 
+    started_row = conn.execute(
+        "SELECT started_at FROM runs WHERE run_id = ?", (run_id,)
+    ).fetchone()
+    started_at_str = started_row[0] if started_row else now
+
     cursor = conn.execute("SELECT step_id, status FROM steps WHERE run_id = ?", (run_id,))
     step_statuses = dict(cursor.fetchall())
     conn.close()
@@ -75,7 +80,7 @@ def finalize_run(
     from src.schemas.manifest import RunManifestV1
     manifest = RunManifestV1(
         run_id=run_id,
-        started_at=datetime.fromisoformat(now),
+        started_at=datetime.fromisoformat(started_at_str),
         finished_at=datetime.fromisoformat(now),
         status=status,
         step_statuses=step_statuses,

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.schemas.factor import FactorHealthReportV1
 from src.schemas.metrics import BacktestResultV1
 from src.schemas.review import ReviewNotesV1
@@ -25,7 +25,7 @@ def review_verdict(
     result: BacktestResultV1,
     verdict: VerdictV1,
     factor_health: FactorHealthReportV1 | None,
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
 ) -> ReviewNotesV1:
     """Generate LLM review notes for a strategy verdict.
 
@@ -77,5 +77,5 @@ def review_verdict(
 
     response = llm_client.generate(user_prompt, system=system_prompt)
 
-    # Validate and parse — ValueError propagates to LLMClient retry loop.
+    # Validate and parse — ValueError propagates to LLMGenerate retry loop.
     return ReviewNotesV1.model_validate_json(response)

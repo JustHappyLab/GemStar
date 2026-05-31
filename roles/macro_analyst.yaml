@@ -1,5 +1,5 @@
 name: macro_analyst
 description: 市场宏观状态评估
-provider: api
+provider: claude_code
 skills:
   - analyze_market

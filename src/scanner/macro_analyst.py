@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.schemas.signal import MarketRegimeV1
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def analyze_market_regime(
     daily_df: pd.DataFrame,
     index_df: pd.DataFrame,
     reference_date: str,
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
 ) -> MarketRegimeV1:
     """Assess the current market regime from stock-level and index data.
 

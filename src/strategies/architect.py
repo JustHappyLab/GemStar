@@ -17,7 +17,7 @@ import yaml
 from pydantic import ValidationError
 
 from src.factors.pool import FactorPoolV1
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.schemas.research import ResearchTicketV1
 from src.schemas.strategy import StrategyConfigV1
 
@@ -209,7 +209,7 @@ def draft_strategy(
     tickets: list[ResearchTicketV1],
     pool_path: Path,
     reference_date: str,
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
     output_dir: str | Path = "strategies/drafts",
 ) -> Path:
     """Draft a new strategy YAML from research tickets.

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.llm.client import LLMClient
+from src.llm.adapter import LLMGenerate
 from src.schemas.signal import SignalEventV1
 
 _SYSTEM_PROMPT = (Path(__file__).resolve().parents[2] / "skills" / "scan_events" / "prompt.txt").read_text(encoding="utf-8")
@@ -97,7 +97,7 @@ def _detect_momentum_shift(data: dict[str, pd.DataFrame]) -> str:
 def scan_events(
     data: dict[str, pd.DataFrame],
     reference_date: str,
-    llm_client: LLMClient,
+    llm_client: LLMGenerate,
 ) -> list[SignalEventV1]:
     """Detect quantitative signals and return LLM-structured events.
 

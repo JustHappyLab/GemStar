@@ -1,5 +1,5 @@
 name: event_scanner
 description: 市场事件扫描
-provider: api
+provider: claude_code
 skills:
   - scan_events

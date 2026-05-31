@@ -48,8 +48,7 @@ log_path: logs/gemstar.log          # scheduler 日志路径
 # gemstar run --llm 可临时覆盖
 llm:
   enabled: false                    # true = 默认启用 LLM 阶段
-  provider: api                     # 默认 provider（api / claude_code / gemini_cli / codex_cli）
-  base_url: ${ANTHROPIC_BASE_URL}   # Anthropic API 代理地址（仅 api provider 使用）
+  provider: claude_code             # 目前仅支持 claude_code
 
 # ─── 策略生成 ──────────────────────────────────────────────
 strategy_generation:
@@ -62,7 +61,7 @@ strategy_generation:
 # 回测引擎、指标、规则等核心评估逻辑默认冻结
 engineering:
   enabled: false                    # true = 允许创建/执行工程自愈任务
-  provider: codex_cli               # 仅支持 CLI provider: claude_code / gemini_cli / codex_cli
+  provider: claude_code             # 目前仅支持 claude_code
   auto_execute: true                # true = pipeline 中自动执行 engineer/bugfix task
   auto_apply: false                 # false = 只产出 patch/task，需人工批准合入
   max_attempts: 1
@@ -93,20 +92,10 @@ engineering:
       - tests/**
 
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
-# 按角色切换 LLM 后端和模型，无需改 roles/*.yaml
-# provider 可选值: api, claude_code, gemini_cli, codex_cli
-# model 可选值（默认使用各家旗舰模型）:
-#   api          → 未指定 model 由 API 默认
-#   claude_code  → sonnet / opus / haiku
-#   gemini_cli   → gemini-2.5-pro / gemini-2.5-flash
-#   codex_cli    → 由 codex CLI 默认
+# 按角色覆盖 LLM 配置，无需改 roles/*.yaml
+# model 可选值: sonnet / opus / haiku
 # 未列出的角色使用 roles/*.yaml 中的默认配置
-#
-# 安装与认证:
-#   api          → pip install anthropic         → ANTHROPIC_API_KEY
-#   claude_code  → npm i -g @anthropic-ai/claude-code → claude 登录
-#   gemini_cli   → npm i -g @google/gemini-cli   → gemini 登录
-#   codex_cli    → npm i -g @openai/codex        → OPENAI_API_KEY
+# 安装: npm i -g @anthropic-ai/claude-code → claude 登录
 roles: {}
 #  engineer:
 #    provider: gemini_cli          # 工程师角色改用 Gemini
@@ -121,8 +110,7 @@ strategies:
 """
 
 _ENV_RE = re.compile(r"\$\{(\w+)}")
-ProviderName = Literal["api", "claude_code", "gemini_cli", "codex_cli"]
-CliProviderName = Literal["claude_code", "gemini_cli", "codex_cli"]
+ProviderName = Literal["claude_code"]
 
 DEFAULT_ENGINEERING_FORBIDDEN_PATHS = [
     "src/engine/**",
@@ -163,8 +151,7 @@ class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    provider: ProviderName = "api"
-    base_url: str | None = None
+    provider: ProviderName = "claude_code"
 
 
 class RoleOverride(BaseModel):
@@ -184,7 +171,7 @@ class EngineeringConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    provider: CliProviderName = "codex_cli"
+    provider: ProviderName = "claude_code"
     auto_execute: bool = True
     auto_apply: bool = False
     max_attempts: int = Field(default=1, ge=1, le=5)

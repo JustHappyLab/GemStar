@@ -345,6 +345,57 @@
       "last_updated": "2026-05-31",
       "discovered_in_run": "20260531-8e1e0925",
       "status": "candidate"
+    },
+    {
+      "name": "amplitude_reversal_v1",
+      "source": "factor_miner",
+      "computation": "ts_zscore((high - low) / close, 20)",
+      "expression": "ts_zscore((high - low) / close, 20)",
+      "hypothesis": "Stocks with unusually wide intraday ranges relative to their own 20-day history tend to mean-revert the next day as excitement fades",
+      "ic_mean": -0.025317764310687003,
+      "ic_ir": -0.27634808495565627,
+      "ic_positive_rate": 0.36831415030467163,
+      "coverage": 0.9929353644702913,
+      "direction": "negative",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-05-31",
+      "discovered_in_run": "20260531-98d34671",
+      "status": "candidate"
+    },
+    {
+      "name": "gap_reversal_v1",
+      "source": "factor_miner",
+      "computation": "(open - pre_close) / (pre_close + 0.001)",
+      "expression": "(open - pre_close) / (pre_close + 0.001)",
+      "hypothesis": "Overnight gap opens attract profit-taking and fade intraday, creating a short-term reversal signal",
+      "ic_mean": 0.02105069588085472,
+      "ic_ir": 0.2939267516454581,
+      "ic_positive_rate": 0.6567967698519516,
+      "coverage": 0.999994575679108,
+      "direction": "negative",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-05-31",
+      "discovered_in_run": "20260531-98d34671",
+      "status": "candidate"
+    },
+    {
+      "name": "moneyflow_surge_v1",
+      "source": "factor_miner",
+      "computation": "cs_rank(amount) - cs_rank(ts_mean(amount, 20))",
+      "expression": "cs_rank(amount) - cs_rank(ts_mean(amount, 20))",
+      "hypothesis": "Stocks whose peer-relative dollar turnover spikes above their own 20-day norm are experiencing an attention-driven inflow that generates short-term price pressure",
+      "ic_mean": -0.031603088006952725,
+      "ic_ir": -0.31653746350123746,
+      "ic_positive_rate": 0.36696005416384564,
+      "coverage": 0.9929997782808836,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-05-31",
+      "discovered_in_run": "20260531-98d34671",
+      "status": "candidate"
     }
   ]
 }

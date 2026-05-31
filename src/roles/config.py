@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ProviderName = Literal["api", "claude_code", "gemini_cli", "codex_cli"]
+ProviderName = Literal["claude_code"]
 
 
 class RoleConfig(BaseModel):
@@ -23,7 +23,7 @@ class RoleConfig(BaseModel):
 
     name: str
     description: str = ""
-    provider: ProviderName = "api"
+    provider: ProviderName = "claude_code"
     model: str | None = None
     skills: list[str] = Field(default_factory=list)
     timeout: int = Field(default=120, gt=0, le=3600)
