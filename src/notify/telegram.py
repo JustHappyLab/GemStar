@@ -65,12 +65,14 @@ class TelegramNotificationSink:
 
 
 def _telegram_text(message: NotificationMessageV1) -> str:
-    symbols = ", ".join(message.symbols) if message.symbols else "n/a"
+    severity_label = {"info": "信息", "warning": "警告", "critical": "严重"}
+    label = severity_label.get(message.severity, message.severity)
+    symbols = ", ".join(message.symbols) if message.symbols else "无"
     lines = [
-        f"[{message.severity.upper()}] {message.title}",
+        f"[{label}] {message.title}",
         message.body,
-        f"symbols: {symbols}",
+        f"标的：{symbols}",
     ]
     if message.decision_id:
-        lines.append(f"decision: {message.decision_id}")
+        lines.append(f"决策ID：{message.decision_id}")
     return "\n".join(lines)

@@ -111,14 +111,14 @@ def trade_cmd(
         run_id = _run_research(config_path, stop_event)
         if run_id is None:
             _emit(notifier, _alert(
-                "warning", f"Research failed ({ref_date})",
-                "Daily pipeline did not complete; live monitor will reuse the last good run.",
+                "warning", f"研究失败 ({ref_date})",
+                "每日研究管线未完成，将复用上次成功的运行结果。",
                 symbols=[],
             ))
             run_id = _latest_completed_run(config.db_path)
 
         if run_id is None:
-            console.print("[red]No completed run available; cannot build targets.[/red]")
+            console.print("[red]没有可用运行记录，无法生成目标持仓。[/red]")
             if once:
                 raise typer.Exit(1)
             _wait_until_tomorrow(stop_event)
@@ -126,10 +126,10 @@ def trade_cmd(
 
         targets, strategies = _build_targets(config, run_id, ref_date, top_n, capital)
         if not targets:
-            console.print(f"[yellow]No actionable targets from run {run_id}.[/yellow]")
+            console.print(f"[yellow]运行 {run_id} 无可执行目标。[/yellow]")
             _emit(notifier, _alert(
-                "info", f"No targets from {run_id}",
-                "Top strategies produced no holdings for today; standing by.",
+                "info", f"{run_id} 无目标",
+                "今日排名靠前策略未产出有效持仓，继续等待。",
                 symbols=[],
             ))
             if once:
@@ -139,15 +139,15 @@ def trade_cmd(
 
         symbols = sorted({t.ts_code for t in targets})
         console.print(
-            f"[green]Targets ready[/green] strategies={','.join(strategies)} "
-            f"symbols={len(symbols)}"
+            f"[green]目标持仓就绪[/green] 策略={','.join(strategies)} "
+            f"标的数={len(symbols)}"
         )
         _emit(notifier, _alert(
             "info",
-            f"GemStar targets ready ({ref_date})",
-            "Tracking " + ", ".join(symbols[:10])
-            + (f" + {len(symbols) - 10} more" if len(symbols) > 10 else "")
-            + f"\nstrategies: {', '.join(strategies)}",
+            f"GemStar 交易目标已就绪 ({ref_date})",
+            "跟踪标的： " + ", ".join(symbols[:10])
+            + (f" 等{len(symbols)}只" if len(symbols) > 10 else "")
+            + f"\n策略：{'、'.join(strategies)}",
             symbols=symbols,
         ))
 
