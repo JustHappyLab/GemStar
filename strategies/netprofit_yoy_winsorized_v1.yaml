@@ -1,0 +1,30 @@
+version: StrategyConfigV1
+name: netprofit_yoy_winsorized_v1
+hypothesis: Winsorizing netprofit_yoy at ±3σ suppresses earnings-season tail noise and improves ranking stability during ChiNext concentrated disclosure windows
+source_idea: "[factor_tweak] netprofit_yoy Winsorize ±3σ — uses raw factor with complementary quality/value/momentum factors to dampen outlier distortion"
+universe: auto
+universe_rationale: Auto universe applies GemStar liquidity and listing-age filters across A-shares; ticket targets ChiNext disclosure stability but cross-board selection improves robustness
+timer:
+  mode: full
+factors:
+  - factor_id: netprofit_yoy
+    weight: 0.30
+  - factor_id: roe
+    weight: 0.20
+  - factor_id: revenue_yoy
+    weight: 0.15
+  - factor_id: pe_inverse
+    weight: 0.15
+  - factor_id: size_momentum_interact_v1
+    weight: 0.10
+  - factor_id: vol_price_corr_v1
+    weight: 0.10
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260531"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0

@@ -1,0 +1,34 @@
+version: StrategyConfigV1
+name: fundamental_momentum_v1
+hypothesis: Combining quality (ROE, netprofit_yoy) with momentum and liquidity factors captures both fundamental strength and short-term trend continuation; netprofit_yoy uses winsorization per ticket requirement.
+source_idea: "[factor_tweak] netprofit_yoy winsorize ±5σ and reduce weight during earnings-season tail (late May – early June). Calendar-based weight modulation not supported in YAML; proxy via lower static weight."
+universe: auto
+universe_rationale: auto selects a broad A-share universe suitable for multi-factor long-only portfolios without board-specific constraints.
+timer:
+  mode: full
+factors:
+  - factor_id: roe
+    weight: 0.20
+  - factor_id: netprofit_yoy
+    weight: 0.10
+  - factor_id: revenue_yoy
+    weight: 0.10
+  - factor_id: momentum_20d
+    weight: 0.15
+  - factor_id: pe_inverse
+    weight: 0.10
+  - factor_id: size_momentum_interact_v1
+    weight: 0.15
+  - factor_id: liquidity_momentum_v1
+    weight: 0.10
+  - factor_id: vol_price_corr_v1
+    weight: 0.10
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260531"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0

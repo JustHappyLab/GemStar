@@ -20,6 +20,7 @@ state.db
 .gemstar.pid
 logs/
 artifacts/
+alerts/
 
 # Promotional materials (not for GitHub)
 promote/

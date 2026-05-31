@@ -1,0 +1,28 @@
+version: StrategyConfigV1
+name: momentum_volume_filtered_v1
+hypothesis: Combining momentum with volume and turnover penalties reduces exposure to abnormally high-volume momentum chases
+source_idea: "[factor_tweak] proxy for momentum_20d volume>3x filter — uses turnover_20d, vol_price_corr_v1, and liquidity_momentum_v1 as volume/liquidity proxies"
+universe: auto
+universe_rationale: A-share core universe provides sufficient liquidity for daily rebalanced momentum strategy
+timer:
+  mode: full
+factors:
+  - factor_id: momentum_20d
+    weight: 0.30
+  - factor_id: rel_strength_20d
+    weight: 0.20
+  - factor_id: turnover_20d
+    weight: 0.20
+  - factor_id: vol_price_corr_v1
+    weight: 0.15
+  - factor_id: liquidity_momentum_v1
+    weight: 0.15
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260531"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0

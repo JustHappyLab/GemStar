@@ -1,0 +1,24 @@
+version: StrategyConfigV1
+name: smallcap_momentum_enhanced_v1
+hypothesis: Small-cap stocks with strong recent momentum and solid fundamentals outperform by compounding size, momentum, and growth premiums.
+source_idea: "ticket:size_momentum_interact_v1_promotion — promote candidate factor as momentum_20d enhancement in bullish growth regime"
+universe: auto
+universe_rationale: Auto selects liquid A-share universe; small-cap tilt comes from the size_momentum_interact factor itself, not universe restriction.
+timer:
+  mode: full
+factors:
+  - factor_id: size_momentum_interact_v1
+    weight: 0.4
+  - factor_id: momentum_20d
+    weight: 0.3
+  - factor_id: roe
+    weight: 0.3
+top_n: 5
+rebalance: monthly
+backtest:
+  start: "20220101"
+  end: "20260531"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0
