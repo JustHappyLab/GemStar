@@ -302,7 +302,7 @@ Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角�
 
 默认情况下，`engineering.enabled: true` 后 pipeline 会自动执行这些 task，并在执行后用路径策略校验 diff，禁止触碰 frozen core。`gemstar engineering run ... --dry-run` 仍可用于调试 prompt 或重放单个 task。
 
-只需配置你实际使用的 provider。只跑不带 LLM 的 pipeline（`gemstar run` 且 `llm.enabled: false`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm` 或 `llm.enabled: true`）则需额外配置对应 provider。
+只跑不带 LLM 的 pipeline（`gemstar run` 且 `llm.enabled: false`）只需 Tushare token；启用 LLM 策略生成（`gemstar run --llm` 或 `llm.enabled: true`）则需安装并登录 Claude Code CLI。
 
 ### CLI 命令
 

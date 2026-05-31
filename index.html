@@ -741,9 +741,7 @@ nav .container {
   opacity: 1;
 }
 
-.role-card[data-provider="api"]::before { background: var(--cyan); }
 .role-card[data-provider="claude_code"]::before { background: var(--green); }
-.role-card[data-provider="gemini_cli"]::before { background: var(--amber); }
 
 .role-header {
   display: flex;
@@ -778,7 +776,6 @@ nav .container {
   margin-left: auto;
 }
 
-.role-provider.api { background: var(--cyan-dim); color: var(--cyan); }
 .role-provider.cli { background: var(--green-dim); color: var(--green); }
 
 .role-skills {
@@ -1659,7 +1656,7 @@ footer a:hover {
         <div class="cap-icon">🤖</div>
         <h3 class="cap-title">多 Agent 协作</h3>
         <div class="cap-en">Multi-Agent</div>
-        <p class="cap-desc">8 个专业角色分工协作，4 种 LLM 后端可切换。通过 YAML 配置即可更换 Provider。</p>
+        <p class="cap-desc">8 个专业角色分工协作，统一通过 Claude Code CLI 执行。YAML 保留 provider/model 扩展点。</p>
       </div>
       <div class="cap-card reveal">
         <div class="cap-icon">📊</div>
@@ -1703,22 +1700,22 @@ footer a:hover {
       <div class="roles-stage">
         <div class="stage-label">感知层</div>
         <div class="stage-roles">
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">📡</div>
               <span class="role-name">event_scanner</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">统计检测器扫描异动：财报惊喜、成交量异常、动量突变</div>
             <div class="role-skills">
               <span class="role-skill">scan_events</span>
             </div>
           </div>
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">🌍</div>
               <span class="role-name">macro_analyst</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">20 日市场统计 → 判断 regime：bullish / bearish / volatile / defensive</div>
             <div class="role-skills">
@@ -1736,33 +1733,33 @@ footer a:hover {
       <div class="roles-stage">
         <div class="stage-label">研究层</div>
         <div class="stage-roles">
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">🔬</div>
               <span class="role-name">research_analyst</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">综合市场信号 + 因子健康度，生成研究 ticket（假设 + 因子关联）</div>
             <div class="role-skills">
               <span class="role-skill">generate_tickets</span>
             </div>
           </div>
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">🏗️</div>
               <span class="role-name">strategy_architect</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">从 research ticket 草拟策略 YAML，输出可验证的策略配置</div>
             <div class="role-skills">
               <span class="role-skill">draft_strategy</span>
             </div>
           </div>
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">⛏️</div>
               <span class="role-name">factor_miner</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">LLM 自动发现新 alpha 因子表达式，IC 验证后注册入池</div>
             <div class="role-skills">
@@ -1780,11 +1777,11 @@ footer a:hover {
       <div class="roles-stage">
         <div class="stage-label">评审层</div>
         <div class="stage-roles">
-          <div class="role-card" data-provider="api">
+          <div class="role-card" data-provider="claude_code">
             <div class="role-header">
               <div class="role-icon">⚖️</div>
               <span class="role-name">reviewer</span>
-              <span class="role-provider api">api</span>
+              <span class="role-provider cli">claude_code</span>
             </div>
             <div class="role-desc">解读回测结果，生成评审意见：解释 + 风险 + 置信度（纯建议，无决策权）</div>
             <div class="role-skills">
@@ -1809,7 +1806,7 @@ footer a:hover {
               <span class="role-provider cli">claude_code</span>
               <span class="role-badge">需批准</span>
             </div>
-            <div class="role-desc">编写或修改策略代码，操作文件系统。仅 CLI 类 provider 可用</div>
+            <div class="role-desc">编写或修改策略代码，操作文件系统。当前使用 Claude Code CLI</div>
             <div class="role-skills">
               <span class="role-skill">write_code</span>
               <span class="role-skill">fix_bug</span>
@@ -1958,7 +1955,7 @@ footer a:hover {
     <div class="section-header reveal">
       <div class="section-label">// Architecture</div>
       <h2 class="section-title">三层架构</h2>
-      <p class="section-desc">Role / Provider / Skill 解耦设计，灵活组合</p>
+      <p class="section-desc">Role / Provider / Skill 解耦设计，当前统一接入 claude_code</p>
     </div>
     <div class="arch-diagram reveal">
       <div class="arch-layer">
@@ -1992,10 +1989,7 @@ footer a:hover {
       <div class="arch-layer">
         <div class="arch-layer-title">Providers</div>
         <div class="arch-layer-items">
-          <div class="arch-item">api (Anthropic)</div>
           <div class="arch-item">claude_code</div>
-          <div class="arch-item">gemini_cli</div>
-          <div class="arch-item">codex_cli</div>
         </div>
       </div>
     </div>
@@ -2167,10 +2161,9 @@ footer a:hover {
           <div class="cmd-line"><span class="success">  ✓ state.db exists</span></div>
           <div class="cmd-line"><span class="success">  ✓ roles/*.yaml valid (8 roles)</span></div>
           <div class="cmd-line"><span class="success">  ✓ claude CLI authenticated</span></div>
-          <div class="cmd-line"><span class="warn">  ⚠ codex CLI not found (optional)</span></div>
           <div class="cmd-line"><span class="success">  ✓ data/raw/ cache exists (2.1 GB)</span></div>
           <div class="cmd-line"><span class="comment">  </span></div>
-          <div class="cmd-line"><span class="output">  9/10 checks passed. 1 warning (non-blocking).</span></div>
+          <div class="cmd-line"><span class="output">  9/9 checks passed.</span></div>
         </div>
       </div>
     </div>

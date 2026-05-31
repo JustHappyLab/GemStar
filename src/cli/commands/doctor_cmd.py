@@ -165,11 +165,9 @@ def doctor_cmd() -> None:
     else:
         checks.append(_check("factors/pool.json", False, "not found"))
 
-    # ── 9. LLM provider CLIs ───────────────────────────────────
+    # ── 9. LLM provider CLI ────────────────────────────────────
     cli_checks = [
         ("claude CLI", "claude", ["claude", "auth", "status"]),
-        ("codex CLI", "codex", ["codex", "login", "status"]),
-        ("gemini CLI", "gemini", None),  # no auth status command
     ]
     for label, cmd, auth_cmd in cli_checks:
         ok, detail = _cli_auth_check(cmd, auth_cmd)
