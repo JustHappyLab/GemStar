@@ -169,6 +169,21 @@ class TestRoleRegistryExecute:
         assert "system" in call_args[1]["context"]
         assert "market analyst" in call_args[1]["context"]["system"].lower()
 
+    def test_execute_appends_context_system_prompt(self, tmp_roles_dir, tmp_skills_dir, sample_role, sample_skill):
+        reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
+
+        mock_result = AgentResult(output="{}", provider="claude_code", duration_seconds=1.0)
+        with patch.object(reg, "get_provider") as mock_get:
+            mock_provider = MagicMock()
+            mock_provider.execute.return_value = mock_result
+            mock_get.return_value = mock_provider
+
+            reg.execute_role("macro_analyst", {"task": "evaluate market", "system": "Return a strict object."})
+
+        system = mock_provider.execute.call_args[1]["context"]["system"]
+        assert "market analyst" in system.lower()
+        assert "Return a strict object." in system
+
     def test_execute_emits_events(self, tmp_roles_dir, tmp_skills_dir, sample_role, sample_skill):
         events = []
         reg = RoleRegistry(

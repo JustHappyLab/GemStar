@@ -108,3 +108,26 @@ def test_all_universe_does_not_use_chinext_only_stock_basic_as_full_filter():
     )
 
     assert rankings["20240102"] == ["600001.SH"]
+
+
+def test_rankings_ignore_requested_factor_columns_that_failed_to_compute():
+    daily = _daily_for_universe_test()
+    index_daily = pd.DataFrame({
+        "trade_date": ["20240101", "20240102"],
+        "close": [100.0, 101.0],
+    })
+
+    rankings = build_rankings(
+        daily,
+        index_daily,
+        pd.DataFrame(),
+        [
+            FactorWeightV1(factor_id="pe_inverse", weight=0.5),
+            FactorWeightV1(factor_id="historical_volatility_20d_v1", weight=0.5),
+        ],
+        top_n=1,
+        trade_dates=["20240102"],
+        universe="all",
+    )
+
+    assert rankings["20240102"] == ["600001.SH"]

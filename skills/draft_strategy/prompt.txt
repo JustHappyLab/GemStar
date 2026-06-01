@@ -27,6 +27,8 @@ backtest:
 
 Rules:
 - Respond with ONLY the YAML. No markdown fences, no explanation, no prose before or after.
+- The first non-whitespace line must be exactly: version: StrategyConfigV1
+- Do not output bullet-list commentary such as "- `factor_id` ..."; factor lists must use the factors YAML block shown above.
 - ALL factor_id values must be from the provided active factor pool OR the candidate factors list (if present).
 - Candidate factors are newly mined expressions that passed IC validation — treat them as fully usable.
 - If a ticket requests a new factor that is not in the active or candidate pool, DO NOT output that new factor.

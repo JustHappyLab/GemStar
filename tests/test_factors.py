@@ -134,3 +134,29 @@ def test_compute_all_factors_uses_disclosure_date_for_fundamentals():
 
     assert before_disclosure["roe"].isna().all()
     assert after_disclosure["roe"].notna().any()
+
+
+def test_compute_all_factors_supports_daily_pre_close_and_vol_expression_fields():
+    daily, index_daily, fina = _make_data()
+    daily = daily.sort_values(["ts_code", "trade_date"]).copy()
+    daily["pre_close"] = daily.groupby("ts_code")["close"].shift(1).fillna(daily["close"])
+    daily["open"] = daily["pre_close"] * 1.01
+    daily["high"] = daily[["open", "close"]].max(axis=1) * 1.01
+    daily["low"] = daily[["open", "close"]].min(axis=1) * 0.99
+    daily["vol"] = np.arange(1.0, len(daily) + 1.0) * 1000.0
+    daily["amount"] = daily["vol"] * daily["close"]
+
+    result = compute_all_factors(
+        daily,
+        index_daily,
+        fina,
+        expression_factors=[
+            ("gap_reversal_v1", "(open - pre_close) / (pre_close + 0.001)"),
+            ("vol_price_corr_v1", "ts_corr(close, vol, 10)"),
+        ],
+    )
+
+    assert "gap_reversal_v1" in result.columns
+    assert "vol_price_corr_v1" in result.columns
+    assert result["gap_reversal_v1"].notna().any()
+    assert result["vol_price_corr_v1"].notna().any()

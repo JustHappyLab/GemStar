@@ -27,11 +27,11 @@ def test_role_adapter_executes_named_role() -> None:
     registry = StubRegistry(output="role result")
     adapter = RoleLLMAdapter(registry, "reviewer")
 
-    result = adapter.generate("review this", system="ignored by role adapter")
+    result = adapter.generate("review this", system="return JSON only")
 
     assert result == "role result"
     assert registry.last_role == "reviewer"
-    assert registry.last_context == {"task": "review this"}
+    assert registry.last_context == {"task": "review this", "system": "return JSON only"}
 
 
 def test_role_adapter_preserves_exact_output() -> None:

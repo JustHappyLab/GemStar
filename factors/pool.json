@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "last_updated": "2026-05-31",
+  "last_updated": "2026-06-01",
   "active": [
     {
       "name": "roe",
@@ -395,6 +395,40 @@
       "universe": "a_share_core",
       "last_updated": "2026-05-31",
       "discovered_in_run": "20260531-98d34671",
+      "status": "candidate"
+    },
+    {
+      "name": "amplitude_expansion_v1",
+      "source": "factor_miner",
+      "computation": "ts_mean((high - low) / close, 5) / (ts_mean((high - low) / close, 20) + 0.001)",
+      "expression": "ts_mean((high - low) / close, 5) / (ts_mean((high - low) / close, 20) + 0.001)",
+      "hypothesis": "Recent intraday range expansion relative to medium-term baseline signals breakout momentum that tends to persist",
+      "ic_mean": -0.02962298390285832,
+      "ic_ir": -0.3092613197136449,
+      "ic_positive_rate": 0.34867975626269465,
+      "coverage": 0.9929997782808836,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-01",
+      "discovered_in_run": "20260601-447240e9",
+      "status": "candidate"
+    },
+    {
+      "name": "volume_price_corr_v1",
+      "source": "factor_miner",
+      "computation": "ts_corr(close, vol, 20)",
+      "expression": "ts_corr(close, vol, 20)",
+      "hypothesis": "Positive volume-price correlation indicates institutional accumulation with trend confirmation, a hallmark of sustained moves",
+      "ic_mean": -0.040203771452844254,
+      "ic_ir": -0.36156014692465316,
+      "ic_positive_rate": 0.35545023696682465,
+      "coverage": 0.9929972017284598,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-01",
+      "discovered_in_run": "20260601-447240e9",
       "status": "candidate"
     }
   ]

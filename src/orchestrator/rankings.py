@@ -78,6 +78,7 @@ def build_rankings(
     available = [c for c in weights if c in factor_df.columns]
     if not available:
         return {}
+    available_weights = {c: weights[c] for c in available}
 
     # Filter to target dates
     factor_df = factor_df[factor_df["trade_date"].isin(trade_dates)].copy()
@@ -102,7 +103,7 @@ def build_rankings(
             g[col] = winsorize_mad(g[col])
             g[col] = zscore_cross_section(g[col])
 
-        scored = compute_composite_score(g, weights)
+        scored = compute_composite_score(g, available_weights)
         top = rank_top_n(scored, top_n)
         rankings[str(date)] = top["ts_code"].tolist()
 

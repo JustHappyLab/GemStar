@@ -174,17 +174,20 @@ class RoleRegistry:
         else:
             provider = self.get_provider(role.provider, timeout=role.timeout, model=role.model)
 
-        # Compose system prompt from all skills
+        # Compose system prompt from all skills.
         skill_prompts = []
         for skill_name in role.skills:
             skill = self._skills.get(skill_name)
             if skill and skill.prompt:
                 skill_prompts.append(skill.prompt)
 
-        system_prompt = "\n\n".join(skill_prompts) if skill_prompts else None
-
         ctx = dict(context or {})
         task = ctx.pop("task", "")
+        extra_system = ctx.pop("system", "")
+        system_parts = list(skill_prompts)
+        if extra_system and extra_system not in system_parts:
+            system_parts.append(extra_system)
+        system_prompt = "\n\n".join(system_parts) if system_parts else None
 
         now = datetime.now(tz=timezone.utc)
         self._emit(RoleEvent(

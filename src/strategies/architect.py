@@ -94,6 +94,28 @@ def _load_yaml_mapping(response: str) -> dict[str, Any]:
     return yaml_data
 
 
+def _truncate_for_retry(text: str, limit: int = 4000) -> str:
+    """Keep repair prompts bounded when a provider returns verbose prose."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...[truncated]"
+
+
+def _build_repair_prompt(original_prompt: str, bad_response: str, error: Exception) -> str:
+    """Ask the LLM to repair only the response shape after validation failure."""
+    return (
+        f"{original_prompt}\n\n"
+        "## Previous strategy draft was rejected\n"
+        f"Error: {error}\n\n"
+        "Rewrite the previous answer as exactly one valid YAML mapping for "
+        "StrategyConfigV1. Do not output markdown, bullet-list explanation, "
+        "or prose. The first line must be exactly: "
+        "version: StrategyConfigV1.\n\n"
+        "## Previous answer\n"
+        f"```text\n{_truncate_for_retry(bad_response)}\n```"
+    )
+
+
 def _as_positive_float(value: Any) -> float | None:
     """Convert a YAML scalar into a strictly positive factor weight."""
     if isinstance(value, bool):
@@ -172,6 +194,17 @@ def _validate_strategy_draft(yaml_data: dict[str, Any]) -> StrategyConfigV1:
         raise ValueError(f"Strategy draft schema validation failed: {errors}") from exc
 
 
+def _parse_strategy_response(
+    response: str,
+    pool: FactorPoolV1,
+) -> tuple[dict[str, Any], StrategyConfigV1]:
+    """Parse, normalize, and validate one LLM strategy response."""
+    yaml_data = _load_yaml_mapping(response)
+    yaml_data = _normalize_strategy_draft(yaml_data, pool)
+    config = _validate_strategy_draft(yaml_data)
+    return yaml_data, config
+
+
 def _build_user_prompt(
     tickets: list[ResearchTicketV1],
     pool: FactorPoolV1,
@@ -232,9 +265,15 @@ def draft_strategy(
     system_prompt = _SYSTEM_PROMPT
 
     response = llm_client.generate(user_prompt, system=system_prompt)
-    yaml_data = _load_yaml_mapping(response)
-    yaml_data = _normalize_strategy_draft(yaml_data, pool)
-    config = _validate_strategy_draft(yaml_data)
+    for attempt in range(2):
+        try:
+            yaml_data, config = _parse_strategy_response(response, pool)
+            break
+        except ValueError as exc:
+            if attempt == 1:
+                raise
+            repair_prompt = _build_repair_prompt(user_prompt, response, exc)
+            response = llm_client.generate(repair_prompt, system=system_prompt)
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -110,6 +110,11 @@ backtest:
   cost_multiplier: 1.0
 """
 
+MARKDOWN_FACTOR_LIST = """\
+- `vol_price_corr_v1`（量价相关性，IC_IR=-0.47）
+- `historical_volatility_20d_v1`（低波动代理）
+"""
+
 
 def _make_tickets() -> list[ResearchTicketV1]:
     return [
@@ -280,3 +285,23 @@ factors:
         assert config.name == "momentum_colon_text"
         assert "confidence: 0.72" in config.hypothesis
         assert "ticket_20260506_001:" in config.source_idea
+
+    def test_invalid_markdown_list_is_repaired_once(self, tmp_path: Path) -> None:
+        """A prose factor list triggers one repair request before failing the ticket."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+        llm = FakeLLM([MARKDOWN_FACTOR_LIST, VALID_YAML])
+
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-03",
+            llm_client=llm,
+            output_dir=output_dir,
+        )
+
+        config = StrategyConfigV1.from_yaml(result)
+        assert config.name == "growth_momentum_v2"
+        assert len(llm.calls) == 2
+        assert "Previous strategy draft was rejected" in llm.calls[1]["prompt"]
+        assert "version: StrategyConfigV1" in llm.calls[1]["prompt"]

@@ -31,7 +31,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 _RAW_FIELDS = {
-    "close", "open", "high", "low", "volume", "amount",
+    "close", "open", "high", "low", "pre_close", "vol", "volume", "amount",
     "turnover_rate", "pe_ttm", "pb", "total_mv", "circ_mv",
 }
 
@@ -125,8 +125,8 @@ def compute_all_factors(
                 df[name] = series.values
                 df[name] = df.groupby('ts_code')[name].shift(1)
                 expression_factor_cols.append(name)
-            except Exception:
-                logger.warning("Skipping expression factor %r: failed to compute", name)
+            except Exception as exc:
+                logger.warning("Skipping expression factor %r: %s", name, exc)
 
     df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
     cols = ['ts_code', 'trade_date', *factor_cols, *expression_factor_cols]

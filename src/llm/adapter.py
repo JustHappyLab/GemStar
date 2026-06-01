@@ -32,5 +32,8 @@ class RoleLLMAdapter:
         self._role_name = role_name
 
     def generate(self, prompt: str, system: str | None = None) -> str:
-        result = self._registry.execute_role(self._role_name, {"task": prompt})
+        context = {"task": prompt}
+        if system:
+            context["system"] = system
+        result = self._registry.execute_role(self._role_name, context)
         return result.output
