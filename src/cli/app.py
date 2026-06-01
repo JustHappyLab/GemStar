@@ -30,6 +30,12 @@ live_app = typer.Typer(
     no_args_is_help=True,
 )
 
+alerts_app = typer.Typer(
+    name="alerts",
+    help="Inspect generated alert notifications.",
+    no_args_is_help=True,
+)
+
 
 @app.callback()
 def _global_options(
@@ -59,6 +65,7 @@ from src.cli.commands.leaderboard_cmd import leaderboard_cmd  # noqa: E402
 from src.cli.commands.engineering_cmd import engineering_run_cmd  # noqa: E402
 from src.cli.commands.live_cmd import live_once_cmd, live_start_cmd  # noqa: E402
 from src.cli.commands.trade_cmd import trade_cmd  # noqa: E402
+from src.cli.commands.alerts_cmd import alerts_latest_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -80,6 +87,8 @@ app.add_typer(engineering_app, name="engineering")
 live_app.command("once")(live_once_cmd)
 live_app.command("start")(live_start_cmd)
 app.add_typer(live_app, name="live")
+alerts_app.command("latest")(alerts_latest_cmd)
+app.add_typer(alerts_app, name="alerts")
 app.command("start", hidden=True)(start_cmd)
 app.command("stop", hidden=True)(stop_cmd)
 app.command("restart", hidden=True)(restart_cmd)
