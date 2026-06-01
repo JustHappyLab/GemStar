@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "last_updated": "2026-06-01",
+  "last_updated": "2026-06-02",
   "active": [
     {
       "name": "roe",
@@ -429,6 +429,23 @@
       "universe": "a_share_core",
       "last_updated": "2026-06-01",
       "discovered_in_run": "20260601-447240e9",
+      "status": "candidate"
+    },
+    {
+      "name": "overnight_gap_momentum_v1",
+      "source": "factor_miner",
+      "computation": "ts_mean((open - pre_close) / (abs(pre_close) + 0.01), 5)",
+      "expression": "ts_mean((open - pre_close) / (abs(pre_close) + 0.01), 5)",
+      "hypothesis": "Persistent positive overnight gaps indicate institutional buying pressure at the open, reflecting informed demand that should continue",
+      "ic_mean": 0.016284445696157692,
+      "ic_ir": 0.23245753243350176,
+      "ic_positive_rate": 0.6197846567967699,
+      "coverage": 0.9992169061546243,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-02",
+      "discovered_in_run": "20260602-348761ed",
       "status": "candidate"
     }
   ]
