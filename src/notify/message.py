@@ -38,3 +38,20 @@ class NotificationMessageV1(BaseModel):
     decision_id: str | None = None
     action: str | None = None
     symbols: list[str] = Field(default_factory=list)
+    symbol_names: dict[str, str] = Field(default_factory=dict)
+
+
+def format_symbol_label(ts_code: str, symbol_names: dict[str, str] | None = None) -> str:
+    """Format a code with its display name when available."""
+    name = (symbol_names or {}).get(ts_code, "").strip()
+    if not name:
+        return ts_code
+    return f"{ts_code} {name}"
+
+
+def format_symbol_labels(
+    symbols: list[str],
+    symbol_names: dict[str, str] | None = None,
+) -> list[str]:
+    """Format a list of stock codes with optional display names."""
+    return [format_symbol_label(symbol, symbol_names) for symbol in symbols]

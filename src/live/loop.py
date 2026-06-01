@@ -7,6 +7,7 @@ CALLING SPEC:
         snapshots_loader=Callable[[], list[MarketSnapshotV1]],
         notify=Callable[[NotificationMessageV1], None],
         strategy_name=str,
+        symbol_names=dict[str, str] | None,
         stop_event=threading.Event | None,
         now_fn=Callable[[], datetime],
         sleep_fn=Callable[[int], None],
@@ -54,6 +55,7 @@ def run_live_loop(
     snapshots_loader: Callable[[], list[MarketSnapshotV1]],
     notify: NotifyFn,
     strategy_name: str,
+    symbol_names: dict[str, str] | None = None,
     stop_event: threading.Event | None = None,
     now_fn: Callable[[], datetime] = datetime.now,
     sleep_fn: Callable[[int], None] = time.sleep,
@@ -93,7 +95,7 @@ def run_live_loop(
             if decision.decision_id in seen_decision_ids:
                 deduped_count += 1
                 continue
-            notify(notification_from_decision(decision))
+            notify(notification_from_decision(decision, symbol_names=symbol_names))
             seen_decision_ids.add(decision.decision_id)
             notifications_count += 1
 

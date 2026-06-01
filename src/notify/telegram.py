@@ -16,7 +16,7 @@ import json
 from typing import Callable
 from urllib.request import Request, urlopen
 
-from src.notify.message import NotificationMessageV1
+from src.notify.message import NotificationMessageV1, format_symbol_labels
 
 
 UrlOpen = Callable[[Request, float], object]
@@ -67,7 +67,8 @@ class TelegramNotificationSink:
 def _telegram_text(message: NotificationMessageV1) -> str:
     severity_label = {"info": "信息", "warning": "警告", "critical": "严重"}
     label = severity_label.get(message.severity, message.severity)
-    symbols = ", ".join(message.symbols) if message.symbols else "无"
+    symbol_labels = format_symbol_labels(message.symbols, message.symbol_names)
+    symbols = ", ".join(symbol_labels) if symbol_labels else "无"
     lines = [
         f"[{label}] {message.title}",
         message.body,

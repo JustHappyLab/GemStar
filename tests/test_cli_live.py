@@ -31,6 +31,7 @@ def test_live_once_writes_notification_jsonl(tmp_path):
     targets_path = tmp_path / "targets.json"
     snapshots_path = tmp_path / "snapshots.json"
     notifications_path = tmp_path / "alerts" / "live.jsonl"
+    stock_basic_path = tmp_path / "stock_basic.json"
 
     now = "2026-05-27T10:00:00"
     account_path.write_text(json.dumps({
@@ -56,6 +57,9 @@ def test_live_once_writes_notification_jsonl(tmp_path):
             "source": "test",
         }
     ]), encoding="utf-8")
+    stock_basic_path.write_text(json.dumps([
+        {"ts_code": "300750.SZ", "name": "宁德时代"}
+    ]), encoding="utf-8")
 
     _reset_output_format()
     result = runner.invoke(app, [
@@ -69,6 +73,8 @@ def test_live_once_writes_notification_jsonl(tmp_path):
         str(snapshots_path),
         "--notifications",
         str(notifications_path),
+        "--stock-basic",
+        str(stock_basic_path),
         "--strategy-name",
         "chinext_lstm_mf8",
     ])
@@ -81,11 +87,15 @@ def test_live_once_writes_notification_jsonl(tmp_path):
         for line in notifications_path.read_text(encoding="utf-8").splitlines()
     ]
     assert len(rows) == 1
-    assert rows[0]["title"] == "[买入] 300750.SZ"
+    assert rows[0]["title"] == "[买入] 300750.SZ 宁德时代"
     assert rows[0]["action"] == "buy"
     assert rows[0]["symbols"] == ["300750.SZ"]
+    assert rows[0]["symbol_names"] == {"300750.SZ": "宁德时代"}
     assert rows[0]["decision_id"] == "20260527-300750.SZ-buy-200"
-    assert "置信度：80%" in rows[0]["body"]
+    assert "标的：300750.SZ 宁德时代" in rows[0]["body"]
+    assert "操作：买入 200 股" in rows[0]["body"]
+    assert "状态：可执行" in rows[0]["body"]
+    assert "置信度" not in rows[0]["body"]
     assert "风险：无" in rows[0]["body"]
     assert datetime.fromisoformat(rows[0]["created_at"])
 

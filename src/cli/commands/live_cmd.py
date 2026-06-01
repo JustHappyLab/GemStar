@@ -26,6 +26,7 @@ from src.cli.output import console
 from src.live.decision_messages import notification_from_decision
 from src.live.loop import run_live_loop
 from src.live.signal_engine import build_live_decisions
+from src.live.symbols import symbol_names_from_file
 from src.notify.local_file import LocalFileNotificationSink
 from src.schemas.live import LiveAccountStateV1, MarketSnapshotV1, TargetHoldingV1
 
@@ -39,6 +40,11 @@ def live_once_cmd(
         "--notifications",
         help="Append-only notification JSONL path.",
     ),
+    stock_basic_path: str | None = typer.Option(
+        None,
+        "--stock-basic",
+        help="Optional JSON/CSV/Parquet stock_basic file with ts_code/name columns.",
+    ),
     strategy_name: str = typer.Option("live", "--strategy-name", help="Strategy name for decision metadata."),
 ) -> None:
     """Run one local live decision cycle."""
@@ -51,6 +57,7 @@ def live_once_cmd(
         MarketSnapshotV1.model_validate(item)
         for item in _read_json_list(Path(snapshots_path))
     ]
+    symbol_names = _load_symbol_names(stock_basic_path)
 
     decisions = build_live_decisions(
         account=account,
@@ -64,7 +71,7 @@ def live_once_cmd(
     for decision in decisions:
         if not decision.notify:
             continue
-        sink.send(notification_from_decision(decision))
+        sink.send(notification_from_decision(decision, symbol_names=symbol_names))
         notified += 1
 
     console.print(
@@ -81,6 +88,11 @@ def live_start_cmd(
         "alerts/live.jsonl",
         "--notifications",
         help="Append-only notification JSONL path.",
+    ),
+    stock_basic_path: str | None = typer.Option(
+        None,
+        "--stock-basic",
+        help="Optional JSON/CSV/Parquet stock_basic file with ts_code/name columns.",
     ),
     strategy_name: str = typer.Option("live", "--strategy-name", help="Strategy name for decision metadata."),
     active_interval: int = typer.Option(30, "--active-interval", help="Polling seconds during trading sessions."),
@@ -103,6 +115,7 @@ def live_start_cmd(
         old_int = signal.signal(signal.SIGINT, _handle_signal)
 
     sink = LocalFileNotificationSink(notifications_path)
+    symbol_names = _load_symbol_names(stock_basic_path)
     try:
         result = run_live_loop(
             account_loader=lambda: _load_account(Path(account_path)),
@@ -110,6 +123,7 @@ def live_start_cmd(
             snapshots_loader=lambda: _load_snapshots(Path(snapshots_path)),
             notify=sink.send,
             strategy_name=strategy_name,
+            symbol_names=symbol_names,
             stop_event=stop_event,
             active_interval=active_interval,
             idle_interval=idle_interval,
@@ -159,3 +173,9 @@ def _load_snapshots(path: Path) -> list[MarketSnapshotV1]:
         MarketSnapshotV1.model_validate(item)
         for item in _read_json_list(path)
     ]
+
+
+def _load_symbol_names(path: str | None) -> dict[str, str]:
+    if not path:
+        return {}
+    return symbol_names_from_file(Path(path))

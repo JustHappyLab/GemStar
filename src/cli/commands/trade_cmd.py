@@ -35,13 +35,13 @@ import yaml
 
 from src.cli.config import load_config
 from src.cli.output import console
-from src.live.decision_messages import notification_from_decision
 from src.live.ledger import append_paper_trade, read_paper_trades
 from src.live.loop import run_live_loop
 from src.live.signal_engine import build_live_decisions
 from src.live.snapshot import snapshots_from_daily_df
+from src.live.symbols import symbol_names_from_dataframe
 from src.notify.local_file import LocalFileNotificationSink
-from src.notify.message import NotificationMessageV1
+from src.notify.message import NotificationMessageV1, format_symbol_labels
 from src.notify.telegram import TelegramNotificationSink
 from src.schemas.live import (
     LiveAccountStateV1,
@@ -124,7 +124,7 @@ def trade_cmd(
             _wait_until_tomorrow(stop_event)
             continue
 
-        targets, strategies = _build_targets(config, run_id, ref_date, top_n, capital)
+        targets, strategies, symbol_names = _build_targets(config, run_id, ref_date, top_n, capital)
         if not targets:
             console.print(f"[yellow]运行 {run_id} 无可执行目标。[/yellow]")
             _emit(notifier, _alert(
@@ -138,6 +138,7 @@ def trade_cmd(
             continue
 
         symbols = sorted({t.ts_code for t in targets})
+        display_symbols = format_symbol_labels(symbols, symbol_names)
         console.print(
             f"[green]目标持仓就绪[/green] 策略={','.join(strategies)} "
             f"标的数={len(symbols)}"
@@ -145,10 +146,11 @@ def trade_cmd(
         _emit(notifier, _alert(
             "info",
             f"GemStar 交易目标已就绪 ({ref_date})",
-            "跟踪标的： " + ", ".join(symbols[:10])
+            "跟踪标的： " + ", ".join(display_symbols[:10])
             + (f" 等{len(symbols)}只" if len(symbols) > 10 else "")
             + f"\n策略：{'、'.join(strategies)}",
             symbols=symbols,
+            symbol_names=symbol_names,
         ))
 
         snapshot_loader = _make_snapshot_loader(config, symbols)
@@ -176,6 +178,7 @@ def trade_cmd(
             snapshots_loader=snapshot_loader,
             notify=_tracking_notify,
             strategy_name=strategies[0] if strategies else "trade",
+            symbol_names=symbol_names,
             stop_event=stop_event,
             active_interval=active_interval,
             idle_interval=idle_interval,
@@ -227,13 +230,25 @@ def _build_notifier(jsonl_path: str):
     return _notify
 
 
-def _alert(severity: str, title: str, body: str, symbols: list[str]) -> NotificationMessageV1:
+def _alert(
+    severity: str,
+    title: str,
+    body: str,
+    symbols: list[str],
+    symbol_names: dict[str, str] | None = None,
+) -> NotificationMessageV1:
+    symbol_set = set(symbols)
     return NotificationMessageV1(
         message_id=f"trade-{datetime.now().strftime('%Y%m%dT%H%M%S%f')}",
         severity=severity,
         title=title,
         body=body,
         symbols=symbols,
+        symbol_names={
+            code: name
+            for code, name in (symbol_names or {}).items()
+            if code in symbol_set
+        },
     )
 
 
@@ -310,17 +325,18 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
     leaderboard_path = artifacts_dir / "leaderboard.json"
     if not leaderboard_path.exists():
         console.print(f"[yellow]No leaderboard.json under {artifacts_dir}.[/yellow]")
-        return [], []
+        return [], [], {}
 
     entries = json.loads(leaderboard_path.read_text()).get("entries", [])
     accepted = [e for e in entries if e.get("sharpe", 0.0) > 0][:top_n]
     if not accepted:
-        return [], []
+        return [], [], {}
 
     daily_df, index_df, fina_df, stock_basic = _load_cached_market_data(config, ref_date)
+    symbol_names = symbol_names_from_dataframe(stock_basic)
     if daily_df is None or daily_df.empty:
         console.print("[yellow]No cached daily data available; cannot derive targets.[/yellow]")
-        return [], []
+        return [], [], symbol_names
 
     # Most recent trade_date present in cache
     last_trade_date = str(daily_df["trade_date"].max())
@@ -378,7 +394,7 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
             )
         else:
             merged[t.ts_code] = t
-    return list(merged.values()), used_strategies
+    return list(merged.values()), used_strategies, symbol_names
 
 
 def _find_strategy_yaml(strat_name: str, run_id: str, artifacts_dir: Path) -> Path | None:

@@ -19,6 +19,7 @@ def _message() -> NotificationMessageV1:
         decision_id="20260527-300750.SZ-buy-200",
         action="buy",
         symbols=["300750.SZ"],
+        symbol_names={"300750.SZ": "宁德时代"},
     )
 
 
@@ -28,7 +29,7 @@ def test_build_telegram_payload_contains_actionable_fields():
     assert payload["chat_id"] == "chat-1"
     assert payload["disable_web_page_preview"] is True
     assert "[警告] BUY 300750.SZ" in payload["text"]
-    assert "标的：300750.SZ" in payload["text"]
+    assert "标的：300750.SZ 宁德时代" in payload["text"]
     assert "决策ID：20260527-300750.SZ-buy-200" in payload["text"]
 
 
@@ -69,3 +70,4 @@ def test_telegram_sink_posts_json_with_injected_opener():
     assert captured["headers"]["Content-type"] == "application/json"
     assert captured["payload"]["chat_id"] == "chat-1"
     assert "[警告] BUY 300750.SZ" in captured["payload"]["text"]
+    assert "标的：300750.SZ 宁德时代" in captured["payload"]["text"]

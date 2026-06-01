@@ -81,7 +81,8 @@ def test_run_live_loop_uses_active_interval_during_trading_time():
     assert result.notifications == 1
     assert result.deduped == 1
     assert messages[0].title == "[买入] 300750.SZ"
-    assert "置信度：80%" in messages[0].body
+    assert "状态：可执行" in messages[0].body
+    assert "置信度" not in messages[0].body
     assert "风险：无" in messages[0].body
 
 
@@ -104,6 +105,24 @@ def test_run_live_loop_uses_idle_interval_outside_trading_time():
 
     assert sleeps == [600]
     assert result.cycles == 2
+
+
+def test_run_live_loop_formats_symbol_names_when_available():
+    messages = []
+
+    run_live_loop(
+        account_loader=_account,
+        targets_loader=_targets,
+        snapshots_loader=_snapshots,
+        notify=messages.append,
+        strategy_name="chinext_lstm_mf8",
+        symbol_names={"300750.SZ": "宁德时代"},
+        max_cycles=1,
+    )
+
+    assert messages[0].title == "[买入] 300750.SZ 宁德时代"
+    assert "标的：300750.SZ 宁德时代" in messages[0].body
+    assert messages[0].symbol_names == {"300750.SZ": "宁德时代"}
 
 
 def test_run_live_loop_respects_non_trading_day_flag():
