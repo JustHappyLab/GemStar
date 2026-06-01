@@ -1,5 +1,6 @@
 name: bugfix
 description: 紧急 bug 修复
 provider: claude_code
+timeout: 300
 skills:
   - fix_bug

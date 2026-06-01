@@ -1,5 +1,6 @@
 name: macro_analyst
 description: 市场宏观状态评估
 provider: claude_code
+timeout: 300
 skills:
   - analyze_market

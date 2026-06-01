@@ -1,5 +1,6 @@
 name: strategy_architect
 description: 策略构思与 YAML 草稿
 provider: claude_code
+timeout: 300
 skills:
   - draft_strategy

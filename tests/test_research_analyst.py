@@ -130,6 +130,21 @@ class TestGenerateTickets:
 
         assert result == []
 
+    def test_prompt_includes_factor_allow_list_and_event_ids(self, tmp_path: Path) -> None:
+        pool_path = _make_pool_json(tmp_path)
+        llm = FakeLLM("[]")
+
+        result = generate_tickets(
+            _make_regime(), _make_events(), None, pool_path, llm
+        )
+
+        assert result == []
+        prompt = llm.calls[0]["prompt"]
+        assert "可引用因子池" in prompt
+        assert "roe" in prompt
+        assert "momentum_20d" in prompt
+        assert "id=evt_001" in prompt
+
     def test_malformed_json_retries_then_raises(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
 

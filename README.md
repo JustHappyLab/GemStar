@@ -45,7 +45,7 @@ roles/*.yaml          skills/*/             src/llm/providers/
 │   claude_code       ├── sop.md            └── claude_code_provider.py
 ├── skills:           └── schema.json
 │   - analyze_market
-└── timeout: 120
+└── timeout: 300
 ```
 
 - **Role** — YAML 配置，定义使用哪个 provider、加载哪些 skill、执行超时时间
@@ -64,13 +64,13 @@ roles/*.yaml          skills/*/             src/llm/providers/
 
 | 角色 | Provider | Skills | Timeout |
 |------|----------|--------|---------|
-| macro_analyst | claude_code | analyze_market | 120s |
-| event_scanner | claude_code | scan_events | 120s |
-| research_analyst | claude_code | generate_tickets | 120s |
-| strategy_architect | claude_code | draft_strategy | 120s |
-| factor_miner | claude_code | discover_factors | 120s |
-| reviewer | claude_code | review_verdict | 120s |
-| engineer | claude_code | write_code, fix_bug | 600s |
+| macro_analyst | claude_code | analyze_market | 300s |
+| event_scanner | claude_code | scan_events | 300s |
+| research_analyst | claude_code | generate_tickets | 300s |
+| strategy_architect | claude_code | draft_strategy | 300s |
+| factor_miner | claude_code | discover_factors | 300s |
+| reviewer | claude_code | review_verdict | 300s |
+| engineer | claude_code | write_code, fix_bug | 300s |
 | bugfix | claude_code | fix_bug | 300s |
 
 #### Skill 目录

@@ -6,12 +6,13 @@ Uses subprocess mocks only; no real LLM invocations.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.providers.base import AgentProvider, AgentResult, BaseCliProvider
+from src.llm.providers.base import AgentProvider, AgentResult, AgentTimeoutError, BaseCliProvider
 from src.llm.providers.claude_code_provider import ClaudeCodeProvider
 
 
@@ -75,6 +76,22 @@ class TestClaudeCodeProvider:
 
         with pytest.raises(RuntimeError, match="claude_code exited 1"):
             provider.execute("test")
+
+    @patch("src.llm.providers.base.subprocess.run")
+    def test_execute_wraps_timeout_without_prompt_dump(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            cmd=["claude", "-p", "secret prompt"],
+            timeout=1,
+        )
+        provider = ClaudeCodeProvider(timeout=1)
+
+        with pytest.raises(AgentTimeoutError) as exc_info:
+            provider.execute("secret prompt")
+
+        message = str(exc_info.value)
+        assert "timed out after 1s" in message
+        assert "prompt_chars=" in message
+        assert "secret prompt" not in message
 
     @patch("src.llm.providers.base.subprocess.run")
     def test_execute_includes_system_in_prompt(self, mock_run: MagicMock) -> None:

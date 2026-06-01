@@ -53,6 +53,7 @@ from src.factors.monitor import analyze_factor_health
 from src.judge.rules import evaluate as evaluate_rules
 from src.orchestrator.benchmark import describe_benchmark_resolution
 from src.llm.adapter import RoleLLMAdapter
+from src.llm.providers.base import AgentTimeoutError
 from src.orchestrator.artifact_store import write_artifact
 from src.reviewer.analysis import review_verdict
 from src.schemas.review import ReviewNotesV1
@@ -87,6 +88,18 @@ def _empty_regime(reference_date: str) -> "MarketRegimeV1":
         key_drivers=[],
         style_bias="unknown",
     )
+
+
+def _log_generate_tickets_failure(exc: Exception, *, iteration: int | None = None) -> bool:
+    """Log a ticket-generation failure and return whether retrying is useful."""
+    prefix = "generate_tickets"
+    if iteration is not None:
+        prefix = f"{prefix} iteration {iteration}"
+    if isinstance(exc, AgentTimeoutError):
+        logger.warning("%s timed out; continuing with empty research tickets: %s", prefix, exc)
+        return False
+    logger.warning("%s failed", prefix, exc_info=True)
+    return False
 
 
 def run_daily_pipeline(
@@ -350,6 +363,7 @@ def run_daily_pipeline(
         regime = None
         events = []
         tickets = []
+        research_ticket_generation_available = False
 
         # --- LLM IDEATION (context gathering, once) ---
         # Each LLM call is independent — one failure shouldn't block the rest.
@@ -379,9 +393,10 @@ def run_daily_pipeline(
             try:
                 regime_context = regime or _empty_regime(reference_date)
                 tickets = generate_tickets(regime_context, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
+                research_ticket_generation_available = bool(tickets)
                 write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
-            except Exception:
-                logger.warning("generate_tickets failed", exc_info=True)
+            except Exception as exc:
+                research_ticket_generation_available = _log_generate_tickets_failure(exc)
 
             # strategy_architect is critical — without it the generation loop can't run.
             try:
@@ -408,7 +423,13 @@ def run_daily_pipeline(
         collected_candidates: list[tuple[Path, BacktestResultV1, VerdictV1]] = []
         can_backtest = signals is not None and rankings is not None
         can_auto_backtest = auto_build_strategy_inputs and index_df is not None and "trade_cal" in data
-        use_loop = llm_ready and strategy_llm is not None and gen_target_count > 0 and (can_backtest or can_auto_backtest)
+        use_loop = (
+            llm_ready
+            and strategy_llm is not None
+            and research_ticket_generation_available
+            and gen_target_count > 0
+            and (can_backtest or can_auto_backtest)
+        )
 
         # First pass: evaluate pre-existing strategies (no loop needed)
         for strat_path in strategies:
@@ -525,20 +546,29 @@ def run_daily_pipeline(
                         iter_tickets = ticket_queue
                         ticket_queue = []
                     else:
-                        iter_tickets = generate_tickets(
-                            regime,
-                            events,
-                            factor_health,
-                            pool_path,
-                            RoleLLMAdapter(_reg, "research_analyst"),
-                        )
-                        write_artifact(
-                            run_id,
-                            f"research_tickets_iter_{iteration}",
-                            [t.model_dump() for t in iter_tickets],
-                            base_dir=artifacts_dir,
-                            step_id="strategy_ideation",
-                        )
+                        try:
+                            iter_tickets = generate_tickets(
+                                regime,
+                                events,
+                                factor_health,
+                                pool_path,
+                                RoleLLMAdapter(_reg, "research_analyst"),
+                            )
+                            write_artifact(
+                                run_id,
+                                f"research_tickets_iter_{iteration}",
+                                [t.model_dump() for t in iter_tickets],
+                                base_dir=artifacts_dir,
+                                step_id="strategy_ideation",
+                            )
+                        except Exception as exc:
+                            research_ticket_generation_available = _log_generate_tickets_failure(
+                                exc,
+                                iteration=iteration,
+                            )
+                            iter_tickets = []
+                        if not research_ticket_generation_available or not iter_tickets:
+                            break
                     for ticket in iter_tickets:
                         if ticket.status != "draft":
                             continue

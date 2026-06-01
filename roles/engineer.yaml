@@ -1,6 +1,7 @@
 name: engineer
 description: 策略代码工程师
 provider: claude_code
+timeout: 300
 skills:
   - write_code
   - fix_bug

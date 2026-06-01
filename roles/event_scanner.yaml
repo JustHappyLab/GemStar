@@ -1,5 +1,6 @@
 name: event_scanner
 description: 市场事件扫描
 provider: claude_code
+timeout: 300
 skills:
   - scan_events

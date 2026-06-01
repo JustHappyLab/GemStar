@@ -19,6 +19,10 @@ from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 
 _SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "generate_tickets" / "prompt.txt").read_text(encoding="utf-8")
+_MAX_EVENTS = 5
+_MAX_EVENT_SUMMARY_CHARS = 180
+_MAX_HEALTH_ENTRIES = 12
+_MAX_FACTOR_NAMES = 40
 
 
 def generate_tickets(
@@ -40,44 +44,77 @@ def generate_tickets(
     Returns:
         Validated list of ResearchTicketV1 objects with known factors only.
     """
-    # 1. Build context text
+    # 1. Load factor pool first so the LLM sees a compact allow-list.
+    pool = FactorPoolV1.load(pool_path)
+    factor_names = [entry.name for entry in pool.all_entries()]
+
+    # 2. Build compact context text.
     regime_line = (
         f"市场状态: {regime.regime}, 置信度: {regime.confidence}, "
         f"风格偏好: {regime.style_bias}"
     )
     event_lines = "\n".join(
-        f"- [{e.event_type}] {e.summary}" for e in events
+        _event_line(e) for e in events[:_MAX_EVENTS]
     )
 
-    parts = [regime_line, "", "近期事件:", event_lines or "(无)"]
+    factor_line = ", ".join(factor_names[:_MAX_FACTOR_NAMES])
+    if len(factor_names) > _MAX_FACTOR_NAMES:
+        factor_line += f", ... ({len(factor_names)} total)"
+
+    parts = [
+        regime_line,
+        "",
+        "可引用因子池:",
+        factor_line or "(无)",
+        "",
+        "近期事件:",
+        event_lines or "(无)",
+    ]
 
     if factor_health is not None:
         health_lines = "\n".join(
-            f"- {entry.factor_name}: {entry.status} (IC_IR={entry.ic_ir})"
-            for entry in factor_health.entries
+            f"- {entry.factor_name}: {entry.status} "
+            f"(IC_IR={entry.ic_ir}, IC_mean={entry.ic_mean}, coverage={entry.coverage})"
+            for entry in factor_health.entries[:_MAX_HEALTH_ENTRIES]
         )
         parts.extend(["", "因子健康状态:", health_lines or "(无数据)"])
 
     user_prompt = "\n".join(parts)
 
-    # 2. Load system prompt
+    # 3. Load system prompt
     system_prompt = _SYSTEM_PROMPT
 
-    # 3. Call LLM
+    # 4. Call LLM
     raw = llm_client.generate(user_prompt, system=system_prompt)
 
-    # 4. Parse JSON response (strip markdown fences if present) and validate
+    # 5. Parse JSON response (strip markdown fences if present) and validate.
     text = raw.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("research_analyst returned invalid JSON") from exc
+    if not isinstance(data, list):
+        raise ValueError("research_analyst must return a JSON array")
     tickets = [ResearchTicketV1.model_validate(item) for item in data]
-
-    # 5. Load factor pool
-    pool = FactorPoolV1.load(pool_path)
 
     # 6. Filter out tickets referencing unregistered factors
     return [
         t for t in tickets
         if all(pool.is_registered(f) for f in t.affected_factors)
     ]
+
+
+def _event_line(event: SignalEventV1) -> str:
+    summary = _truncate(" ".join(event.summary.split()), _MAX_EVENT_SUMMARY_CHARS)
+    return (
+        f"- id={event.event_id}; type={event.event_type}; "
+        f"severity={event.severity}; summary={summary}"
+    )
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "..."

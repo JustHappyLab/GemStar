@@ -15,6 +15,7 @@ import pandas as pd
 import yaml
 
 from src.cli.config import EngineeringConfig
+from src.llm.providers.base import AgentTimeoutError
 from src.orchestrator.pipeline import run_daily_pipeline
 from src.schemas.engineering import EngineeringExecutionV1
 from tests.llm_fakes import FakeRoleRegistry
@@ -557,6 +558,81 @@ def test_pipeline_runs_strategy_ideation_with_llm():
         assert result["events"][0].event_id == "evt_001"
         assert len(result["tickets"]) == 1
         assert result["tickets"][0].ticket_id == "ticket_001"
+
+
+def test_pipeline_continues_when_research_analyst_times_out():
+    """Research ticket generation is best-effort and may degrade to no tickets."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        strategy_path = _make_strategy_yaml(tmpdir)
+        pool_path = _make_pool_json(tmpdir)
+        data = _make_synthetic_data()
+        dates = sorted(data["daily"]["trade_date"].unique().tolist())
+        codes = data["stock_basic"]["ts_code"].tolist()
+        signals, rankings = _make_signals_and_rankings(dates, codes)
+        benchmark_nav = _make_benchmark_nav(dates)
+        ic_df = _make_ic_df(dates)
+        index_df = _make_index_df()
+
+        regime_json = json.dumps({
+            "version": "MarketRegimeV1",
+            "as_of_date": "2022-03-01",
+            "regime": "bullish",
+            "confidence": 0.8,
+            "key_drivers": ["成交量放大"],
+            "style_bias": "成长",
+        })
+        events_json = json.dumps([{
+            "version": "SignalEventV1",
+            "event_date": "2022-03-01",
+            "event_id": "evt_001",
+            "event_type": "earnings_surprise",
+            "severity": "medium",
+            "summary": "某公司利润超预期",
+            "affected_sectors": [],
+            "affected_symbols": [],
+            "source_refs": [],
+            "confidence": 0.7,
+            "recommended_next_action": "检查持仓",
+        }])
+
+        class TimeoutResearchRegistry(FakeRoleRegistry):
+            def execute_role(self, name: str, context: dict | None = None):
+                if name == "research_analyst":
+                    self.calls.append({"role": name, "context": context})
+                    raise AgentTimeoutError("claude_code timed out after 120s")
+                return super().execute_role(name, context)
+
+        registry = TimeoutResearchRegistry({
+            "macro_analyst": regime_json,
+            "event_scanner": events_json,
+        })
+
+        result = run_daily_pipeline(
+            run_id="run_test_research_timeout",
+            data=data,
+            strategies=[strategy_path],
+            pool_path=pool_path,
+            reference_date="20220301",
+            benchmark_nav=benchmark_nav,
+            ic_df=ic_df,
+            signals=signals,
+            rankings=rankings,
+            index_df=index_df,
+            llm_available=True,
+            registry=registry,
+            db_path=str(Path(tmpdir) / "test.db"),
+            artifacts_dir=str(Path(tmpdir) / "artifacts"),
+            gen_target_count=1,
+            gen_max_iterations=3,
+            gen_cooldown_seconds=0,
+        )
+
+        assert result["run_status"] == "completed"
+        assert result["regime"] is not None
+        assert len(result["events"]) == 1
+        assert result["tickets"] == []
+        assert [call["role"] for call in registry.calls].count("research_analyst") == 1
+        assert "gen_iterations" not in result
 
 
 def test_pipeline_runs_reviewer_with_llm():

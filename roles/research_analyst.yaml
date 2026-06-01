@@ -1,5 +1,6 @@
 name: research_analyst
 description: 研究工单生成
 provider: claude_code
+timeout: 300
 skills:
   - generate_tickets

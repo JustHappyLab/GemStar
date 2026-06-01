@@ -19,6 +19,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+class AgentTimeoutError(TimeoutError):
+    """Raised when a CLI-backed agent exceeds its configured timeout."""
+
+
 @dataclass
 class AgentResult:
     """Unified result from any agent provider."""
@@ -64,12 +68,19 @@ class BaseCliProvider(AgentProvider):
         start = time.monotonic()
         logger.info("%s: executing task (%d chars)", self._provider_name, len(full_prompt))
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=self._timeout,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+            )
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - start
+            raise AgentTimeoutError(
+                f"{self._provider_name} timed out after {self._timeout}s "
+                f"(elapsed={elapsed:.1f}s, prompt_chars={len(full_prompt)})"
+            ) from None
         elapsed = time.monotonic() - start
 
         if result.returncode != 0:

@@ -1,5 +1,6 @@
 name: reviewer
 description: 回测结果解读与风险评估
 provider: claude_code
+timeout: 300
 skills:
   - review_verdict
