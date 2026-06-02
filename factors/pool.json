@@ -481,6 +481,23 @@
       "last_updated": "2026-06-03",
       "discovered_in_run": "20260603-230e23e1",
       "status": "candidate"
+    },
+    {
+      "name": "intraday_range_ratio_v1",
+      "source": "factor_miner",
+      "computation": "(high - low) / close",
+      "expression": "(high - low) / close",
+      "hypothesis": "Large intraday ranges can indicate instability and weaker next-day risk-adjusted returns.",
+      "ic_mean": -0.06060072383566207,
+      "ic_ir": -0.4161289401024877,
+      "ic_positive_rate": 0.3219086021505376,
+      "coverage": 1.0,
+      "direction": "negative",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-03",
+      "discovered_in_run": "20260603-c5ed30b3",
+      "status": "candidate"
     }
   ]
 }

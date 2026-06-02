@@ -71,9 +71,11 @@ def _telegram_text(message: NotificationMessageV1) -> str:
     symbols = ", ".join(symbol_labels) if symbol_labels else "无"
     lines = [
         f"[{label}] {message.title}",
+        f"时间：{message.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
         message.body,
-        f"标的：{symbols}",
     ]
+    if "标的：" not in message.body:
+        lines.append(f"标的：{symbols}")
     if message.decision_id:
         lines.append(f"决策ID：{message.decision_id}")
     return "\n".join(lines)

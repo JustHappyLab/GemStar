@@ -4,10 +4,13 @@ from datetime import datetime, timedelta
 import threading
 
 from src.live.loop import run_live_loop
+from src.live.decision_messages import notification_from_decision
 from src.schemas.live import (
     LiveAccountStateV1,
+    LiveDecisionV1,
     MarketSnapshotV1,
     TargetHoldingV1,
+    TradingIntentV1,
 )
 
 
@@ -81,9 +84,11 @@ def test_run_live_loop_uses_active_interval_during_trading_time():
     assert result.notifications == 1
     assert result.deduped == 1
     assert messages[0].title == "[买入] 300750.SZ"
-    assert "状态：可执行" in messages[0].body
+    assert "结论：建议买入 200 股（可执行）" in messages[0].body
+    assert "估算金额：20,100.00" in messages[0].body
     assert "置信度" not in messages[0].body
-    assert "风险：无" in messages[0].body
+    assert "风险/限制：无" in messages[0].body
+    assert "理由：目标股数高于当前持仓；策略原因：入选策略排名靠前" in messages[0].body
 
 
 def test_run_live_loop_uses_idle_interval_outside_trading_time():
@@ -123,6 +128,30 @@ def test_run_live_loop_formats_symbol_names_when_available():
     assert messages[0].title == "[买入] 300750.SZ 宁德时代"
     assert "标的：300750.SZ 宁德时代" in messages[0].body
     assert messages[0].symbol_names == {"300750.SZ": "宁德时代"}
+
+
+def test_notification_message_explains_blocked_limit_up() -> None:
+    decision = LiveDecisionV1(
+        decision_id="20260527-300750.SZ-blocked-200",
+        created_at=datetime(2026, 5, 27, 10, 0, 0),
+        strategy_name="chinext_lstm_mf8",
+        ts_code="300750.SZ",
+        severity="critical",
+        intent=TradingIntentV1(
+            action="blocked",
+            shares=0,
+            reference_price=120.0,
+            reason="buy blocked because the stock is limit-up",
+            risk_flags=["limit_up"],
+        ),
+    )
+
+    message = notification_from_decision(decision, symbol_names={"300750.SZ": "宁德时代"})
+
+    assert message.title == "[受限] 300750.SZ 宁德时代"
+    assert "结论：暂不执行（受限，不能下单）" in message.body
+    assert "理由：买入受限：标的涨停" in message.body
+    assert "风险/限制：涨停，无法追买" in message.body
 
 
 def test_run_live_loop_respects_non_trading_day_flag():

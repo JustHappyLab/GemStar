@@ -92,11 +92,13 @@ def test_live_once_writes_notification_jsonl(tmp_path):
     assert rows[0]["symbols"] == ["300750.SZ"]
     assert rows[0]["symbol_names"] == {"300750.SZ": "宁德时代"}
     assert rows[0]["decision_id"] == "20260527-300750.SZ-buy-200"
+    assert "结论：建议买入 200 股（可执行）" in rows[0]["body"]
     assert "标的：300750.SZ 宁德时代" in rows[0]["body"]
-    assert "操作：买入 200 股" in rows[0]["body"]
-    assert "状态：可执行" in rows[0]["body"]
+    assert "操作：建议买入 200 股" in rows[0]["body"]
+    assert "估算金额：20,100.00" in rows[0]["body"]
     assert "置信度" not in rows[0]["body"]
-    assert "风险：无" in rows[0]["body"]
+    assert "风险/限制：无" in rows[0]["body"]
+    assert "理由：目标股数高于当前持仓；策略原因：入选策略排名靠前" in rows[0]["body"]
     assert datetime.fromisoformat(rows[0]["created_at"])
 
 
