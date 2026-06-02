@@ -1,5 +1,0 @@
-{
-  "type": "array",
-  "items_schema_ref": "src.schemas.signal.SignalEventV1",
-  "format": "json"
-}

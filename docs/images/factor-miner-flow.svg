@@ -37,13 +37,13 @@
 
   <line x1="190" y1="120" x2="230" y2="120" stroke="#00e5ff" stroke-opacity="0.4" stroke-width="2" marker-end="url(#arr)"/>
 
-  <!-- Step 1: LLM Discovery -->
+  <!-- Step 1: Template Proposals -->
   <g transform="translate(230, 80)">
     <rect x="0" y="0" width="180" height="80" rx="10" fill="url(#amber-g)" stroke="#ffab00" stroke-opacity="0.3"/>
-    <text x="90" y="20" text-anchor="middle" fill="#ffab00" font-size="10" font-weight="600">1. discover_factors</text>
-    <text x="90" y="38" text-anchor="middle" fill="#e8e8ed" font-size="9">FactorMiner LLM</text>
-    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">Composes expressions over</text>
-    <text x="90" y="66" text-anchor="middle" fill="#55556a" font-size="7">raw fields using DSL ops</text>
+    <text x="90" y="20" text-anchor="middle" fill="#ffab00" font-size="10" font-weight="600">1. template proposals</text>
+    <text x="90" y="38" text-anchor="middle" fill="#e8e8ed" font-size="9">Local FactorMiner</text>
+    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">Builds validated DSL</text>
+    <text x="90" y="66" text-anchor="middle" fill="#55556a" font-size="7">expressions from raw fields</text>
   </g>
 
   <line x1="410" y1="120" x2="450" y2="120" stroke="#00e5ff" stroke-opacity="0.4" stroke-width="2" marker-end="url(#arr)"/>
@@ -53,7 +53,7 @@
     <rect x="0" y="0" width="180" height="80" rx="10" fill="url(#green-g)" stroke="#39ff14" stroke-opacity="0.3"/>
     <text x="90" y="20" text-anchor="middle" fill="#39ff14" font-size="10" font-weight="600">2. evaluate_proposals</text>
     <text x="90" y="38" text-anchor="middle" fill="#e8e8ed" font-size="9">IC/IR Validation</text>
-    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">IC IR ≥ 0.3</text>
+    <text x="90" y="54" text-anchor="middle" fill="#55556a" font-size="7">Directional IC IR gate</text>
     <text x="90" y="66" text-anchor="middle" fill="#55556a" font-size="7">Coverage ≥ 60%, Redundancy ≤ 0.85</text>
   </g>
 

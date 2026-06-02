@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "last_updated": "2026-06-02",
+  "last_updated": "2026-06-03",
   "active": [
     {
       "name": "roe",
@@ -446,6 +446,40 @@
       "universe": "a_share_core",
       "last_updated": "2026-06-02",
       "discovered_in_run": "20260602-348761ed",
+      "status": "candidate"
+    },
+    {
+      "name": "amplitude_reversal_5d_v1",
+      "source": "factor_miner",
+      "computation": "-cs_rank(ts_mean((high - low) / close, 5))",
+      "expression": "-cs_rank(ts_mean((high - low) / close, 5))",
+      "hypothesis": "Stocks with elevated recent intraday amplitude face uncertainty-driven selling pressure; cross-sectional ranking identifies the most extreme, which mean-revert the next day",
+      "ic_mean": 0.06218577205969893,
+      "ic_ir": 0.3680409292883157,
+      "ic_positive_rate": 0.660390047074647,
+      "coverage": 0.9992229063222305,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-03",
+      "discovered_in_run": "20260603-230e23e1",
+      "status": "candidate"
+    },
+    {
+      "name": "overnight_gap_reversal_v1",
+      "source": "factor_miner",
+      "computation": "-cs_rank((open - pre_close) / (pre_close + 0.01))",
+      "expression": "-cs_rank((open - pre_close) / (pre_close + 0.01))",
+      "hypothesis": "Large overnight gaps tend to partially reverse the following day as market makers fade the gap and mean-reversion traders step in",
+      "ic_mean": -0.021022144419372762,
+      "ic_ir": -0.2936962321860183,
+      "ic_positive_rate": 0.34408602150537637,
+      "coverage": 0.9999945837694527,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-03",
+      "discovered_in_run": "20260603-230e23e1",
       "status": "candidate"
     }
   ]

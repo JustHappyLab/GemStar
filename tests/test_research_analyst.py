@@ -1,4 +1,4 @@
-"""Tests for src.research.analyst with an offline LLMGenerate fake."""
+"""Tests for deterministic research ticket generation."""
 
 from __future__ import annotations
 
@@ -6,16 +6,11 @@ import json
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from src.research.analyst import generate_tickets
+from src.schemas.factor import FactorHealthEntry, FactorHealthReportV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 from tests.llm_fakes import FakeLLM
 
-
-# ---------------------------------------------------------------------------
-# Synthetic test data
-# ---------------------------------------------------------------------------
 
 def _make_regime() -> MarketRegimeV1:
     return MarketRegimeV1(
@@ -34,18 +29,44 @@ def _make_events() -> list[SignalEventV1]:
             event_id="evt_001",
             event_type="earnings_surprise",
             severity="medium",
-            summary="某公司利润超预期",
-        )
+            summary="300001.SZ netprofit_yoy is an earnings outlier.",
+            source_refs=["fina_indicator.netprofit_yoy"],
+            confidence=0.72,
+        ),
+        SignalEventV1(
+            event_date=date(2026, 5, 3),
+            event_id="evt_002",
+            event_type="sentiment_shift",
+            severity="high",
+            summary="300002.SZ trades above 3x prior 20-day volume.",
+            source_refs=["daily.vol"],
+            confidence=0.84,
+        ),
+        SignalEventV1(
+            event_date=date(2026, 5, 3),
+            event_id="evt_003",
+            event_type="factor_drift",
+            severity="high",
+            summary="300003.SZ shows abnormal 5-day momentum.",
+            source_refs=["daily.close"],
+            confidence=0.81,
+        ),
     ]
 
 
-def _make_pool_json(tmpdir: Path) -> Path:
+def _make_pool_json(tmpdir: Path, names: list[str] | None = None) -> Path:
+    names = names or [
+        "roe",
+        "momentum_20d",
+        "moneyflow_surge_v1",
+        "volume_price_corr_v1",
+    ]
     pool = {
         "version": 2,
         "last_updated": "2026-05-03",
         "active": [
-            {"name": "roe", "source": "fina_indicator", "status": "active"},
-            {"name": "momentum_20d", "source": "daily.close", "status": "active"},
+            {"name": name, "source": "test", "status": "active"}
+            for name in names
         ],
         "watchlist": [],
         "retired": [],
@@ -56,112 +77,80 @@ def _make_pool_json(tmpdir: Path) -> Path:
     return path
 
 
-def _valid_ticket_json() -> str:
-    return json.dumps([
-        {
-            "version": "ResearchTicketV1",
-            "ticket_id": "ticket_20260503_001",
-            "created_date": "2026-05-03",
-            "ticket_type": "factor_tweak",
-            "hypothesis": "将 momentum_20d 权重从 0.15 提升至 0.20",
-            "rationale": "当前牛市环境，动量因子IC持续走高",
-            "affected_factors": ["momentum_20d"],
-            "affected_sectors": ["成长"],
-            "confidence": 0.7,
-            "source_regime": "bullish",
-            "source_events": ["evt_001"],
-            "status": "draft",
-        }
-    ])
+def _make_factor_health() -> FactorHealthReportV1:
+    return FactorHealthReportV1(
+        run_id="run_001",
+        as_of_date=date(2026, 5, 3),
+        entries=[
+            FactorHealthEntry(
+                factor_name="momentum_20d",
+                ic_mean=-0.02,
+                ic_ir=-0.5,
+                coverage=0.95,
+                status="critical",
+            ),
+            FactorHealthEntry(
+                factor_name="roe",
+                ic_mean=0.01,
+                ic_ir=0.2,
+                coverage=0.9,
+                status="healthy",
+            ),
+        ],
+    )
 
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 class TestGenerateTickets:
-
-    def test_valid_tickets_returns_list(self, tmp_path: Path) -> None:
+    def test_generates_tickets_without_llm(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
-        regime = _make_regime()
-        events = _make_events()
+        llm = FakeLLM("not json")
 
-        llm = FakeLLM(_valid_ticket_json())
-        result = generate_tickets(regime, events, None, pool_path, llm)
+        result = generate_tickets(_make_regime(), _make_events(), None, pool_path, llm)
+
+        assert llm.calls == []
+        assert result
+        assert [ticket.ticket_id for ticket in result] == [
+            f"ticket_20260503_{index:03d}" for index in range(1, len(result) + 1)
+        ]
+
+    def test_event_types_map_to_ticket_types(self, tmp_path: Path) -> None:
+        pool_path = _make_pool_json(tmp_path)
+
+        result = generate_tickets(_make_regime(), _make_events(), None, pool_path, FakeLLM("ignored"))
+
+        ticket_types = {ticket.ticket_type for ticket in result}
+        assert "factor_tweak" in ticket_types
+        assert "new_strategy" in ticket_types
+        assert "weight_rebalance" in ticket_types
+
+    def test_only_registered_factors_are_referenced(self, tmp_path: Path) -> None:
+        pool_path = _make_pool_json(tmp_path, names=["momentum_20d"])
+
+        result = generate_tickets(_make_regime(), _make_events(), None, pool_path, FakeLLM("ignored"))
+
+        assert result
+        for ticket in result:
+            assert set(ticket.affected_factors) <= {"momentum_20d"}
+
+    def test_factor_health_creates_quarantine_ticket(self, tmp_path: Path) -> None:
+        pool_path = _make_pool_json(tmp_path)
+
+        result = generate_tickets(
+            _make_regime(),
+            [],
+            _make_factor_health(),
+            pool_path,
+            FakeLLM("ignored"),
+        )
 
         assert len(result) == 1
-        ticket = result[0]
-        assert ticket.ticket_id == "ticket_20260503_001"
-        assert ticket.ticket_type == "factor_tweak"
-        assert ticket.affected_factors == ["momentum_20d"]
-        assert ticket.status == "draft"
+        assert result[0].ticket_type == "factor_tweak"
+        assert result[0].affected_factors == ["momentum_20d"]
+        assert "critical" in result[0].rationale
 
-    def test_empty_response_returns_empty_list(self, tmp_path: Path) -> None:
+    def test_no_events_or_health_returns_empty_list(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
 
-        llm = FakeLLM("[]")
-        result = generate_tickets(
-            _make_regime(), _make_events(), None, pool_path, llm
-        )
+        result = generate_tickets(_make_regime(), [], None, pool_path, FakeLLM("ignored"))
 
         assert result == []
-
-    def test_trailing_llm_explanation_is_ignored(self, tmp_path: Path) -> None:
-        pool_path = _make_pool_json(tmp_path)
-
-        llm = FakeLLM(_valid_ticket_json() + "\n已根据上下文生成研究工单。")
-        result = generate_tickets(
-            _make_regime(), _make_events(), None, pool_path, llm
-        )
-
-        assert len(result) == 1
-        assert result[0].ticket_id == "ticket_20260503_001"
-
-    def test_unknown_factor_filtered_out(self, tmp_path: Path) -> None:
-        pool_path = _make_pool_json(tmp_path)
-
-        ticket_with_bad_factor = json.dumps([
-            {
-                "version": "ResearchTicketV1",
-                "ticket_id": "ticket_bad",
-                "created_date": "2026-05-03",
-                "ticket_type": "new_factor",
-                "hypothesis": "test",
-                "rationale": "test",
-                "affected_factors": ["nonexistent"],
-                "confidence": 0.5,
-                "status": "draft",
-            }
-        ])
-
-        llm = FakeLLM(ticket_with_bad_factor)
-        result = generate_tickets(
-            _make_regime(), _make_events(), None, pool_path, llm
-        )
-
-        assert result == []
-
-    def test_prompt_includes_factor_allow_list_and_event_ids(self, tmp_path: Path) -> None:
-        pool_path = _make_pool_json(tmp_path)
-        llm = FakeLLM("[]")
-
-        result = generate_tickets(
-            _make_regime(), _make_events(), None, pool_path, llm
-        )
-
-        assert result == []
-        prompt = llm.calls[0]["prompt"]
-        assert "可引用因子池" in prompt
-        assert "roe" in prompt
-        assert "momentum_20d" in prompt
-        assert "id=evt_001" in prompt
-
-    def test_malformed_json_retries_then_raises(self, tmp_path: Path) -> None:
-        pool_path = _make_pool_json(tmp_path)
-
-        llm = FakeLLM("not valid json")
-
-        with pytest.raises(ValueError):
-            generate_tickets(
-                _make_regime(), _make_events(), None, pool_path, llm
-            )

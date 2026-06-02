@@ -1,11 +1,13 @@
-"""Tests for FactorMiner — proposal parsing, evaluation, and registration."""
+"""Tests for FactorMiner — proposal generation, evaluation, and registration."""
 
 import numpy as np
 import pandas as pd
 
+from src.factors.engine import validate_expression
 from src.factors.miner import (
     FactorEvaluation,
     FactorProposal,
+    _directional_effective_ir,
     evaluate_proposals,
     mine_factors,
     register_accepted,
@@ -44,49 +46,67 @@ def _panel(n_dates: int = 120, n_stocks: int = 8, seed: int = 0) -> pd.DataFrame
     return df
 
 
-# -------------------- mine_factors (LLM parsing) --------------------
+# -------------------- mine_factors (deterministic templates) --------------------
 
 class _FakeLLM:
     def __init__(self, reply: str) -> None:
         self._reply = reply
+        self.calls: list[dict[str, str | None]] = []
 
     def generate(self, prompt: str, system: str | None = None) -> str:  # noqa: ARG002
+        self.calls.append({"prompt": prompt, "system": system})
         return self._reply
 
 
-def test_mine_factors_parses_clean_json():
+def test_mine_factors_generates_templates_without_llm():
     pool = FactorPoolV1()
-    reply = """[
-      {"name": "amp_v1", "expression": "(high - low) / close", "hypothesis": "amp proxy", "direction": "negative", "horizon": "1d"},
-      {"name": "turn_z_v1", "expression": "ts_zscore(turnover_rate, 20)", "hypothesis": "turnover surprise", "direction": "positive", "horizon": "1d"}
-    ]"""
-    proposals = mine_factors(pool, ["close", "high", "low", "turnover_rate"], _FakeLLM(reply))
-    assert {p.name for p in proposals} == {"amp_v1", "turn_z_v1"}
+    llm = _FakeLLM("not json")
+
+    proposals = mine_factors(pool, ["close", "high", "low", "turnover_rate"], llm)
+
+    assert llm.calls == []
+    assert {p.name for p in proposals} >= {
+        "intraday_range_ratio_v1",
+        "close_to_range_position_v1",
+        "realized_volatility_20d_v1",
+        "price_momentum_20d_v1",
+        "turnover_zscore_20d_v1",
+    }
 
 
-def test_mine_factors_strips_markdown_fence():
-    reply = "```json\n[{\"name\": \"x_v1\", \"expression\": \"close\", \"hypothesis\": \"h\", \"direction\": \"positive\", \"horizon\": \"1d\"}]\n```"
-    proposals = mine_factors(FactorPoolV1(), ["close"], _FakeLLM(reply))
-    assert len(proposals) == 1
+def test_mine_factors_produces_valid_expressions():
+    raw_fields = ["close", "open", "high", "low", "vol", "pb", "pe_ttm", "total_mv"]
+
+    proposals = mine_factors(FactorPoolV1(), raw_fields, _FakeLLM("ignored"))
+
+    assert proposals
+    for proposal in proposals:
+        validate_expression(proposal.expression, set(raw_fields))
 
 
 def test_mine_factors_drops_duplicates_of_existing():
-    pool = FactorPoolV1(active=[FactorRegistryEntryV1(name="momentum_20d", status="active")])
-    reply = '[{"name": "momentum_20d", "expression": "close", "hypothesis": "h", "direction": "positive", "horizon": "1d"}]'
-    proposals = mine_factors(pool, ["close"], _FakeLLM(reply))
+    pool = FactorPoolV1(active=[FactorRegistryEntryV1(name="intraday_range_ratio_v1", status="active")])
+
+    proposals = mine_factors(pool, ["close", "high", "low"], _FakeLLM("ignored"))
+
+    assert "intraday_range_ratio_v1" not in {p.name for p in proposals}
+
+
+def test_mine_factors_uses_available_volume_field():
+    proposals = mine_factors(
+        FactorPoolV1(),
+        ["close", "vol"],
+        _FakeLLM("ignored"),
+    )
+
+    assert "vol_zscore_20d_v1" in {p.name for p in proposals}
+    assert any("vol" in p.expression for p in proposals)
+
+
+def test_mine_factors_returns_empty_without_supported_fields():
+    proposals = mine_factors(FactorPoolV1(), ["unknown_field"], _FakeLLM("ignored"))
+
     assert proposals == []
-
-
-def test_mine_factors_handles_malformed_json():
-    reply = "not json at all"
-    proposals = mine_factors(FactorPoolV1(), ["close"], _FakeLLM(reply))
-    assert proposals == []
-
-
-def test_mine_factors_drops_invalid_schema():
-    reply = '[{"name": "ok_v1", "expression": "close", "hypothesis": "h", "direction": "positive", "horizon": "1d"}, {"name": "bad"}]'
-    proposals = mine_factors(FactorPoolV1(), ["close"], _FakeLLM(reply))
-    assert [p.name for p in proposals] == ["ok_v1"]
 
 
 # -------------------- evaluate_proposals --------------------
@@ -191,6 +211,14 @@ def test_evaluate_redundancy_gate():
     )
     assert evals[0].accepted is False
     assert "redundant" in evals[0].reason
+
+
+def test_directional_effective_ir_respects_declared_direction():
+    assert _directional_effective_ir(0.4, "positive") == 0.4
+    assert _directional_effective_ir(-0.4, "positive") == -0.4
+    assert _directional_effective_ir(-0.4, "negative") == 0.4
+    assert _directional_effective_ir(0.4, "negative") == -0.4
+    assert _directional_effective_ir(-0.4, "neutral") == 0.4
 
 
 # -------------------- register_accepted --------------------

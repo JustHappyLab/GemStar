@@ -87,7 +87,7 @@
   </g>
 
   <!-- ─── Role Layer (middle) ─── -->
-  <text x="60" y="230" fill="#00e5ff" font-size="12" font-weight="600">Roles (8)</text>
+  <text x="60" y="230" fill="#00e5ff" font-size="12" font-weight="600">Local Core + LLM Roles</text>
 
   <!-- Analysis roles -->
   <g transform="translate(40, 240)">
@@ -98,20 +98,20 @@
     <text x="72" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">claude_code</text>
 
     <rect x="144" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
-    <text x="204" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">event_scanner</text>
-    <text x="204" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">claude_code</text>
+    <text x="204" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">event_scanner.py</text>
+    <text x="204" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">local</text>
 
     <rect x="276" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
-    <text x="336" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">research_analyst</text>
-    <text x="336" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">claude_code</text>
+    <text x="336" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">research/analyst</text>
+    <text x="336" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">local</text>
 
     <rect x="408" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
     <text x="468" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">strategy_architect</text>
     <text x="468" y="44" text-anchor="middle" fill="#00e5ff" font-size="7">claude_code</text>
 
     <rect x="540" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
-    <text x="600" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">factor_miner</text>
-    <text x="600" y="44" text-anchor="middle" fill="#39ff14" font-size="7">claude_code</text>
+    <text x="600" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">factors/miner</text>
+    <text x="600" y="44" text-anchor="middle" fill="#39ff14" font-size="7">local</text>
 
     <rect x="672" y="10" width="120" height="48" rx="8" fill="#111119" stroke="#00e5ff" stroke-opacity="0.3"/>
     <text x="732" y="30" text-anchor="middle" fill="#e8e8ed" font-size="9" font-weight="600">reviewer</text>
@@ -136,7 +136,7 @@
   </g>
 
   <!-- ─── Skills Layer ─── -->
-  <text x="60" y="428" fill="#39ff14" font-size="12" font-weight="600">Skills (8)</text>
+  <text x="60" y="428" fill="#39ff14" font-size="12" font-weight="600">LLM Skills + Local Outputs</text>
 
   <g transform="translate(40, 438)">
     <rect x="0" y="0" width="860" height="50" rx="10" fill="url(#green-grad)" stroke="#1e1e2e"/>
@@ -145,16 +145,16 @@
     <text x="59" y="28" text-anchor="middle" fill="#8888a0" font-size="7">analyze_market</text>
 
     <rect x="117" y="10" width="85" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
-    <text x="159" y="28" text-anchor="middle" fill="#8888a0" font-size="7">scan_events</text>
+    <text x="159" y="28" text-anchor="middle" fill="#8888a0" font-size="7">SignalEventV1</text>
 
     <rect x="212" y="10" width="110" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
-    <text x="267" y="28" text-anchor="middle" fill="#8888a0" font-size="7">generate_tickets</text>
+    <text x="267" y="28" text-anchor="middle" fill="#8888a0" font-size="7">ResearchTicketV1</text>
 
     <rect x="332" y="10" width="100" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
     <text x="382" y="28" text-anchor="middle" fill="#8888a0" font-size="7">draft_strategy</text>
 
     <rect x="442" y="10" width="105" height="28" rx="6" fill="#111119" stroke="#39ff14" stroke-opacity="0.3"/>
-    <text x="494" y="28" text-anchor="middle" fill="#39ff14" font-size="7">discover_factors</text>
+    <text x="494" y="28" text-anchor="middle" fill="#39ff14" font-size="7">FactorProposal</text>
 
     <rect x="557" y="10" width="95" height="28" rx="6" fill="#111119" stroke="#1e1e2e"/>
     <text x="604" y="28" text-anchor="middle" fill="#8888a0" font-size="7">review_verdict</text>

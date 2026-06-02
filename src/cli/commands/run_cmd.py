@@ -15,12 +15,11 @@ from src.cli.output import console, emit
 
 _LLM_RUN_ROLES = (
     "macro_analyst",
-    "event_scanner",
-    "research_analyst",
     "strategy_architect",
     "reviewer",
 )
 _ENGINEERING_ROLES = ("engineer", "bugfix")
+_DEPRECATED_ROLE_OVERRIDES = {"event_scanner", "research_analyst", "factor_miner"}
 
 
 def run_cmd(
@@ -158,7 +157,11 @@ def _today_str() -> str:
 
 def _role_overrides(config) -> dict[str, dict] | None:
     """Build role provider overrides for run-time LLM stages."""
-    overrides = {k: v.model_dump(exclude_none=True) for k, v in config.roles.items()}
+    overrides = {
+        k: v.model_dump(exclude_none=True)
+        for k, v in config.roles.items()
+        if k not in _DEPRECATED_ROLE_OVERRIDES
+    }
     default_provider = (config.llm.provider or "").strip()
     if default_provider:
         for role_name in _LLM_RUN_ROLES:

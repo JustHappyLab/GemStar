@@ -126,10 +126,11 @@ def test_role_overrides_apply_global_llm_provider():
     overrides = _role_overrides(config)
 
     assert overrides["macro_analyst"]["provider"] == "claude_code"
-    assert overrides["event_scanner"]["provider"] == "claude_code"
-    assert overrides["research_analyst"]["provider"] == "claude_code"
     assert overrides["strategy_architect"]["provider"] == "claude_code"
     assert overrides["reviewer"]["provider"] == "claude_code"
+    assert "event_scanner" not in overrides
+    assert "research_analyst" not in overrides
+    assert "factor_miner" not in overrides
 
 
 def test_role_overrides_keep_explicit_role_model():
@@ -144,6 +145,24 @@ def test_role_overrides_keep_explicit_role_model():
     assert overrides["macro_analyst"]["provider"] == "claude_code"
     assert overrides["reviewer"]["provider"] == "claude_code"
     assert overrides["reviewer"]["model"] == "opus"
+
+
+def test_role_overrides_drop_deprecated_local_roles():
+    """Old role overrides for local deterministic stages are ignored."""
+    config = GemStarConfig(
+        llm=LLMConfig(provider="claude_code"),
+        roles={
+            "event_scanner": RoleOverride(provider="claude_code", model="opus"),
+            "research_analyst": RoleOverride(provider="claude_code", model="opus"),
+            "factor_miner": RoleOverride(provider="claude_code", model="opus"),
+        },
+    )
+
+    overrides = _role_overrides(config)
+
+    assert "event_scanner" not in overrides
+    assert "research_analyst" not in overrides
+    assert "factor_miner" not in overrides
 
 
 def test_role_overrides_apply_engineering_provider_when_enabled():

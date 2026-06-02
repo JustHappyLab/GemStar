@@ -61,7 +61,13 @@ class ClaudeCodeProvider(BaseCliProvider):
         except json.JSONDecodeError:
             text = stdout
         if json_schema_unwrap_key is not None:
-            text = _unwrap_structured_output(text, json_schema_unwrap_key)
+            unwrapped = _unwrap_structured_output(text, json_schema_unwrap_key)
+            if unwrapped is text:
+                raise RuntimeError(
+                    "claude_code did not return structured_output for schema "
+                    f"key '{json_schema_unwrap_key}': {_snippet(text)}"
+                )
+            text = unwrapped
         if not isinstance(text, str):
             text = json.dumps(text, ensure_ascii=False)
         # Strip markdown code fences the model may have added
@@ -72,11 +78,27 @@ class ClaudeCodeProvider(BaseCliProvider):
 def _unwrap_structured_output(text: object, key: str) -> object:
     if isinstance(text, str):
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(_strip_json_fence(text))
         except json.JSONDecodeError:
             return text
     else:
         parsed = text
+    if isinstance(parsed, list):
+        return parsed
     if isinstance(parsed, dict) and key in parsed:
         return parsed[key]
     return text
+
+
+def _snippet(value: object, max_chars: int = 500) -> str:
+    if not isinstance(value, str):
+        value = json.dumps(value, ensure_ascii=False)
+    compact = " ".join(value.strip().split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3] + "..."
+
+
+def _strip_json_fence(text: str) -> str:
+    s = text.strip()
+    return re.sub(r"^```(?:json)?\s*", "", re.sub(r"\s*```$", "", s))

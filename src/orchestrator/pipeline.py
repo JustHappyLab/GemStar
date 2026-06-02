@@ -79,6 +79,11 @@ from src.strategies.validator import validate_strategy
 logger = logging.getLogger(__name__)
 
 
+class _UnusedLLM:
+    def generate(self, prompt: str, system: str | None = None) -> str:
+        raise RuntimeError("This LLM adapter is intentionally unused")
+
+
 def _empty_regime(reference_date: str) -> "MarketRegimeV1":
     from src.schemas.signal import MarketRegimeV1
     return MarketRegimeV1(
@@ -148,11 +153,11 @@ def run_daily_pipeline(
     rankings : dict, optional
         trade_date → ranked stock codes mapping.  If None, backtesting is skipped.
     index_df : pd.DataFrame, optional
-        ChiNext index daily data for MacroAnalyst.  If None, LLM ideation is skipped.
+        ChiNext index daily data for MacroAnalyst. If None, LLM strategy ideation is skipped.
     llm_available : bool
-        If True, run LLM-based strategy ideation (MacroAnalyst, EventScanner,
-        ResearchAnalyst, StrategyArchitect). Requires a configured RoleRegistry
-        or a logged-in Claude Code CLI for the default registry.
+        If True, run MacroAnalyst, StrategyArchitect, and Reviewer LLM stages.
+        Event scanning, ticket generation, and factor proposal generation are local.
+        Requires a configured RoleRegistry or a logged-in Claude Code CLI for the default registry.
     registry : RoleRegistry, optional
         Role registry for provider dispatch.  If None and llm_available=True,
         a default registry is created.
@@ -290,18 +295,15 @@ def run_daily_pipeline(
         )
         mining_ready = (
             llm_available
-            and _reg is not None
             and gen_target_count > 0
             and not daily_df_for_mining.empty
-            and "factor_miner" in (_reg.list_roles() if hasattr(_reg, "list_roles") else [])
         )
         if mining_ready:
             try:
                 from src.factors.miner import evaluate_proposals, mine_factors, register_accepted
 
-                miner_llm = RoleLLMAdapter(_reg, "factor_miner")
                 raw_fields = {c for c in daily_df_for_mining.columns if c not in {"ts_code", "trade_date"}}
-                proposals = mine_factors(current_pool, sorted(raw_fields), miner_llm)
+                proposals = mine_factors(current_pool, sorted(raw_fields), _UnusedLLM())
                 logger.info("FactorMiner proposed %d factors", len(proposals))
 
                 if proposals:
@@ -384,7 +386,7 @@ def run_daily_pipeline(
                 logger.warning("macro_analyst failed", exc_info=True)
 
             try:
-                events = scan_events(data, reference_date, RoleLLMAdapter(_reg, "event_scanner"))
+                events = scan_events(data, reference_date, _UnusedLLM())
                 write_artifact(run_id, "event_signals", [e.model_dump() for e in events], base_dir=artifacts_dir, step_id="strategy_ideation")
             except Exception:
                 logger.warning("event_scanner failed", exc_info=True)
@@ -392,7 +394,7 @@ def run_daily_pipeline(
             # Best-effort: strategy loop can work without pre-generated tickets.
             try:
                 regime_context = regime or _empty_regime(reference_date)
-                tickets = generate_tickets(regime_context, events, factor_health, pool_path, RoleLLMAdapter(_reg, "research_analyst"))
+                tickets = generate_tickets(regime_context, events, factor_health, pool_path, _UnusedLLM())
                 research_ticket_generation_available = bool(tickets)
                 write_artifact(run_id, "research_tickets", [t.model_dump() for t in tickets], base_dir=artifacts_dir, step_id="strategy_ideation")
             except Exception as exc:
@@ -538,10 +540,9 @@ def run_daily_pipeline(
                 logger.info("Strategy generation iteration %d/%d (candidates: %d/%d)",
                             iteration, gen_max_iterations, len(collected_candidates), gen_target_count)
                 try:
-                    # Consume the context-gathering tickets first; only ask
-                    # ResearchAnalyst for more ideas after the initial queue is
-                    # exhausted. This keeps strategy generation reproducible
-                    # and prevents duplicate ticket calls in the first loop.
+                    # Consume the context-gathering tickets first; generate
+                    # another local batch only after the initial queue is
+                    # exhausted. This keeps the first loop reproducible.
                     if ticket_queue:
                         iter_tickets = ticket_queue
                         ticket_queue = []
@@ -552,7 +553,7 @@ def run_daily_pipeline(
                                 events,
                                 factor_health,
                                 pool_path,
-                                RoleLLMAdapter(_reg, "research_analyst"),
+                                _UnusedLLM(),
                             )
                             write_artifact(
                                 run_id,

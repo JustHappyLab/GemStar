@@ -6,7 +6,7 @@ CALLING SPEC:
         raw_fields: list[str],
         llm_client: LLMGenerate,
     ) -> list[FactorProposal]
-        Asks the LLM for candidate factor expressions.
+        Builds candidate factor expressions from deterministic templates.
 
     result = evaluate_proposals(
         proposals: list[FactorProposal],
@@ -28,24 +28,21 @@ CALLING SPEC:
         Returns updated pool with accepted factors moved into ``candidates``.
 
 SIDE EFFECTS:
-    mine_factors makes one HTTP request to the LLM provider.
-    evaluate_proposals and register_accepted are pure.
+    None. The llm_client argument is kept for pipeline compatibility.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from src.factors.engine import compute_factor_expression, validate_expression
 from src.llm.adapter import LLMGenerate
-from src.llm.json_utils import loads_llm_json, response_snippet
 from src.ranker.ic import compute_daily_rank_ic
 from src.schemas.factor import FactorPoolV1, FactorRegistryEntryV1
 
@@ -54,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class FactorProposal(BaseModel):
-    """Raw factor proposal from the LLM, post-validation."""
+    """Raw factor proposal after template generation and validation."""
 
     name: str
     expression: str
@@ -79,26 +76,120 @@ class FactorEvaluation:
 
 
 # ---------------------------------------------------------------------------
-# 1. mine_factors — call the LLM
+# 1. mine_factors — build deterministic proposals
 # ---------------------------------------------------------------------------
 
-def _build_user_prompt(
-    existing_pool: FactorPoolV1,
-    raw_fields: list[str],
-) -> str:
-    active_lines = "\n".join(
-        f"- {e.name}: {e.computation or e.expression}"
-        for e in existing_pool.active
-    ) or "(none)"
-    fields_block = ", ".join(sorted(raw_fields))
+@dataclass(frozen=True)
+class _ProposalTemplate:
+    name: str
+    expression: str
+    hypothesis: str
+    required_fields: frozenset[str]
+    direction: str = "positive"
+    horizon: str = "1d"
 
-    return (
-        f"## Available raw fields\n{fields_block}\n\n"
-        f"## Existing active factors (do NOT duplicate)\n{active_lines}\n\n"
-        f"Propose 3-6 NEW factor expressions covering different aspects "
-        f"(volatility, liquidity/microstructure, valuation, size, "
-        f"interaction terms). Output JSON array only."
-    )
+
+def _templates_for_fields(raw_fields: set[str]) -> list[_ProposalTemplate]:
+    volume_field = _first_present(raw_fields, ("vol", "volume"))
+    templates = [
+        _ProposalTemplate(
+            name="intraday_range_ratio_v1",
+            expression="(high - low) / close",
+            hypothesis="Large intraday ranges can indicate instability and weaker next-day risk-adjusted returns.",
+            required_fields=frozenset({"high", "low", "close"}),
+            direction="negative",
+        ),
+        _ProposalTemplate(
+            name="close_to_range_position_v1",
+            expression="(close - low) / (high - low)",
+            hypothesis="Closing near the high of the daily range may capture short-term demand pressure.",
+            required_fields=frozenset({"close", "high", "low"}),
+            direction="positive",
+        ),
+        _ProposalTemplate(
+            name="gap_reversal_v1",
+            expression="(open - ts_delay(close, 1)) / ts_delay(close, 1)",
+            hypothesis="Large opening gaps can mean-revert when liquidity is thin or news is over-discounted.",
+            required_fields=frozenset({"open", "close"}),
+            direction="negative",
+        ),
+        _ProposalTemplate(
+            name="realized_volatility_20d_v1",
+            expression="ts_std(ts_pct_change(close, 1), 20)",
+            hypothesis="Recent realized volatility proxies risk and can separate stable trends from noisy moves.",
+            required_fields=frozenset({"close"}),
+            direction="negative",
+        ),
+        _ProposalTemplate(
+            name="price_momentum_20d_v1",
+            expression="ts_pct_change(close, 20)",
+            hypothesis="Twenty-day price momentum captures persistent trend strength.",
+            required_fields=frozenset({"close"}),
+            direction="positive",
+        ),
+        _ProposalTemplate(
+            name="pb_inverse_value_v1",
+            expression="1 / pb",
+            hypothesis="Lower price-to-book valuation can identify value support in broad cross-sections.",
+            required_fields=frozenset({"pb"}),
+            direction="positive",
+        ),
+        _ProposalTemplate(
+            name="pe_inverse_value_v1",
+            expression="1 / pe_ttm",
+            hypothesis="Lower trailing earnings valuation can identify stocks with valuation support.",
+            required_fields=frozenset({"pe_ttm"}),
+            direction="positive",
+        ),
+        _ProposalTemplate(
+            name="log_size_v1",
+            expression="log(total_mv)",
+            hypothesis="Market-cap scale helps test size effects and liquidity preference by regime.",
+            required_fields=frozenset({"total_mv"}),
+            direction="neutral",
+        ),
+        _ProposalTemplate(
+            name="turnover_zscore_20d_v1",
+            expression="ts_zscore(turnover_rate, 20)",
+            hypothesis="Turnover surprise can capture changes in attention and participation.",
+            required_fields=frozenset({"turnover_rate"}),
+            direction="positive",
+        ),
+    ]
+    if volume_field is not None:
+        templates.extend(
+            [
+                _ProposalTemplate(
+                    name=f"{volume_field}_zscore_20d_v1",
+                    expression=f"ts_zscore({volume_field}, 20)",
+                    hypothesis="Volume surprise can capture abrupt attention and liquidity shocks.",
+                    required_fields=frozenset({volume_field}),
+                    direction="positive",
+                ),
+                _ProposalTemplate(
+                    name=f"price_{volume_field}_corr_20d_v1",
+                    expression=f"ts_corr(ts_pct_change(close, 1), ts_pct_change({volume_field}, 1), 20)",
+                    hypothesis="Price-volume correlation can distinguish confirmed demand from noisy trading.",
+                    required_fields=frozenset({"close", volume_field}),
+                    direction="positive",
+                ),
+                _ProposalTemplate(
+                    name=f"liquidity_momentum_{volume_field}_v1",
+                    expression=f"ts_pct_change(close, 20) * ts_zscore({volume_field}, 20)",
+                    hypothesis="Momentum confirmed by volume surprise can identify crowded but persistent moves.",
+                    required_fields=frozenset({"close", volume_field}),
+                    direction="positive",
+                ),
+            ]
+        )
+    return templates
+
+
+def _first_present(raw_fields: set[str], candidates: tuple[str, ...]) -> str | None:
+    for candidate in candidates:
+        if candidate in raw_fields:
+            return candidate
+    return None
 
 
 def mine_factors(
@@ -106,41 +197,31 @@ def mine_factors(
     raw_fields: list[str],
     llm_client: LLMGenerate,
 ) -> list[FactorProposal]:
-    """Ask the LLM for candidate factor expressions."""
-    from pathlib import Path
-
-    system_prompt = (
-        Path(__file__).resolve().parent.parent.parent
-        / "skills"
-        / "discover_factors"
-        / "prompt.txt"
-    ).read_text(encoding="utf-8")
-
-    user_prompt = _build_user_prompt(existing_pool, raw_fields)
-    raw = llm_client.generate(user_prompt, system=system_prompt)
-
-    try:
-        data = loads_llm_json(raw)
-    except json.JSONDecodeError as exc:
-        logger.warning("FactorMiner returned non-JSON: %s; raw=%s", exc, response_snippet(raw))
-        return []
-
-    if not isinstance(data, list):
-        logger.warning("FactorMiner expected a JSON array, got %s", type(data).__name__)
-        return []
-
+    """Build candidate factor expressions from the available raw fields."""
+    _ = llm_client
+    allowed_fields = set(raw_fields)
     proposals: list[FactorProposal] = []
-    seen_names: set[str] = set()
-    for item in data:
+    for template in _templates_for_fields(allowed_fields):
+        if template.name in {p.name for p in proposals} or existing_pool.is_registered(template.name):
+            continue
+        if not template.required_fields.issubset(allowed_fields):
+            continue
         try:
-            p = FactorProposal.model_validate(item)
-        except ValidationError as exc:
-            logger.info("Dropping invalid proposal: %s", exc)
+            validate_expression(template.expression, allowed_fields)
+        except ValueError as exc:
+            logger.info("Dropping template %s: %s", template.name, exc)
             continue
-        if p.name in seen_names or existing_pool.is_registered(p.name):
-            continue
-        seen_names.add(p.name)
-        proposals.append(p)
+        proposals.append(
+            FactorProposal(
+                name=template.name,
+                expression=template.expression,
+                hypothesis=template.hypothesis,
+                direction=template.direction,
+                horizon=template.horizon,
+            )
+        )
+        if len(proposals) >= 6:
+            break
     return proposals
 
 
@@ -273,8 +354,7 @@ def evaluate_proposals(
         else:
             ic_mean = ic_ir = ic_positive_rate = None
 
-        # Honor declared direction: a "negative" factor with IC_IR=-0.4 is just as good.
-        effective_ir = abs(ic_ir) if ic_ir is not None else None
+        effective_ir = _directional_effective_ir(ic_ir, p.direction)
 
         # Redundancy vs existing factors
         max_redund, redund_name = _max_abs_correlation(series, existing_factor_df)
@@ -285,7 +365,7 @@ def evaluate_proposals(
         if effective_ir is None:
             reasons.append("IC_IR not computable")
         elif effective_ir < min_ic_ir:
-            reasons.append(f"|IC_IR| {effective_ir:.2f} < {min_ic_ir}")
+            reasons.append(f"directional IC_IR {effective_ir:.2f} < {min_ic_ir}")
         if max_redund > max_redundancy:
             reasons.append(f"redundant (rho={max_redund:.2f} with {redund_name})")
 
@@ -302,6 +382,16 @@ def evaluate_proposals(
             redundant_with=redund_name,
         ))
     return evaluations
+
+
+def _directional_effective_ir(ic_ir: float | None, direction: str) -> float | None:
+    if ic_ir is None:
+        return None
+    if direction == "negative":
+        return -ic_ir
+    if direction == "neutral":
+        return abs(ic_ir)
+    return ic_ir
 
 
 # ---------------------------------------------------------------------------

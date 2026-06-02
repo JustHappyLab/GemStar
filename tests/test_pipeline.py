@@ -15,7 +15,6 @@ import pandas as pd
 import yaml
 
 from src.cli.config import EngineeringConfig
-from src.llm.providers.base import AgentTimeoutError
 from src.orchestrator.pipeline import run_daily_pipeline
 from src.schemas.engineering import EngineeringExecutionV1
 from tests.llm_fakes import FakeRoleRegistry
@@ -479,12 +478,21 @@ def _make_index_df() -> pd.DataFrame:
     })
 
 
+def _add_volume_event(data: dict[str, pd.DataFrame]) -> None:
+    """Mutate synthetic data so deterministic EventScanner emits one event."""
+    latest_date = data["daily"]["trade_date"].max()
+    first_code = data["stock_basic"]["ts_code"].iloc[0]
+    mask = (data["daily"]["trade_date"] == latest_date) & (data["daily"]["ts_code"] == first_code)
+    data["daily"].loc[mask, "vol"] = 6_000_000.0
+
+
 def test_pipeline_runs_strategy_ideation_with_llm():
     """Pipeline runs LLM ideation when llm_available=True and index_df is provided."""
     with tempfile.TemporaryDirectory() as tmpdir:
         strategy_path = _make_strategy_yaml(tmpdir)
         pool_path = _make_pool_json(tmpdir)
         data = _make_synthetic_data()
+        _add_volume_event(data)
         dates = sorted(data["daily"]["trade_date"].unique().tolist())
         codes = data["stock_basic"]["ts_code"].tolist()
         signals, rankings = _make_signals_and_rankings(dates, codes)
@@ -500,38 +508,8 @@ def test_pipeline_runs_strategy_ideation_with_llm():
             "key_drivers": ["成交量放大"],
             "style_bias": "成长",
         })
-        events_json = json.dumps([{
-            "version": "SignalEventV1",
-            "event_date": "2022-03-01",
-            "event_id": "evt_001",
-            "event_type": "earnings_surprise",
-            "severity": "medium",
-            "summary": "某公司利润超预期",
-            "affected_sectors": [],
-            "affected_symbols": [],
-            "source_refs": [],
-            "confidence": 0.7,
-            "recommended_next_action": "检查持仓",
-        }])
-        tickets_json = json.dumps([{
-            "version": "ResearchTicketV1",
-            "ticket_id": "ticket_001",
-            "created_date": "2022-03-01",
-            "ticket_type": "weight_rebalance",
-            "hypothesis": "提升动量因子权重",
-            "rationale": "牛市环境",
-            "affected_factors": ["momentum_20d"],
-            "affected_sectors": [],
-            "confidence": 0.7,
-            "source_regime": "bullish",
-            "source_events": ["evt_001"],
-            "status": "draft",
-        }])
-
         registry = FakeRoleRegistry({
             "macro_analyst": regime_json,
-            "event_scanner": events_json,
-            "research_analyst": tickets_json,
         })
 
         result = run_daily_pipeline(
@@ -554,18 +532,22 @@ def test_pipeline_runs_strategy_ideation_with_llm():
         assert result["run_status"] == "completed"
         assert result["regime"] is not None
         assert result["regime"].regime == "bullish"
-        assert len(result["events"]) == 1
-        assert result["events"][0].event_id == "evt_001"
-        assert len(result["tickets"]) == 1
-        assert result["tickets"][0].ticket_id == "ticket_001"
+        assert len(result["events"]) >= 1
+        assert result["events"][0].event_id == "evt_20220301_001"
+        assert result["events"][0].event_type == "sentiment_shift"
+        assert len(result["tickets"]) >= 1
+        assert result["tickets"][0].ticket_id == "ticket_20220301_001"
+        assert "event_scanner" not in [call["role"] for call in registry.calls]
+        assert "research_analyst" not in [call["role"] for call in registry.calls]
 
 
-def test_pipeline_continues_when_research_analyst_times_out():
-    """Research ticket generation is best-effort and may degrade to no tickets."""
+def test_pipeline_generates_research_tickets_without_research_role():
+    """Research ticket generation is local and does not call the research role."""
     with tempfile.TemporaryDirectory() as tmpdir:
         strategy_path = _make_strategy_yaml(tmpdir)
         pool_path = _make_pool_json(tmpdir)
         data = _make_synthetic_data()
+        _add_volume_event(data)
         dates = sorted(data["daily"]["trade_date"].unique().tolist())
         codes = data["stock_basic"]["ts_code"].tolist()
         signals, rankings = _make_signals_and_rankings(dates, codes)
@@ -581,30 +563,9 @@ def test_pipeline_continues_when_research_analyst_times_out():
             "key_drivers": ["成交量放大"],
             "style_bias": "成长",
         })
-        events_json = json.dumps([{
-            "version": "SignalEventV1",
-            "event_date": "2022-03-01",
-            "event_id": "evt_001",
-            "event_type": "earnings_surprise",
-            "severity": "medium",
-            "summary": "某公司利润超预期",
-            "affected_sectors": [],
-            "affected_symbols": [],
-            "source_refs": [],
-            "confidence": 0.7,
-            "recommended_next_action": "检查持仓",
-        }])
 
-        class TimeoutResearchRegistry(FakeRoleRegistry):
-            def execute_role(self, name: str, context: dict | None = None):
-                if name == "research_analyst":
-                    self.calls.append({"role": name, "context": context})
-                    raise AgentTimeoutError("claude_code timed out after 120s")
-                return super().execute_role(name, context)
-
-        registry = TimeoutResearchRegistry({
+        registry = FakeRoleRegistry({
             "macro_analyst": regime_json,
-            "event_scanner": events_json,
         })
 
         result = run_daily_pipeline(
@@ -629,10 +590,11 @@ def test_pipeline_continues_when_research_analyst_times_out():
 
         assert result["run_status"] == "completed"
         assert result["regime"] is not None
-        assert len(result["events"]) == 1
-        assert result["tickets"] == []
-        assert [call["role"] for call in registry.calls].count("research_analyst") == 1
-        assert "gen_iterations" not in result
+        assert len(result["events"]) >= 1
+        assert len(result["tickets"]) >= 1
+        assert any("momentum_20d" in ticket.affected_factors for ticket in result["tickets"])
+        assert "research_analyst" not in [call["role"] for call in registry.calls]
+        assert "event_scanner" not in [call["role"] for call in registry.calls]
 
 
 def test_pipeline_runs_reviewer_with_llm():
@@ -641,6 +603,7 @@ def test_pipeline_runs_reviewer_with_llm():
         strategy_path = _make_strategy_yaml(tmpdir)
         pool_path = _make_pool_json(tmpdir)
         data = _make_synthetic_data()
+        _add_volume_event(data)
         dates = sorted(data["daily"]["trade_date"].unique().tolist())
         codes = data["stock_basic"]["ts_code"].tolist()
         signals, rankings = _make_signals_and_rankings(dates, codes)
@@ -648,7 +611,7 @@ def test_pipeline_runs_reviewer_with_llm():
         ic_df = _make_ic_df(dates)
         index_df = _make_index_df()
 
-        # --- LLM responses for ideation (3 roles) + review ---
+        # --- LLM responses for macro + review ---
         regime_json = json.dumps({
             "version": "MarketRegimeV1",
             "as_of_date": "2022-03-01",
@@ -657,33 +620,6 @@ def test_pipeline_runs_reviewer_with_llm():
             "key_drivers": ["成交量放大"],
             "style_bias": "成长",
         })
-        events_json = json.dumps([{
-            "version": "SignalEventV1",
-            "event_date": "2022-03-01",
-            "event_id": "evt_001",
-            "event_type": "earnings_surprise",
-            "severity": "medium",
-            "summary": "某公司利润超预期",
-            "affected_sectors": [],
-            "affected_symbols": [],
-            "source_refs": [],
-            "confidence": 0.7,
-            "recommended_next_action": "检查持仓",
-        }])
-        tickets_json = json.dumps([{
-            "version": "ResearchTicketV1",
-            "ticket_id": "ticket_001",
-            "created_date": "2022-03-01",
-            "ticket_type": "weight_rebalance",
-            "hypothesis": "提升动量因子权重",
-            "rationale": "牛市环境",
-            "affected_factors": ["momentum_20d"],
-            "affected_sectors": [],
-            "confidence": 0.7,
-            "source_regime": "bullish",
-            "source_events": ["evt_001"],
-            "status": "draft",
-        }])
         review_json = json.dumps({
             "version": "ReviewNotesV1",
             "strategy_id": "test_strat",
@@ -696,8 +632,6 @@ def test_pipeline_runs_reviewer_with_llm():
 
         registry = FakeRoleRegistry({
             "macro_analyst": regime_json,
-            "event_scanner": events_json,
-            "research_analyst": tickets_json,
             "reviewer": review_json,
         })
 

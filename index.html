@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GemStar — AI 驱动的自动化量化研究框架</title>
+<title>GemStar — 自动化量化研究框架</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -742,6 +742,7 @@ nav .container {
 }
 
 .role-card[data-provider="claude_code"]::before { background: var(--green); }
+.role-card[data-provider="local"]::before { background: var(--cyan); }
 
 .role-header {
   display: flex;
@@ -777,6 +778,7 @@ nav .container {
 }
 
 .role-provider.cli { background: var(--green-dim); color: var(--green); }
+.role-provider.local { background: var(--cyan-dim); color: var(--cyan); }
 
 .role-skills {
   display: flex;
@@ -1575,16 +1577,18 @@ footer a:hover {
     <div class="hero-content">
       <div class="hero-badge">
         <span class="dot"></span>
-        一条命令，帮你赚钱
+        本地确定性研究核心 + Claude Code 策略生成
       </div>
       <h1 class="hero-title">GemStar</h1>
-      <p class="hero-tagline">AI 驱动的自动化量化投资助手</p>
+      <p class="hero-tagline">自动化量化研究与交易助手</p>
       <p class="hero-subtitle">
-        新闻事件扫描
+        确定性事件扫描
         <span class="arrow">→</span>
-        因子挖掘
+        本地研究工单
         <span class="arrow">→</span>
-        策略生成与回测
+        因子挖掘与验证
+        <span class="arrow">→</span>
+        LLM 策略生成
         <span class="arrow">→</span>
         策略评审
         <span class="arrow">→</span>
@@ -1610,8 +1614,8 @@ footer a:hover {
           <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">uv sync</span></div>
           <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar init</span></div>
           <div class="terminal-line"><span class="prompt">$ </span><span class="cmd">gemstar trade --capital 500000</span></div>
-          <div class="terminal-line"><span class="comment">  → 研究市场: scanning events, analyzing regime...</span></div>
-          <div class="terminal-line"><span class="comment">  → 策略生成: 3 candidates drafted, 14 backtested</span></div>
+          <div class="terminal-line"><span class="comment">  → 本地研究: events, tickets, factor proposals...</span></div>
+          <div class="terminal-line"><span class="comment">  → LLM 策略生成: 3 candidates drafted, 14 backtested</span></div>
           <div class="terminal-line"><span class="comment">  → 实时监控: 15 只标的, 30s 轮询</span></div>
           <div class="terminal-line"><span class="output">  ✓ 15 signals, Telegram 已推送 (ledger=5)</span></div>
         </div>
@@ -1654,9 +1658,9 @@ footer a:hover {
       </div>
       <div class="cap-card reveal">
         <div class="cap-icon">🤖</div>
-        <h3 class="cap-title">多 Agent 协作</h3>
-        <div class="cap-en">Multi-Agent</div>
-        <p class="cap-desc">8 个专业角色分工协作，统一通过 Claude Code CLI 执行。YAML 保留 provider/model 扩展点。</p>
+        <h3 class="cap-title">本地核心 + LLM</h3>
+        <div class="cap-en">Local + LLM</div>
+        <p class="cap-desc">事件、研究工单、因子 proposals 由本地代码生成；宏观判断、策略草稿、评审通过 Claude Code CLI 执行。</p>
       </div>
       <div class="cap-card reveal">
         <div class="cap-icon">📊</div>
@@ -1690,9 +1694,9 @@ footer a:hover {
 <section class="roles-section" id="roles">
   <div class="container">
     <div class="section-header reveal">
-      <div class="section-label">// Multi-Agent</div>
-      <h2 class="section-title">8 个专业角色协作</h2>
-      <p class="section-desc">每个角色专注一个领域，通过数据流串联，形成完整研究闭环</p>
+      <div class="section-label">// Research System</div>
+      <h2 class="section-title">本地研究核心 + LLM 角色</h2>
+      <p class="section-desc">结构化研究由代码确定性生成，LLM 专注在需要语义判断和策略草稿的环节</p>
     </div>
 
     <div class="roles-flow reveal">
@@ -1700,15 +1704,15 @@ footer a:hover {
       <div class="roles-stage">
         <div class="stage-label">感知层</div>
         <div class="stage-roles">
-          <div class="role-card" data-provider="claude_code">
+          <div class="role-card" data-provider="local">
             <div class="role-header">
               <div class="role-icon">📡</div>
-              <span class="role-name">event_scanner</span>
-              <span class="role-provider cli">claude_code</span>
+              <span class="role-name">event_scanner.py</span>
+              <span class="role-provider local">local</span>
             </div>
-            <div class="role-desc">统计检测器扫描异动：财报惊喜、成交量异常、动量突变</div>
+            <div class="role-desc">确定性扫描财报异常、成交量异动、动量漂移，直接输出 SignalEventV1</div>
             <div class="role-skills">
-              <span class="role-skill">scan_events</span>
+              <span class="role-skill">SignalEventV1</span>
             </div>
           </div>
           <div class="role-card" data-provider="claude_code">
@@ -1733,15 +1737,15 @@ footer a:hover {
       <div class="roles-stage">
         <div class="stage-label">研究层</div>
         <div class="stage-roles">
-          <div class="role-card" data-provider="claude_code">
+          <div class="role-card" data-provider="local">
             <div class="role-header">
               <div class="role-icon">🔬</div>
-              <span class="role-name">research_analyst</span>
-              <span class="role-provider cli">claude_code</span>
+              <span class="role-name">research/analyst.py</span>
+              <span class="role-provider local">local</span>
             </div>
-            <div class="role-desc">综合市场信号 + 因子健康度，生成研究 ticket（假设 + 因子关联）</div>
+            <div class="role-desc">综合事件、regime、因子健康度，本地生成 ResearchTicketV1</div>
             <div class="role-skills">
-              <span class="role-skill">generate_tickets</span>
+              <span class="role-skill">ResearchTicketV1</span>
             </div>
           </div>
           <div class="role-card" data-provider="claude_code">
@@ -1755,15 +1759,15 @@ footer a:hover {
               <span class="role-skill">draft_strategy</span>
             </div>
           </div>
-          <div class="role-card" data-provider="claude_code">
+          <div class="role-card" data-provider="local">
             <div class="role-header">
               <div class="role-icon">⛏️</div>
-              <span class="role-name">factor_miner</span>
-              <span class="role-provider cli">claude_code</span>
+              <span class="role-name">factors/miner.py</span>
+              <span class="role-provider local">local</span>
             </div>
-            <div class="role-desc">LLM 自动发现新 alpha 因子表达式，IC 验证后注册入池</div>
+            <div class="role-desc">模板生成 factor proposals，按 IC 方向、覆盖率、冗余度验证后注册入池</div>
             <div class="role-skills">
-              <span class="role-skill">discover_factors</span>
+              <span class="role-skill">FactorProposal</span>
             </div>
           </div>
         </div>
@@ -1847,7 +1851,7 @@ footer a:hover {
         <div class="loop-diagram">
           <div class="loop-step">
             <span class="step-num">1</span>
-            <span class="step-text"><strong>generate_tickets</strong> — 从市场上下文生成研究假设</span>
+            <span class="step-text"><strong>local tickets</strong> — 从事件、regime、因子健康度生成研究假设</span>
           </div>
           <div class="loop-arrow">↓</div>
           <div class="loop-step">
@@ -1867,7 +1871,7 @@ footer a:hover {
           <div class="loop-arrow">↓</div>
           <div class="loop-retry">
             <span class="retry-icon">↻</span>
-            rejected → 重新生成 tickets，循环直到收集足够 candidate
+            rejected → 使用本地 tickets 继续迭代，直到收集足够 candidate
           </div>
         </div>
       </div>
@@ -1954,18 +1958,25 @@ footer a:hover {
   <div class="container">
     <div class="section-header reveal">
       <div class="section-label">// Architecture</div>
-      <h2 class="section-title">三层架构</h2>
-      <p class="section-desc">Role / Provider / Skill 解耦设计，当前统一接入 claude_code</p>
+      <h2 class="section-title">双轨架构</h2>
+      <p class="section-desc">本地确定性模块负责结构化研究，Role / Skill / Provider 只承载仍需 LLM 的环节</p>
     </div>
     <div class="arch-diagram reveal">
       <div class="arch-layer">
-        <div class="arch-layer-title">Roles</div>
+        <div class="arch-layer-title">Local Core</div>
+        <div class="arch-layer-items">
+          <div class="arch-item">event_scanner.py</div>
+          <div class="arch-item">research/analyst.py</div>
+          <div class="arch-item">factors/miner.py</div>
+          <div class="arch-item">rule_judge</div>
+        </div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-layer">
+        <div class="arch-layer-title">LLM Roles</div>
         <div class="arch-layer-items">
           <div class="arch-item">macro_analyst</div>
-          <div class="arch-item">event_scanner</div>
-          <div class="arch-item">research_analyst</div>
           <div class="arch-item">strategy_architect</div>
-          <div class="arch-item">factor_miner</div>
           <div class="arch-item">reviewer</div>
           <div class="arch-item">engineer</div>
           <div class="arch-item">bugfix</div>
@@ -1976,10 +1987,7 @@ footer a:hover {
         <div class="arch-layer-title">Skills</div>
         <div class="arch-layer-items">
           <div class="arch-item">analyze_market</div>
-          <div class="arch-item">scan_events</div>
-          <div class="arch-item">generate_tickets</div>
           <div class="arch-item">draft_strategy</div>
-          <div class="arch-item">discover_factors</div>
           <div class="arch-item">review_verdict</div>
           <div class="arch-item">write_code</div>
           <div class="arch-item">fix_bug</div>
@@ -1993,7 +2001,7 @@ footer a:hover {
         </div>
       </div>
     </div>
-    <p class="arch-note">roles/*.yaml → skills/*/ → src/llm/providers/</p>
+    <p class="arch-note">local modules → structured schemas → selected roles/*.yaml → skills/*/ → src/llm/providers/</p>
   </div>
 </section>
 
@@ -2073,8 +2081,8 @@ footer a:hover {
           <div class="cmd-line"><span class="output">  [FSM] → QUALITY_CHECKING → FACTOR_MONITORING</span></div>
           <div class="cmd-line"><span class="output">  [Factor] 24 factors healthy, 2 degraded</span></div>
           <div class="cmd-line"><span class="output">  [FSM] → STRATEGY_IDEATION → STRATEGY_VALIDATION</span></div>
+          <div class="cmd-line"><span class="output">  [Local] events=3, tickets=3, factor proposals=6</span></div>
           <div class="cmd-line"><span class="output">  [LLM] macro_analyst: regime=bullish, style=growth</span></div>
-          <div class="cmd-line"><span class="output">  [LLM] research_analyst: 3 tickets generated</span></div>
           <div class="cmd-line"><span class="output">  [LLM] strategy_architect: drafted 3 strategies</span></div>
           <div class="cmd-line"><span class="output">  [FSM] → BACKTESTING → JUDGING</span></div>
           <div class="cmd-line"><span class="output">  [Judge] 1/3 passed (Sharpe=1.42, Calmar=1.1)</span></div>
@@ -2159,7 +2167,7 @@ footer a:hover {
           <div class="cmd-line"><span class="success">  ✓ TUSHARE_TOKEN set</span></div>
           <div class="cmd-line"><span class="success">  ✓ gemstar.yaml valid</span></div>
           <div class="cmd-line"><span class="success">  ✓ state.db exists</span></div>
-          <div class="cmd-line"><span class="success">  ✓ roles/*.yaml valid (8 roles)</span></div>
+          <div class="cmd-line"><span class="success">  ✓ roles/*.yaml valid (5 roles)</span></div>
           <div class="cmd-line"><span class="success">  ✓ claude CLI authenticated</span></div>
           <div class="cmd-line"><span class="success">  ✓ data/raw/ cache exists (2.1 GB)</span></div>
           <div class="cmd-line"><span class="comment">  </span></div>

@@ -1,85 +1,99 @@
-"""Tests for src.scanner.event_scanner with an offline LLMGenerate fake."""
+"""Tests for deterministic event scanning."""
 
 from __future__ import annotations
 
-import json
-
-import numpy as np
 import pandas as pd
-import pytest
 
 from src.schemas.signal import SignalEventV1
 from src.scanner.event_scanner import scan_events
 from tests.llm_fakes import FakeLLM
 
 
-def _make_data() -> dict[str, pd.DataFrame]:
-    codes = [f"30000{i}.SZ" for i in range(5)]
-    dates = pd.bdate_range("20260301", "20260501").strftime("%Y%m%d").tolist()
+def _make_signal_data() -> dict[str, pd.DataFrame]:
+    codes = [f"300{i:03d}.SZ" for i in range(21)]
+    dates = pd.bdate_range("2026-03-01", periods=45).strftime("%Y%m%d").tolist()
     daily_rows = []
-    for code in codes:
-        for d in dates:
-            daily_rows.append({
-                "ts_code": code, "trade_date": d,
-                "open": 10.0, "high": 11.0, "low": 9.0,
-                "close": 10.5 + np.random.randn() * 0.3,
-                "pre_close": 10.0, "vol": 1000000.0,
-            })
-    fina = pd.DataFrame({
-        "ts_code": codes,
-        "ann_date": ["20260501"] * len(codes),
-        "netprofit_yoy": [15.0, 20.0, -5.0, 8.0, 200.0],
-    })
+    for code_index, code in enumerate(codes):
+        for date_index, trade_date in enumerate(dates):
+            close = 10.0 + date_index * 0.01
+            vol = 1_000_000.0
+            if code_index == 1 and date_index == len(dates) - 1:
+                vol = 6_000_000.0
+            if code_index == 2 and date_index >= len(dates) - 5:
+                close = 10.0 + (date_index - len(dates) + 6) * 1.0
+            daily_rows.append(
+                {
+                    "ts_code": code,
+                    "trade_date": trade_date,
+                    "open": close,
+                    "high": close,
+                    "low": close,
+                    "close": close,
+                    "pre_close": close,
+                    "vol": vol,
+                }
+            )
+
+    fina = pd.DataFrame(
+        {
+            "ts_code": codes,
+            "ann_date": ["20260501"] * len(codes),
+            "netprofit_yoy": [10.0] * 20 + [800.0],
+        }
+    )
     return {"daily": pd.DataFrame(daily_rows), "fina_indicator": fina}
 
 
-def _sample_event_dict() -> dict:
-    return {
-        "version": "SignalEventV1",
-        "event_date": "2026-05-01",
-        "event_id": "evt_20260501_001",
-        "event_type": "earnings_surprise",
-        "severity": "high",
-        "summary": "300004.SZ netprofit_yoy 200% is a significant outlier.",
-        "affected_sectors": ["创业板"],
-        "affected_symbols": ["300004.SZ"],
-        "source_refs": ["fina_indicator.netprofit_yoy"],
-        "confidence": 0.85,
-        "recommended_next_action": "检查持仓集中度",
-    }
-
-
 class TestScanEvents:
-    def test_valid_json_returns_events(self) -> None:
-        mock_llm = FakeLLM(json.dumps([_sample_event_dict()]))
-        result = scan_events(_make_data(), "20260501", mock_llm)
-
-        assert len(result) == 1
-        assert isinstance(result[0], SignalEventV1)
-        assert result[0].event_id == "evt_20260501_001"
-        assert result[0].event_type == "earnings_surprise"
-        assert result[0].confidence == 0.85
-
-    def test_empty_array_returns_empty_list(self) -> None:
-        mock_llm = FakeLLM("[]")
-        result = scan_events(_make_data(), "20260501", mock_llm)
-
-        assert result == []
-
-    def test_malformed_json_raises(self) -> None:
+    def test_generates_structured_events_without_llm(self) -> None:
         mock_llm = FakeLLM("not json")
-        with pytest.raises(ValueError):
-            scan_events(_make_data(), "20260501", mock_llm)
+        result = scan_events(_make_signal_data(), "20260501", mock_llm)
 
-    def test_event_type_is_valid(self) -> None:
-        events = [_sample_event_dict() for _ in range(3)]
-        mock_llm = FakeLLM(json.dumps(events))
-        result = scan_events(_make_data(), "20260501", mock_llm)
+        assert mock_llm.calls == []
+        assert all(isinstance(event, SignalEventV1) for event in result)
+        assert [event.event_id for event in result] == [
+            f"evt_20260501_{index:03d}" for index in range(1, len(result) + 1)
+        ]
+
+    def test_detects_earnings_volume_and_momentum_events(self) -> None:
+        result = scan_events(_make_signal_data(), "20260501", FakeLLM("ignored"))
+
+        event_types = {event.event_type for event in result}
+        assert "earnings_surprise" in event_types
+        assert "sentiment_shift" in event_types
+        assert "factor_drift" in event_types
+
+    def test_events_include_valid_contract_fields(self) -> None:
+        result = scan_events(_make_signal_data(), "20260501", FakeLLM("ignored"))
 
         allowed = {
-            "policy_event", "earnings_surprise", "factor_drift",
-            "sector_rotation", "northbound_flow", "sentiment_shift",
-            "analyst_revision", "other",
+            "policy_event",
+            "earnings_surprise",
+            "factor_drift",
+            "sector_rotation",
+            "northbound_flow",
+            "sentiment_shift",
+            "analyst_revision",
+            "other",
         }
         for event in result:
             assert event.event_type in allowed
+            assert event.event_date.isoformat() == "2026-05-01"
+            assert event.summary
+            assert event.source_refs
+            assert 0.0 <= event.confidence <= 1.0
+
+    def test_no_signal_data_returns_empty_list(self) -> None:
+        result = scan_events({"daily": pd.DataFrame(), "fina_indicator": pd.DataFrame()}, "20260501", FakeLLM("ignored"))
+
+        assert result == []
+
+    def test_earnings_detector_uses_latest_row_per_symbol(self) -> None:
+        data = _make_signal_data()
+        older_rows = data["fina_indicator"].assign(ann_date="20260401", netprofit_yoy=5.0)
+        data["fina_indicator"] = pd.concat([older_rows, data["fina_indicator"]], ignore_index=True)
+
+        result = scan_events(data, "20260501", FakeLLM("ignored"))
+        earnings = [event for event in result if event.event_type == "earnings_surprise"][0]
+
+        assert "1 stocks show earnings outliers" in earnings.summary

@@ -1,6 +1,0 @@
-name: factor_miner
-description: 因子挖掘 —— 基于原始字段构造新因子表达式
-provider: claude_code
-timeout: 300
-skills:
-  - discover_factors

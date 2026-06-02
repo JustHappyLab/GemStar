@@ -1,8 +1,8 @@
-"""Research ticket schema — output of ResearchAnalyst LLM role.
+"""Research ticket schema — output of deterministic research generation.
 
 CALLING SPEC:
     ResearchTicketV1 is a single research hypothesis produced by the
-    ResearchAnalyst, proposing a new factor, strategy, or weight change.
+    research analyst module, proposing a new factor, strategy, or weight change.
 
 SIDE EFFECTS:
     None.

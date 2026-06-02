@@ -92,7 +92,7 @@ engineering:
       - tests/**
 
 # ─── 角色 Provider 覆盖 ───────────────────────────────────
-# 按角色覆盖 LLM 配置，无需改 roles/*.yaml
+# 按角色覆盖仍由 LLM 执行的角色配置，无需改 roles/*.yaml
 # model 可选值: sonnet / opus / haiku
 # 未列出的角色使用 roles/*.yaml 中的默认配置
 # 安装: npm i -g @anthropic-ai/claude-code → claude 登录
@@ -103,6 +103,9 @@ roles: {}
 #  macro_analyst:
 #    provider: claude_code
 #    model: sonnet                 # 未配置时默认 sonnet
+#  strategy_architect:
+#    provider: claude_code
+#    model: sonnet
 
 # ─── 策略 ─────────────────────────────────────────────────
 strategies:

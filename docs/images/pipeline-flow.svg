@@ -60,7 +60,7 @@
     <rect x="420" y="0" width="140" height="60" rx="10" fill="#111119" stroke="#ffab00" stroke-opacity="0.4"/>
     <text x="490" y="18" text-anchor="middle" fill="#ffab00" font-size="9" font-weight="600">STRATEGY_IDEATION</text>
     <text x="490" y="34" text-anchor="middle" fill="#55556a" font-size="7">macro_analyst</text>
-    <text x="490" y="46" text-anchor="middle" fill="#55556a" font-size="7">event_scanner + research</text>
+    <text x="490" y="46" text-anchor="middle" fill="#55556a" font-size="7">local events + tickets</text>
 
     <line x1="560" y1="30" x2="590" y2="30" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="2" marker-end="url(#arrowhead)"/>
 
@@ -93,8 +93,8 @@
 
     <!-- Loop diagram -->
     <rect x="0" y="30" width="200" height="50" rx="8" fill="#111119" stroke="#ffab00" stroke-opacity="0.3"/>
-    <text x="100" y="50" text-anchor="middle" fill="#e8e8ed" font-size="9">generate_tickets</text>
-    <text x="100" y="66" text-anchor="middle" fill="#55556a" font-size="7">LLM → ResearchTicket[]</text>
+    <text x="100" y="50" text-anchor="middle" fill="#e8e8ed" font-size="9">local tickets</text>
+    <text x="100" y="66" text-anchor="middle" fill="#55556a" font-size="7">code → ResearchTicket[]</text>
 
     <line x1="200" y1="55" x2="250" y2="55" stroke="#ffab00" stroke-opacity="0.4" stroke-width="1.5" marker-end="url(#arrowhead-amber)"/>
 

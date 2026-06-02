@@ -177,6 +177,22 @@ class TestClaudeCodeProvider:
             == '[{"ok": true}]'
         )
 
+    def test_parse_output_raises_when_schema_output_missing(self) -> None:
+        provider = ClaudeCodeProvider()
+        stdout = json.dumps({"result": "Done."})
+
+        with pytest.raises(RuntimeError, match="did not return structured_output"):
+            provider.parse_output(stdout, json_schema_unwrap_key="items")
+
+    def test_parse_output_accepts_fenced_array_result_for_schema(self) -> None:
+        provider = ClaudeCodeProvider()
+        stdout = json.dumps({"result": "```json\n[{\"ok\": true}]\n```"})
+
+        assert (
+            provider.parse_output(stdout, json_schema_unwrap_key="items")
+            == '[{"ok": true}]'
+        )
+
 
 class TestProviderABC:
     def test_cannot_instantiate_abstract(self) -> None:

@@ -1,28 +1,34 @@
-"""ResearchAnalyst — generates research tickets from market context.
+"""ResearchAnalyst — generates deterministic research tickets.
 
 CALLING SPEC:
     generate_tickets(regime, events, factor_health, pool_path, llm_client) -> list[ResearchTicketV1]
 
 SIDE EFFECTS:
-    Delegates text generation to the supplied LLMGenerate implementation.
+    None. The llm_client argument is kept for pipeline compatibility.
 """
 
 from __future__ import annotations
 
-import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.llm.adapter import LLMGenerate
-from src.llm.json_utils import loads_llm_json, response_snippet
 from src.schemas.factor import FactorHealthReportV1, FactorPoolV1
 from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
 
-_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "generate_tickets" / "prompt.txt").read_text(encoding="utf-8")
-_MAX_EVENTS = 5
-_MAX_EVENT_SUMMARY_CHARS = 180
-_MAX_HEALTH_ENTRIES = 12
-_MAX_FACTOR_NAMES = 40
+_MAX_TICKETS = 5
+
+
+@dataclass(frozen=True)
+class _TicketCandidate:
+    ticket_type: str
+    hypothesis: str
+    rationale: str
+    affected_factors: list[str]
+    affected_sectors: list[str]
+    confidence: float
+    source_events: list[str]
 
 
 def generate_tickets(
@@ -32,89 +38,205 @@ def generate_tickets(
     pool_path: Path,
     llm_client: LLMGenerate,
 ) -> list[ResearchTicketV1]:
-    """Generate research tickets from market context via LLM.
+    """Generate validated research tickets from structured market context.
 
-    Args:
-        regime: Current market regime assessment.
-        events: Recent signal events.
-        factor_health: Optional factor health report.
-        pool_path: Path to factor pool JSON file.
-        llm_client: LLM client for API calls.
-
-    Returns:
-        Validated list of ResearchTicketV1 objects with known factors only.
+    The llm_client parameter is intentionally unused. Earlier versions asked an
+    LLM to produce ticket JSON directly; the pipeline now owns the structured
+    contract locally so malformed model output cannot break ticket generation.
     """
-    # 1. Load factor pool first so the LLM sees a compact allow-list.
+    _ = llm_client
     pool = FactorPoolV1.load(pool_path)
-    factor_names = [entry.name for entry in pool.all_entries()]
+    registered = {entry.name for entry in pool.all_entries()}
 
-    # 2. Build compact context text.
-    regime_line = (
-        f"市场状态: {regime.regime}, 置信度: {regime.confidence}, "
-        f"风格偏好: {regime.style_bias}"
-    )
-    event_lines = "\n".join(
-        _event_line(e) for e in events[:_MAX_EVENTS]
-    )
-
-    factor_line = ", ".join(factor_names[:_MAX_FACTOR_NAMES])
-    if len(factor_names) > _MAX_FACTOR_NAMES:
-        factor_line += f", ... ({len(factor_names)} total)"
-
-    parts = [
-        regime_line,
-        "",
-        "可引用因子池:",
-        factor_line or "(无)",
-        "",
-        "近期事件:",
-        event_lines or "(无)",
-    ]
-
+    candidates: list[_TicketCandidate] = []
+    candidates.extend(_tickets_from_events(regime, events, registered))
     if factor_health is not None:
-        health_lines = "\n".join(
-            f"- {entry.factor_name}: {entry.status} "
-            f"(IC_IR={entry.ic_ir}, IC_mean={entry.ic_mean}, coverage={entry.coverage})"
-            for entry in factor_health.entries[:_MAX_HEALTH_ENTRIES]
+        candidates.extend(_tickets_from_factor_health(regime, factor_health, registered))
+
+    deduped = _dedupe_candidates(candidates)
+    return _build_tickets(deduped[:_MAX_TICKETS], regime)
+
+
+def _tickets_from_events(
+    regime: MarketRegimeV1,
+    events: list[SignalEventV1],
+    registered: set[str],
+) -> list[_TicketCandidate]:
+    candidates: list[_TicketCandidate] = []
+    for event in events:
+        if event.event_type == "earnings_surprise":
+            factors = _choose_factors(
+                registered,
+                preferred=("netprofit_yoy", "roe", "revenue_yoy", "grossprofit_margin"),
+                fallback=("roe",),
+            )
+            if factors:
+                candidates.append(
+                    _TicketCandidate(
+                        ticket_type="factor_tweak",
+                        hypothesis=(
+                            "Winsorize earnings-growth factors and cross-check them with profitability "
+                            f"before using them in the {regime.regime} regime."
+                        ),
+                        rationale=(
+                            f"{event.summary} Extreme earnings rows can dominate factor ranks and should be "
+                            "validated against profitability quality before increasing exposure."
+                        ),
+                        affected_factors=factors,
+                        affected_sectors=event.affected_sectors,
+                        confidence=_event_confidence(event, 0.06),
+                        source_events=[event.event_id],
+                    )
+                )
+        elif event.event_type == "factor_drift":
+            factors = _choose_factors(
+                registered,
+                preferred=(
+                    "momentum_20d",
+                    "rel_strength_20d",
+                    "gap_reversal_v1",
+                    "overnight_reversal_v1",
+                ),
+                fallback=("momentum_20d",),
+            )
+            if factors:
+                candidates.append(
+                    _TicketCandidate(
+                        ticket_type="weight_rebalance",
+                        hypothesis=(
+                            "Reduce reliance on unstable momentum exposure and test a smaller "
+                            "momentum allocation until drift normalizes."
+                        ),
+                        rationale=(
+                            f"{event.summary} The signal suggests current price-trend factors may be "
+                            "less reliable without a fresh IC check."
+                        ),
+                        affected_factors=factors,
+                        affected_sectors=event.affected_sectors,
+                        confidence=_event_confidence(event, 0.0),
+                        source_events=[event.event_id],
+                    )
+                )
+        elif event.event_type == "sentiment_shift":
+            factors = _choose_factors(
+                registered,
+                preferred=(
+                    "moneyflow_surge_v1",
+                    "volume_price_corr_v1",
+                    "turnover_20d",
+                    "liquidity_momentum_v1",
+                    "momentum_20d",
+                ),
+                fallback=("momentum_20d",),
+            )
+            if factors:
+                candidates.append(
+                    _TicketCandidate(
+                        ticket_type="new_strategy",
+                        hypothesis=(
+                            "Create a liquidity-shock sleeve that only promotes high-volume names when "
+                            "price confirmation is present."
+                        ),
+                        rationale=(
+                            f"{event.summary} A volume shock can be either informed buying or noisy "
+                            "crowding, so the follow-up should pair liquidity with price confirmation."
+                        ),
+                        affected_factors=factors,
+                        affected_sectors=event.affected_sectors,
+                        confidence=_event_confidence(event, -0.04),
+                        source_events=[event.event_id],
+                    )
+                )
+    return candidates
+
+
+def _tickets_from_factor_health(
+    regime: MarketRegimeV1,
+    factor_health: FactorHealthReportV1,
+    registered: set[str],
+) -> list[_TicketCandidate]:
+    candidates: list[_TicketCandidate] = []
+    for entry in factor_health.entries:
+        if entry.status not in {"degraded", "critical"}:
+            continue
+        if entry.factor_name not in registered:
+            continue
+        confidence = 0.78 if entry.status == "critical" else 0.66
+        candidates.append(
+            _TicketCandidate(
+                ticket_type="factor_tweak",
+                hypothesis=(
+                    f"Demote or quarantine {entry.factor_name} while it remains "
+                    f"{entry.status} in the {regime.regime} regime."
+                ),
+                rationale=(
+                    f"{entry.factor_name} health is {entry.status} "
+                    f"(IC_IR={entry.ic_ir}, IC_mean={entry.ic_mean}, coverage={entry.coverage}). "
+                    "A failing factor should not keep its previous allocation without a recovery check."
+                ),
+                affected_factors=[entry.factor_name],
+                affected_sectors=[],
+                confidence=confidence,
+                source_events=[],
+            )
         )
-        parts.extend(["", "因子健康状态:", health_lines or "(无数据)"])
+    return candidates
 
-    user_prompt = "\n".join(parts)
 
-    # 3. Load system prompt
-    system_prompt = _SYSTEM_PROMPT
+def _choose_factors(
+    registered: set[str],
+    preferred: tuple[str, ...],
+    fallback: tuple[str, ...] = (),
+    limit: int = 4,
+) -> list[str]:
+    selected = [name for name in preferred if name in registered]
+    if not selected:
+        selected = [name for name in fallback if name in registered]
+    return selected[:limit]
 
-    # 4. Call LLM
-    raw = llm_client.generate(user_prompt, system=system_prompt)
 
-    # 5. Parse JSON response and validate.
-    try:
-        data = loads_llm_json(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            "research_analyst returned invalid JSON: "
-            f"{response_snippet(raw)}"
-        ) from exc
-    if not isinstance(data, list):
-        raise ValueError("research_analyst must return a JSON array")
-    tickets = [ResearchTicketV1.model_validate(item) for item in data]
+def _event_confidence(event: SignalEventV1, adjustment: float) -> float:
+    return round(min(0.9, max(0.35, event.confidence + adjustment)), 2)
 
-    # 6. Filter out tickets referencing unregistered factors
+
+def _dedupe_candidates(candidates: list[_TicketCandidate]) -> list[_TicketCandidate]:
+    seen: set[tuple[str, tuple[str, ...], tuple[str, ...]]] = set()
+    deduped: list[_TicketCandidate] = []
+    for candidate in candidates:
+        key = (
+            candidate.ticket_type,
+            tuple(candidate.affected_factors),
+            tuple(candidate.source_events),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def _build_tickets(
+    candidates: list[_TicketCandidate],
+    regime: MarketRegimeV1,
+) -> list[ResearchTicketV1]:
+    created_date = regime.as_of_date
+    date_token = created_date.strftime("%Y%m%d")
     return [
-        t for t in tickets
-        if all(pool.is_registered(f) for f in t.affected_factors)
+        ResearchTicketV1.model_validate(
+            {
+                "version": "ResearchTicketV1",
+                "ticket_id": f"ticket_{date_token}_{index:03d}",
+                "created_date": created_date.isoformat(),
+                "ticket_type": candidate.ticket_type,
+                "hypothesis": candidate.hypothesis,
+                "rationale": candidate.rationale,
+                "affected_factors": candidate.affected_factors,
+                "affected_sectors": candidate.affected_sectors,
+                "confidence": candidate.confidence,
+                "source_regime": regime.regime,
+                "source_events": candidate.source_events,
+                "status": "draft",
+            }
+        )
+        for index, candidate in enumerate(candidates, start=1)
     ]
-
-
-def _event_line(event: SignalEventV1) -> str:
-    summary = _truncate(" ".join(event.summary.split()), _MAX_EVENT_SUMMARY_CHARS)
-    return (
-        f"- id={event.event_id}; type={event.event_type}; "
-        f"severity={event.severity}; summary={summary}"
-    )
-
-
-def _truncate(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 1].rstrip() + "..."
