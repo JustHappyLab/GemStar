@@ -45,7 +45,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.factors.engine import compute_factor_expression, validate_expression
 from src.llm.adapter import LLMGenerate
-from src.llm.json_utils import loads_llm_json
+from src.llm.json_utils import loads_llm_json, response_snippet
 from src.ranker.ic import compute_daily_rank_ic
 from src.schemas.factor import FactorPoolV1, FactorRegistryEntryV1
 
@@ -122,7 +122,7 @@ def mine_factors(
     try:
         data = loads_llm_json(raw)
     except json.JSONDecodeError as exc:
-        logger.warning("FactorMiner returned non-JSON: %s", exc)
+        logger.warning("FactorMiner returned non-JSON: %s; raw=%s", exc, response_snippet(raw))
         return []
 
     if not isinstance(data, list):

@@ -147,27 +147,37 @@ class RoleRegistry:
 
     def _role_json_schema(self, role: RoleConfig) -> dict | None:
         """Return the single JSON output schema declared by a role's skills."""
-        schemas = []
+        constraint = self._role_schema_constraint(role)
+        return constraint[0] if constraint is not None else None
+
+    def _role_schema_constraint(self, role: RoleConfig) -> tuple[dict, str | None] | None:
+        """Return provider JSON schema plus optional result unwrap key."""
+        constraints = []
         for skill_name in role.skills:
             skill = self._skills.get(skill_name)
             if skill is None:
                 continue
-            schema = self._skill_json_schema(skill)
-            if schema is not None:
-                schemas.append(schema)
+            constraint = self._skill_schema_constraint(skill)
+            if constraint is not None:
+                constraints.append(constraint)
 
-        if not schemas:
+        if not constraints:
             return None
-        if len(schemas) > 1:
+        if len(constraints) > 1:
             logger.warning(
                 "Role '%s' declares multiple JSON output schemas; skipping schema constraint",
                 role.name,
             )
             return None
-        return schemas[0]
+        return constraints[0]
 
     def _skill_json_schema(self, skill: SkillContent) -> dict | None:
         """Resolve a skill schema.json into a concrete JSON Schema."""
+        constraint = self._skill_schema_constraint(skill)
+        return constraint[0] if constraint is not None else None
+
+    def _skill_schema_constraint(self, skill: SkillContent) -> tuple[dict, str | None] | None:
+        """Resolve a skill schema.json into a provider-compatible schema."""
         config = skill.schema_config
         if not config:
             return None
@@ -180,17 +190,66 @@ class RoleRegistry:
             return None
 
         if "schema_ref" in config:
-            return self._pydantic_schema_from_ref(config["schema_ref"])
+            schema = self._pydantic_schema_from_ref(config["schema_ref"])
+            return self._provider_schema_constraint(schema)
 
         if "items_schema_ref" in config:
             item_schema = self._pydantic_schema_from_ref(config["items_schema_ref"])
             defs = item_schema.pop("$defs", None)
-            schema = {"type": "array", "items": item_schema}
-            if defs:
-                schema["$defs"] = defs
+            array_schema = {"type": "array", "items": item_schema}
+            return self._provider_schema_constraint(array_schema, defs=defs)
+
+        schema = {k: v for k, v in config.items() if k != "format"}
+        return self._provider_schema_constraint(schema)
+
+    def _provider_schema_constraint(
+        self,
+        schema: dict,
+        defs: dict | None = None,
+    ) -> tuple[dict, str | None]:
+        """Claude Code structured output requires a top-level object schema."""
+        schema = self._claude_compatible_schema(schema)
+        defs = self._claude_compatible_schema(defs) if defs else None
+        if schema.get("type") != "array":
+            return schema, None
+
+        wrapped = {
+            "type": "object",
+            "properties": {
+                "items": schema,
+            },
+            "required": ["items"],
+            "additionalProperties": False,
+        }
+        if defs:
+            wrapped["$defs"] = defs
+        return wrapped, "items"
+
+    def _claude_compatible_schema(self, schema: object) -> object:
+        """Simplify JSON Schema features that Claude structured output handles poorly."""
+        if isinstance(schema, list):
+            return [self._claude_compatible_schema(item) for item in schema]
+        if not isinstance(schema, dict):
             return schema
 
-        return {k: v for k, v in config.items() if k != "format"}
+        if "anyOf" in schema:
+            non_null = [
+                option for option in schema["anyOf"]
+                if not (isinstance(option, dict) and option.get("type") == "null")
+            ]
+            if len(non_null) == 1:
+                return self._claude_compatible_schema(non_null[0])
+
+        cleaned = {
+            key: self._claude_compatible_schema(value)
+            for key, value in schema.items()
+            if key not in {"title", "default"}
+        }
+        if "const" in cleaned:
+            cleaned["enum"] = [cleaned.pop("const")]
+        if cleaned.get("type") == "object":
+            cleaned.setdefault("additionalProperties", False)
+        return cleaned
 
     def _pydantic_schema_from_ref(self, schema_ref: str) -> dict:
         module_name, _, class_name = schema_ref.rpartition(".")
@@ -256,12 +315,15 @@ class RoleRegistry:
         ))
 
         try:
-            json_schema = self._role_json_schema(role)
+            schema_constraint = self._role_schema_constraint(role)
             provider_context = {}
             if system_prompt:
                 provider_context["system"] = system_prompt
-            if json_schema is not None:
+            if schema_constraint is not None:
+                json_schema, unwrap_key = schema_constraint
                 provider_context["json_schema"] = json_schema
+                if unwrap_key is not None:
+                    provider_context["json_schema_unwrap_key"] = unwrap_key
             if not provider_context:
                 provider_context = None
             result = provider.execute(task, context=provider_context)

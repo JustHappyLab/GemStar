@@ -156,6 +156,27 @@ class TestClaudeCodeProvider:
 
         assert provider.parse_output(stdout) == '[{"ok": true}]'
 
+    def test_parse_output_unwraps_structured_array_wrapper(self) -> None:
+        provider = ClaudeCodeProvider()
+        stdout = json.dumps({"result": json.dumps({"items": [{"ok": True}]})})
+
+        assert (
+            provider.parse_output(stdout, json_schema_unwrap_key="items")
+            == '[{"ok": true}]'
+        )
+
+    def test_parse_output_prefers_claude_structured_output(self) -> None:
+        provider = ClaudeCodeProvider()
+        stdout = json.dumps({
+            "result": "Done.",
+            "structured_output": {"items": [{"ok": True}]},
+        })
+
+        assert (
+            provider.parse_output(stdout, json_schema_unwrap_key="items")
+            == '[{"ok": true}]'
+        )
+
 
 class TestProviderABC:
     def test_cannot_instantiate_abstract(self) -> None:

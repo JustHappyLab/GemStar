@@ -1,0 +1,41 @@
+[
+  {
+    "version": "SignalEventV1",
+    "event_date": "2026-06-02",
+    "event_id": "evt_20260602_001",
+    "event_type": "earnings_surprise",
+    "severity": "high",
+    "summary": "Q1 netprofit YoY cross-sectional σ=3526% vs μ=52%, 167 stocks >2σ. Extreme dispersion concentrated in ChiNext small caps (300xxx/301xxx).",
+    "affected_sectors": ["创业板", "科创板", "电子", "机械设备", "计算机"],
+    "affected_symbols": ["301575.SZ", "301171.SZ", "300548.SZ", "300475.SZ", "300972.SZ", "301120.SZ", "300948.SZ", "301459.SZ", "300115.SZ", "300140.SZ", "300345.SZ", "300270.SZ", "300521.SZ", "300682.SZ", "301348.SZ"],
+    "source_refs": ["netprofit_yoy cross-sectional scan, μ=52.2% σ=3526.4% n=167"],
+    "confidence": 0.92,
+    "recommended_next_action": "筛选极端盈利异动股的基本面催化剂，排除一次性损益，识别真实经营拐点"
+  },
+  {
+    "version": "SignalEventV1",
+    "event_date": "2026-06-02",
+    "event_id": "evt_20260602_002",
+    "event_type": "factor_drift",
+    "severity": "high",
+    "summary": "动量因子大规模偏移：435只个股动量z-score >2σ，极端值达z=92.5（300216.SZ）。动量效应在中小市值中出现集群性异常。",
+    "affected_sectors": ["全市场", "创业板", "中小板", "科创板"],
+    "affected_symbols": ["300216.SZ", "002450.SZ", "300104.SZ", "002604.SZ", "002552.SZ", "300069.SZ", "600578.SH", "000939.SZ", "002421.SZ", "600462.SH", "688143.SH", "000636.SZ", "001259.SZ", "601991.SH", "300959.SZ"],
+    "source_refs": ["momentum z-score scan, >2σ threshold, n=435"],
+    "confidence": 0.88,
+    "recommended_next_action": "检查动量因子暴露，评估趋势策略回撤风险，关注动量拥挤度"
+  },
+  {
+    "version": "SignalEventV1",
+    "event_date": "2026-06-02",
+    "event_id": "evt_20260602_003",
+    "event_type": "sentiment_shift",
+    "severity": "medium",
+    "summary": "放量+动量双信号共振：28只个股同时满足成交量>3x均量且动量z>2σ，中小市值活跃度骤升，资金短期集中博弈迹象明显。",
+    "affected_sectors": ["中小市值", "创业板", "主板"],
+    "affected_symbols": ["300216.SZ", "300104.SZ", "002450.SZ", "002118.SZ", "000671.SZ", "000666.SZ", "600385.SH", "603056.SH", "600393.SH", "000502.SZ", "600766.SH", "600767.SH", "600647.SH", "600421.SH", "600870.SH"],
+    "source_refs": ["volume anomaly scan (>3x 20d MA, n=82)", "momentum z-score scan (>2σ, n=435)", "intersection n=28"],
+    "confidence": 0.79,
+    "recommended_next_action": "关注放量个股是否出现筹码松动，结合龙虎榜数据判断游资/机构动向"
+  }
+]

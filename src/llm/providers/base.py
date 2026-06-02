@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+_MAX_ERROR_OUTPUT_CHARS = 2000
 
 
 class AgentTimeoutError(TimeoutError):
@@ -59,7 +60,11 @@ class BaseCliProvider(AgentProvider):
         """Build the CLI command list for the given prompt."""
         ...
 
-    def parse_output(self, stdout: str) -> str:
+    def parse_output(
+        self,
+        stdout: str,
+        json_schema_unwrap_key: str | None = None,
+    ) -> str:
         """Parse CLI stdout into the final output string. Override for JSON parsing."""
         return stdout.strip()
 
@@ -69,6 +74,7 @@ class BaseCliProvider(AgentProvider):
         full_prompt = f"{system}\n\n{task}" if system else task
 
         json_schema = (context or {}).get("json_schema")
+        json_schema_unwrap_key = (context or {}).get("json_schema_unwrap_key")
         cmd = self.build_command(full_prompt, json_schema=json_schema)
         start = time.monotonic()
         logger.info("%s: executing task (%d chars)", self._provider_name, len(full_prompt))
@@ -89,12 +95,25 @@ class BaseCliProvider(AgentProvider):
         elapsed = time.monotonic() - start
 
         if result.returncode != 0:
+            stderr = _compact_output(result.stderr)
+            stdout = _compact_output(result.stdout)
+            detail = stderr or stdout or "(no stdout/stderr)"
             raise RuntimeError(
-                f"{self._provider_name} exited {result.returncode}: {result.stderr}"
+                f"{self._provider_name} exited {result.returncode}: {detail}"
             )
 
         return AgentResult(
-            output=self.parse_output(result.stdout),
+            output=self.parse_output(
+                result.stdout,
+                json_schema_unwrap_key=json_schema_unwrap_key,
+            ),
             duration_seconds=elapsed,
             provider=self._provider_name,
         )
+
+
+def _compact_output(text: str) -> str:
+    compact = " ".join((text or "").strip().split())
+    if len(compact) <= _MAX_ERROR_OUTPUT_CHARS:
+        return compact
+    return compact[: _MAX_ERROR_OUTPUT_CHARS - 3] + "..."

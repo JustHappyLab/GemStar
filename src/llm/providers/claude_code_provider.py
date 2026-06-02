@@ -45,17 +45,38 @@ class ClaudeCodeProvider(BaseCliProvider):
         cmd.extend(["-p", full_prompt])
         return cmd
 
-    def parse_output(self, stdout: str) -> str:
+    def parse_output(
+        self,
+        stdout: str,
+        json_schema_unwrap_key: str | None = None,
+    ) -> str:
         try:
             data = json.loads(stdout)
-            if isinstance(data, dict) and "result" in data:
+            if isinstance(data, dict) and "structured_output" in data:
+                text = data["structured_output"]
+            elif isinstance(data, dict) and "result" in data:
                 text = data["result"]
             else:
                 text = data
         except json.JSONDecodeError:
             text = stdout
+        if json_schema_unwrap_key is not None:
+            text = _unwrap_structured_output(text, json_schema_unwrap_key)
         if not isinstance(text, str):
             text = json.dumps(text, ensure_ascii=False)
         # Strip markdown code fences the model may have added
         m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         return m.group(1).strip() if m else text.strip()
+
+
+def _unwrap_structured_output(text: object, key: str) -> object:
+    if isinstance(text, str):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    else:
+        parsed = text
+    if isinstance(parsed, dict) and key in parsed:
+        return parsed[key]
+    return text

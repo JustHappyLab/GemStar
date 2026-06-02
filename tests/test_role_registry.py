@@ -202,8 +202,11 @@ class TestRoleRegistryExecute:
             reg.execute_role("research_analyst", {"task": "generate"})
 
         schema = mock_provider.execute.call_args[1]["context"]["json_schema"]
-        assert schema["type"] == "array"
-        assert "ticket_id" in schema["items"]["properties"]
+        assert schema["type"] == "object"
+        assert schema["properties"]["items"]["type"] == "array"
+        assert "ticket_id" in schema["properties"]["items"]["items"]["properties"]
+        assert mock_provider.execute.call_args[1]["context"]["json_schema_unwrap_key"] == "items"
+        assert "anyOf" not in json.dumps(schema)
 
     def test_execute_appends_context_system_prompt(self, tmp_roles_dir, tmp_skills_dir, sample_role, sample_skill):
         reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
