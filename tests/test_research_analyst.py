@@ -106,6 +106,17 @@ class TestGenerateTickets:
 
         assert result == []
 
+    def test_trailing_llm_explanation_is_ignored(self, tmp_path: Path) -> None:
+        pool_path = _make_pool_json(tmp_path)
+
+        llm = FakeLLM(_valid_ticket_json() + "\n已根据上下文生成研究工单。")
+        result = generate_tickets(
+            _make_regime(), _make_events(), None, pool_path, llm
+        )
+
+        assert len(result) == 1
+        assert result[0].ticket_id == "ticket_20260503_001"
+
     def test_unknown_factor_filtered_out(self, tmp_path: Path) -> None:
         pool_path = _make_pool_json(tmp_path)
 

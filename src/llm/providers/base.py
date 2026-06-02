@@ -51,7 +51,11 @@ class BaseCliProvider(AgentProvider):
         self._timeout = timeout
 
     @abstractmethod
-    def build_command(self, full_prompt: str) -> list[str]:
+    def build_command(
+        self,
+        full_prompt: str,
+        json_schema: dict | None = None,
+    ) -> list[str]:
         """Build the CLI command list for the given prompt."""
         ...
 
@@ -64,7 +68,8 @@ class BaseCliProvider(AgentProvider):
         system = (context or {}).get("system", "")
         full_prompt = f"{system}\n\n{task}" if system else task
 
-        cmd = self.build_command(full_prompt)
+        json_schema = (context or {}).get("json_schema")
+        cmd = self.build_command(full_prompt, json_schema=json_schema)
         start = time.monotonic()
         logger.info("%s: executing task (%d chars)", self._provider_name, len(full_prompt))
 

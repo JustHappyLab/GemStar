@@ -168,6 +168,42 @@ class TestRoleRegistryExecute:
         assert call_args[0][0] == "evaluate market"
         assert "system" in call_args[1]["context"]
         assert "market analyst" in call_args[1]["context"]["system"].lower()
+        assert call_args[1]["context"]["json_schema"]["type"] == "object"
+        assert "regime" in call_args[1]["context"]["json_schema"]["properties"]
+
+    def test_execute_builds_array_schema_from_items_schema_ref(self, tmp_roles_dir, tmp_skills_dir):
+        skill_dir = tmp_skills_dir / "generate_tickets"
+        skill_dir.mkdir()
+        (skill_dir / "prompt.txt").write_text("Return tickets.")
+        (skill_dir / "schema.json").write_text(
+            json.dumps({
+                "type": "array",
+                "items_schema_ref": "src.schemas.research.ResearchTicketV1",
+                "format": "json",
+            })
+        )
+        role_file = tmp_roles_dir / "research_analyst.yaml"
+        role_file.write_text(
+            yaml.dump({
+                "name": "research_analyst",
+                "provider": "claude_code",
+                "skills": ["generate_tickets"],
+                "timeout": 120,
+            })
+        )
+        reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)
+
+        mock_result = AgentResult(output="[]", provider="claude_code", duration_seconds=1.0)
+        with patch.object(reg, "get_provider") as mock_get:
+            mock_provider = MagicMock()
+            mock_provider.execute.return_value = mock_result
+            mock_get.return_value = mock_provider
+
+            reg.execute_role("research_analyst", {"task": "generate"})
+
+        schema = mock_provider.execute.call_args[1]["context"]["json_schema"]
+        assert schema["type"] == "array"
+        assert "ticket_id" in schema["items"]["properties"]
 
     def test_execute_appends_context_system_prompt(self, tmp_roles_dir, tmp_skills_dir, sample_role, sample_skill):
         reg = RoleRegistry(roles_dir=tmp_roles_dir, skills_dir=tmp_skills_dir)

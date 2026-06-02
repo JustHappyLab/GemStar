@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from src.llm.adapter import LLMGenerate
+from src.llm.json_utils import loads_llm_json
 from src.schemas.factor import FactorHealthReportV1
 from src.schemas.metrics import BacktestResultV1
 from src.schemas.review import ReviewNotesV1
@@ -78,4 +79,4 @@ def review_verdict(
     response = llm_client.generate(user_prompt, system=system_prompt)
 
     # Validate and parse — ValueError propagates to LLMGenerate retry loop.
-    return ReviewNotesV1.model_validate_json(response)
+    return ReviewNotesV1.model_validate(loads_llm_json(response))

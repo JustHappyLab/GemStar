@@ -14,6 +14,7 @@ SIDE EFFECTS:
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 from collections.abc import Callable
@@ -58,10 +59,12 @@ class SkillContent:
         self.sop = _read_or_default(skill_dir / "sop.md")
         self.prompt = _read_or_default(skill_dir / "prompt.txt")
         self.schema_ref: str | None = None
+        self.schema_config: dict | None = None
         schema_raw = _read_or_default(skill_dir / "schema.json")
         if schema_raw:
             try:
-                self.schema_ref = json.loads(schema_raw).get("schema_ref")
+                self.schema_config = json.loads(schema_raw)
+                self.schema_ref = self.schema_config.get("schema_ref")
             except json.JSONDecodeError:
                 logger.warning("Malformed schema.json in skill '%s'", name)
 
@@ -142,6 +145,61 @@ class RoleRegistry:
             self._providers[cache_key] = cls(**kwargs)
         return self._providers[cache_key]
 
+    def _role_json_schema(self, role: RoleConfig) -> dict | None:
+        """Return the single JSON output schema declared by a role's skills."""
+        schemas = []
+        for skill_name in role.skills:
+            skill = self._skills.get(skill_name)
+            if skill is None:
+                continue
+            schema = self._skill_json_schema(skill)
+            if schema is not None:
+                schemas.append(schema)
+
+        if not schemas:
+            return None
+        if len(schemas) > 1:
+            logger.warning(
+                "Role '%s' declares multiple JSON output schemas; skipping schema constraint",
+                role.name,
+            )
+            return None
+        return schemas[0]
+
+    def _skill_json_schema(self, skill: SkillContent) -> dict | None:
+        """Resolve a skill schema.json into a concrete JSON Schema."""
+        config = skill.schema_config
+        if not config:
+            return None
+
+        output_format = config.get("format")
+        schema_type = config.get("type")
+        if output_format not in (None, "json"):
+            return None
+        if schema_type == "file":
+            return None
+
+        if "schema_ref" in config:
+            return self._pydantic_schema_from_ref(config["schema_ref"])
+
+        if "items_schema_ref" in config:
+            item_schema = self._pydantic_schema_from_ref(config["items_schema_ref"])
+            defs = item_schema.pop("$defs", None)
+            schema = {"type": "array", "items": item_schema}
+            if defs:
+                schema["$defs"] = defs
+            return schema
+
+        return {k: v for k, v in config.items() if k != "format"}
+
+    def _pydantic_schema_from_ref(self, schema_ref: str) -> dict:
+        module_name, _, class_name = schema_ref.rpartition(".")
+        if not module_name or not class_name:
+            raise ValueError(f"Invalid schema_ref: {schema_ref}")
+        module = importlib.import_module(module_name)
+        model = getattr(module, class_name)
+        return model.model_json_schema()
+
     def _emit(self, event: RoleEvent) -> None:
         """Emit a role event to the callback if registered."""
         if self._event_callback:
@@ -198,7 +256,14 @@ class RoleRegistry:
         ))
 
         try:
-            provider_context = {"system": system_prompt} if system_prompt else None
+            json_schema = self._role_json_schema(role)
+            provider_context = {}
+            if system_prompt:
+                provider_context["system"] = system_prompt
+            if json_schema is not None:
+                provider_context["json_schema"] = json_schema
+            if not provider_context:
+                provider_context = None
             result = provider.execute(task, context=provider_context)
 
             self._emit(RoleEvent(

@@ -10,10 +10,10 @@ SIDE EFFECTS:
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from src.llm.adapter import LLMGenerate
+from src.llm.json_utils import loads_llm_json, response_snippet
 from src.schemas.factor import FactorHealthReportV1, FactorPoolV1
 from src.schemas.research import ResearchTicketV1
 from src.schemas.signal import MarketRegimeV1, SignalEventV1
@@ -87,14 +87,14 @@ def generate_tickets(
     # 4. Call LLM
     raw = llm_client.generate(user_prompt, system=system_prompt)
 
-    # 5. Parse JSON response (strip markdown fences if present) and validate.
-    text = raw.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
+    # 5. Parse JSON response and validate.
     try:
-        data = json.loads(text)
+        data = loads_llm_json(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError("research_analyst returned invalid JSON") from exc
+        raise ValueError(
+            "research_analyst returned invalid JSON: "
+            f"{response_snippet(raw)}"
+        ) from exc
     if not isinstance(data, list):
         raise ValueError("research_analyst must return a JSON array")
     tickets = [ResearchTicketV1.model_validate(item) for item in data]

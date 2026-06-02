@@ -29,21 +29,33 @@ class ClaudeCodeProvider(BaseCliProvider):
         self._model = model
         self._permission_mode = permission_mode
 
-    def build_command(self, full_prompt: str) -> list[str]:
-        return [
+    def build_command(
+        self,
+        full_prompt: str,
+        json_schema: dict | None = None,
+    ) -> list[str]:
+        cmd = [
             "claude",
             "--model", self._model,
             "--permission-mode", self._permission_mode,
             "--output-format", "json",
-            "-p", full_prompt,
         ]
+        if json_schema is not None:
+            cmd.extend(["--json-schema", json.dumps(json_schema, ensure_ascii=False)])
+        cmd.extend(["-p", full_prompt])
+        return cmd
 
     def parse_output(self, stdout: str) -> str:
         try:
             data = json.loads(stdout)
-            text = data.get("result", stdout)
+            if isinstance(data, dict) and "result" in data:
+                text = data["result"]
+            else:
+                text = data
         except json.JSONDecodeError:
             text = stdout
+        if not isinstance(text, str):
+            text = json.dumps(text, ensure_ascii=False)
         # Strip markdown code fences the model may have added
         m = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
         return m.group(1).strip() if m else text.strip()

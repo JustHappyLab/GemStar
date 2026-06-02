@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.llm.adapter import LLMGenerate
+from src.llm.json_utils import loads_llm_json
 from src.schemas.signal import MarketRegimeV1
 
 logger = logging.getLogger(__name__)
@@ -86,4 +87,4 @@ def analyze_market_regime(
     """
     user_prompt = _compute_user_prompt(daily_df, index_df, reference_date)
     response = llm_client.generate(user_prompt, system=_SYSTEM_PROMPT)
-    return MarketRegimeV1.model_validate_json(response)
+    return MarketRegimeV1.model_validate(loads_llm_json(response))

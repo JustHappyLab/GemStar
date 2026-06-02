@@ -105,6 +105,18 @@ class TestClaudeCodeProvider:
         assert "sys prompt" in prompt_arg
         assert "task" in prompt_arg
 
+    @patch("src.llm.providers.base.subprocess.run")
+    def test_execute_forwards_json_schema_to_command(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
+        provider = ClaudeCodeProvider()
+        schema = {"type": "array", "items": {"type": "object"}}
+
+        provider.execute("task", context={"json_schema": schema})
+
+        cmd = mock_run.call_args[0][0]
+        schema_arg = cmd[cmd.index("--json-schema") + 1]
+        assert json.loads(schema_arg) == schema
+
     def test_build_command_uses_claude_json_mode(self) -> None:
         provider = ClaudeCodeProvider(model="opus", permission_mode="acceptEdits")
 
@@ -122,11 +134,27 @@ class TestClaudeCodeProvider:
             "prompt",
         ]
 
+    def test_build_command_includes_json_schema_when_supplied(self) -> None:
+        provider = ClaudeCodeProvider()
+        schema = {"type": "array", "items": {"type": "object"}}
+
+        cmd = provider.build_command("prompt", json_schema=schema)
+
+        assert "--json-schema" in cmd
+        schema_arg = cmd[cmd.index("--json-schema") + 1]
+        assert json.loads(schema_arg) == schema
+
     def test_parse_output_strips_markdown_fence(self) -> None:
         provider = ClaudeCodeProvider()
         stdout = json.dumps({"result": "```json\n{\"ok\": true}\n```"})
 
         assert provider.parse_output(stdout) == '{"ok": true}'
+
+    def test_parse_output_serializes_structured_result(self) -> None:
+        provider = ClaudeCodeProvider()
+        stdout = json.dumps({"result": [{"ok": True}]})
+
+        assert provider.parse_output(stdout) == '[{"ok": true}]'
 
 
 class TestProviderABC:

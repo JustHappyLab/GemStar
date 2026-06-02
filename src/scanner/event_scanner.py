@@ -9,13 +9,12 @@ SIDE EFFECTS:
 
 from __future__ import annotations
 
-import json
-import re
 from pathlib import Path
 
 import pandas as pd
 
 from src.llm.adapter import LLMGenerate
+from src.llm.json_utils import loads_llm_json
 from src.schemas.signal import SignalEventV1
 
 _SYSTEM_PROMPT = (Path(__file__).resolve().parents[2] / "skills" / "scan_events" / "prompt.txt").read_text(encoding="utf-8")
@@ -123,11 +122,7 @@ def scan_events(
     system_prompt = _SYSTEM_PROMPT
     raw = llm_client.generate(user_prompt, system=system_prompt)
 
-    text = raw.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-
-    parsed = json.loads(text)
+    parsed = loads_llm_json(raw)
     if not isinstance(parsed, list):
         raise ValueError(f"Expected JSON array, got {type(parsed).__name__}")
 
