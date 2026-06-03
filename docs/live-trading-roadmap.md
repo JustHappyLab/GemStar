@@ -202,7 +202,7 @@ Verification:
 Expected effect:
 
 - GemStar can produce actionable alerts without depending on Feishu, WeChat,
-  Feishu, or external network availability.
+  or external network availability.
 
 Commit:
 

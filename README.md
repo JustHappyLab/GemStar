@@ -1,6 +1,6 @@
 # GemStar
 
-自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 实时信号监控 → 飞书中文通知。持仓感知，跨日跟踪。
+自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 交易雷达监控 → 飞书中文通知。持仓感知，跨日跟踪。
 
 <p align="center">
   <img src="docs/images/pipeline-flow.svg" alt="GemStar Pipeline Flow" width="100%"/>
@@ -10,9 +10,9 @@
 
 ## Pipeline
 
-`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 实时监控信号 → 飞书推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
+`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 生成交易目标与状态快照 → 飞书推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
 
-14 状态有限状态机驱动，每日研究流程：
+14 状态有限状态机驱动，每日研究流程。下方展示正常主路径；完整状态还包括 initialized、failed、degraded、manual_attention 等分支/终态：
 
 ```
 COLLECTING → QUALITY_CHECKING → FACTOR_MONITORING → STRATEGY_IDEATION →
@@ -34,7 +34,7 @@ REPORTING → COMPLETED
 | RuleJudge | 规则引擎评估回测结果（gate 通过/拒绝） |
 | Reviewer | LLM 生成评审意见（解释 + 风险 + 置信度） |
 | IncidentFSM | 7 状态故障分类与自愈流程 |
-| LiveRadar | 实时行情监控，信号识别，T+1/涨跌停约束 |
+| LiveRadar | 交易雷达监控，信号识别，T+1/涨跌停约束 |
 | PaperLedger | 追加式 JSONL 账本，跨日持仓跟踪 |
 
 ### 本地研究核心 + LLM Role 架构
@@ -124,12 +124,14 @@ GemStar/
 │   │   ├── app.py              # typer app + 全局 --output 选项
 │   │   ├── config.py           # GemStarConfig + YAML loader
 │   │   ├── output.py           # table / json 统一输出
-│   │   └── commands/           # 子命令（init/run/fetch/status/history/roles/strategies/factors）
+│   │   └── commands/           # 子命令（run/trade/fetch/live/alerts/scheduler 等）
 │   ├── data/                   # Tushare 数据拉取 + 清洗
 │   ├── timer/                  # LSTM 择时（特征 / 模型 / 信号）
 │   ├── ranker/                 # 多因子选股（因子 / 标准化 / 打分）
 │   ├── portfolio/              # 交易成本 + 仓位分配
 │   ├── engine/                 # 回测引擎 + 绩效指标
+│   ├── live/                   # 交易雷达、paper ledger、目标/快照/决策
+│   ├── notify/                 # 本地 JSONL + 飞书通知 sink
 │   ├── llm/                    # LLM 抽象层
 │   │   ├── adapter.py          # RoleRegistry → LLMGenerate 桥接
 │   │   └── providers/          # AgentProvider + Claude Code provider
@@ -147,11 +149,14 @@ GemStar/
 │   ├── ops/                    # 故障分类 + 自愈
 │   └── schemas/                # Pydantic 数据模型
 ├── tests/                      # 单元测试
+├── alerts/                     # live 通知 JSONL + paper ledger
+├── artifacts/                  # pipeline 产物 + current/trade_status.md/json
 ├── data/                       # Tushare 原始数据缓存 (Parquet)
-├── output/                     # 回测结果 (报告/图表)
+├── outputs/                    # 报告、演示或导出产物
 └── docs/
-    ├── plans/                  # 实施计划
-    └── specs/                  # 设计规格文档
+    ├── feishu-integration.md   # 飞书自定义机器人接入指南
+    ├── skill-integration.md    # 第三方 SKILL.md 协议集成指南
+    └── images/                 # README 图示
 ```
 
 ---
@@ -180,7 +185,7 @@ cp .env.example .env
 # 编辑 .env，填入必要 token
 
 # 初始化项目（生成 gemstar.yaml + state.db）
-gemstar init
+uv run gemstar init
 ```
 
 #### 环境变量
@@ -194,7 +199,9 @@ gemstar init
 
 #### 飞书通知配置
 
-GemStar 支持通过飞书自定义机器人推送实时告警通知。完整步骤见 [docs/feishu-integration.md](docs/feishu-integration.md)。
+GemStar 支持通过飞书自定义机器人推送交易提醒。完整步骤见 [docs/feishu-integration.md](docs/feishu-integration.md)。
+
+如果你还没有飞书机器人 token，先看 [飞书接入指南](docs/feishu-integration.md)：里面写了如何在飞书群添加自定义机器人、复制 Webhook URL、区分 token 和签名密钥。
 
 快速配置：
 
@@ -205,6 +212,21 @@ FEISHU_WEBHOOK_SECRET="你的签名密钥"
 ```
 
 未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
+
+#### 交易状态文件
+
+`gemstar trade` 每次运行都会写出当前事实底稿：
+
+```text
+artifacts/current/trade_status.md
+artifacts/current/trade_status.json
+alerts/live.jsonl
+alerts/ledger.jsonl
+```
+
+`trade_status.md/json` 包含当前持仓、目标持仓、调仓差额、浮盈亏、风险标记和本轮策略。飞书只负责主动提醒；完整状态以这些本地文件为准，也方便第三方 skill、脚本或 dashboard 读取。
+
+当前 `trade` 的交易雷达默认读取本地行情缓存/快照生成建议，不会连接券商或自动实盘下单。
 
 #### 第三方 Skill 集成
 
@@ -288,7 +310,7 @@ Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角�
 ### CLI 命令
 
 ```bash
-# 🚀 一键启动：研究 → 策略生成 → 回测 → 实时监控 → 飞书通知
+# 🚀 一键启动：研究 → 策略生成 → 回测 → 交易雷达 → 飞书通知
 gemstar trade
 
 # 指定本金（默认 10 万）
@@ -304,7 +326,7 @@ gemstar trade --top 5
 
 # ─── 以下是内部子命令 ──────────────────────────────
 
-# 启动当日 pipeline（仅研究+回测，不启动实时监控）
+# 启动当日 pipeline（仅研究+回测，不启动交易雷达）
 gemstar run --date 20260503
 
 # 启用 LLM 策略生成
@@ -350,7 +372,7 @@ gemstar factors
 gemstar leaderboard                # 最新一次 run
 gemstar leaderboard --run 20260503-001
 
-# 实时信号监控（底层命令，通常用 gemstar trade 代替）
+# 交易雷达监控（底层命令，通常用 gemstar trade 代替）
 gemstar live once --account account.json --targets targets.json --snapshots snapshots.json
 gemstar live start --account account.json --targets targets.json --snapshots snapshots.json
 
