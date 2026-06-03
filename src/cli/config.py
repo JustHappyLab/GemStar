@@ -275,10 +275,12 @@ def _expand_dict(obj):
 
 
 def find_config() -> Path | None:
-    """Find the first existing config file in the search order."""
-    for p in _CONFIG_SEARCH:
-        if p.exists():
-            return p
+    """Find the first existing config file in the current directory or parents."""
+    for base in [Path.cwd(), *Path.cwd().parents]:
+        for p in _CONFIG_SEARCH:
+            candidate = base / p
+            if candidate.exists():
+                return candidate
     return None
 
 

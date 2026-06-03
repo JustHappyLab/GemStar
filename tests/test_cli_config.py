@@ -181,6 +181,17 @@ def test_find_config_falls_back_to_dotfile(tmp_path, monkeypatch):
     assert found.name == ".gemstar.yaml"
 
 
+def test_find_config_searches_parent_directories(tmp_path, monkeypatch):
+    (tmp_path / "gemstar.yaml").write_text("benchmark: parent\n")
+    child = tmp_path / "nested" / "child"
+    child.mkdir(parents=True)
+    monkeypatch.chdir(child)
+
+    found = find_config()
+
+    assert found == tmp_path / "gemstar.yaml"
+
+
 # ---------------------------------------------------------------------------
 # 7. find_config() returns None when no config exists
 # ---------------------------------------------------------------------------

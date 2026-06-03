@@ -23,6 +23,8 @@ from src.ranker.scorer import compute_composite_score, rank_top_n
 from src.orchestrator.universe import UniverseResolution, filter_group_for_universe, resolve_universe_value
 from src.schemas.strategy import FactorWeightV1
 
+_FACTOR_LOOKBACK_DAYS = 370
+
 
 def build_rankings(
     daily_df: pd.DataFrame,
@@ -68,9 +70,15 @@ def build_rankings(
         return {}
 
     weights = {f.factor_id: f.weight for f in factors}
+    daily_input, index_input = _filter_factor_inputs(
+        daily_df,
+        index_daily,
+        trade_dates,
+        lookback_days=_FACTOR_LOOKBACK_DAYS,
+    )
 
     # Compute cross-sectional factors (including any expression-based candidates)
-    factor_df = compute_all_factors(daily_df, index_daily, fina_df, expression_factors)
+    factor_df = compute_all_factors(daily_input, index_input, fina_df, expression_factors)
     if factor_df.empty:
         return {}
 
@@ -108,3 +116,34 @@ def build_rankings(
         rankings[str(date)] = top["ts_code"].tolist()
 
     return rankings
+
+
+def _filter_factor_inputs(
+    daily_df: pd.DataFrame,
+    index_daily: pd.DataFrame,
+    trade_dates: list[str],
+    *,
+    lookback_days: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Keep enough history for ranking factors without scanning stale multi-year data."""
+    try:
+        target_dates = pd.to_datetime(pd.Series(trade_dates).astype(str), format="%Y%m%d")
+    except Exception:
+        return daily_df, index_daily
+    if target_dates.empty:
+        return daily_df, index_daily
+
+    start = target_dates.min() - pd.Timedelta(days=lookback_days)
+    end = target_dates.max()
+    return (
+        _filter_by_trade_date(daily_df, start, end),
+        _filter_by_trade_date(index_daily, start, end),
+    )
+
+
+def _filter_by_trade_date(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    if df is None or df.empty or "trade_date" not in df.columns:
+        return df
+    dates = pd.to_datetime(df["trade_date"].astype(str), format="%Y%m%d", errors="coerce")
+    mask = (dates >= start) & (dates <= end)
+    return df.loc[mask].copy()

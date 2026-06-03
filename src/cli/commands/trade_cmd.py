@@ -34,7 +34,7 @@ import typer
 import yaml
 from rich.table import Table
 
-from src.cli.config import load_config
+from src.cli.config import find_config, load_config
 from src.cli.output import console
 from src.live.ledger import append_paper_trade, read_paper_trades
 from src.live.loop import run_live_loop
@@ -87,6 +87,9 @@ def trade_cmd(
     status_dir: str = typer.Option(
         "artifacts/current", "--status-dir", help="Directory for trade_status.json/md snapshots."
     ),
+    fresh_research: bool = typer.Option(
+        False, "--fresh-research", help="Force a fresh research run even when today's completed run exists."
+    ),
 ) -> None:
     """One-command research → live monitor → notify.
 
@@ -95,7 +98,11 @@ def trade_cmd(
     runs, the account state is reconstructed from the ledger so you see cumulative
     position-aware signals (buy/add/reduce/sell), not just fresh buys every time.
     """
-    config = load_config(Path(config_path) if config_path else None)
+    resolved_config_path = _resolve_config_path(config_path)
+    if resolved_config_path is not None:
+        os.chdir(resolved_config_path.parent)
+    config = load_config(resolved_config_path)
+    fresh_research = fresh_research if isinstance(fresh_research, bool) else False
     notifier = _build_notifier(notifications_path)
     tracker = _LedgerTracker(ledger_path, capital)
 
@@ -113,7 +120,18 @@ def trade_cmd(
             f"cash={account.cash:.0f} ledger={ledger_path}"
         )
 
-        run_id = _run_research(config_path, stop_event)
+        run_id = None
+        if not fresh_research:
+            run_id = _latest_completed_run(config.db_path, run_date=ref_date)
+            if run_id:
+                console.print(f"[dim]Reusing completed research run {run_id}.[/dim]")
+
+        if run_id is None:
+            run_id = _run_research(
+                str(resolved_config_path) if resolved_config_path else None,
+                stop_event,
+                ref_date=ref_date,
+            )
         if run_id is None:
             _emit(notifier, _alert(
                 "warning", f"研究失败 ({ref_date})",
@@ -392,9 +410,15 @@ def _print_status_summary(payload: dict) -> None:
 # ── research orchestration ──────────────────────────────────────
 
 
-def _run_research(config_path: str | None, stop_event: threading.Event) -> str | None:
-    """Subprocess `gemstar run --llm`. Returns the latest completed run_id or None."""
-    cmd = [sys.executable, "-m", "src.cli.app", "run", "--llm"]
+def _run_research(
+    config_path: str | None,
+    stop_event: threading.Event,
+    ref_date: str | None = None,
+) -> str | None:
+    """Subprocess `gemstar run`. Returns the latest completed run_id or None."""
+    cmd = [sys.executable, "-m", "src.cli.app", "run"]
+    if ref_date:
+        cmd.extend(["--date", ref_date])
     if config_path:
         cmd.extend(["--config", str(Path(config_path).resolve())])
 
@@ -422,17 +446,45 @@ def _run_research(config_path: str | None, stop_event: threading.Event) -> str |
 
     # Pick up the run_id of the just-completed run.
     config = load_config(Path(config_path) if config_path else None)
-    return _latest_completed_run(config.db_path)
+    return _latest_completed_run(config.db_path, run_date=ref_date)
 
 
-def _latest_completed_run(db_path: str) -> str | None:
+def _resolve_config_path(config_path: str | None) -> Path | None:
+    """Resolve explicit or discovered config once so subprocesses use the same file."""
+    if config_path:
+        return Path(config_path).expanduser().resolve()
+    found = find_config()
+    if found:
+        return found.resolve()
+    project_config = _project_config_path()
+    return project_config.resolve() if project_config else None
+
+
+def _project_config_path() -> Path | None:
+    """Find repo-local config when the installed command is launched elsewhere."""
+    repo_root = Path(__file__).resolve().parents[3]
+    for name in ("gemstar.yaml", "gemstar.yml", ".gemstar.yaml"):
+        candidate = repo_root / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _latest_completed_run(db_path: str, run_date: str | None = None) -> str | None:
     if not Path(db_path).exists():
         return None
     conn = sqlite3.connect(db_path)
     try:
-        row = conn.execute(
-            "SELECT run_id FROM runs WHERE status = 'completed' ORDER BY started_at DESC LIMIT 1"
-        ).fetchone()
+        if run_date:
+            row = conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'completed' AND run_id LIKE ? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (f"{run_date}-%",),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'completed' ORDER BY started_at DESC LIMIT 1"
+            ).fetchone()
         return row[0] if row else None
     finally:
         conn.close()

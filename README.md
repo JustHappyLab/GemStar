@@ -319,6 +319,9 @@ gemstar trade --capital 500000
 # 只跑一轮看效果
 gemstar trade --once
 
+# 当天已有 completed run 时会直接复用；如需强制重跑研究
+gemstar trade --fresh-research
+
 # 状态快照会自动写入 artifacts/current/trade_status.md/json
 
 # 跟踪 leaderboard 前 5 个策略
@@ -362,6 +365,11 @@ gemstar -o json status
 
 # 列出历史运行
 gemstar history
+
+# 重置 paper 持仓和当前交易状态（自动备份）
+gemstar reset trade
+gemstar reset trade --include-alerts # 连通知历史也清掉
+gemstar reset all                    # 同时清空 run 记录和 artifacts，保留 data/raw
 
 # 查看可用角色 / 策略 / 因子
 gemstar roles

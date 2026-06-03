@@ -66,6 +66,7 @@ from src.cli.commands.engineering_cmd import engineering_run_cmd  # noqa: E402
 from src.cli.commands.live_cmd import live_once_cmd, live_start_cmd  # noqa: E402
 from src.cli.commands.trade_cmd import trade_cmd  # noqa: E402
 from src.cli.commands.alerts_cmd import alerts_latest_cmd  # noqa: E402
+from src.cli.commands.reset_cmd import reset_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
@@ -95,6 +96,7 @@ app.command("restart", hidden=True)(restart_cmd)
 app.command("doctor")(doctor_cmd)
 app.command("cleanup")(cleanup_cmd)
 app.command("leaderboard")(leaderboard_cmd)
+app.command("reset")(reset_cmd)
 
 
 if __name__ == "__main__":

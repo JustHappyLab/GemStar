@@ -131,3 +131,64 @@ def test_rankings_ignore_requested_factor_columns_that_failed_to_compute():
     )
 
     assert rankings["20240102"] == ["600001.SH"]
+
+
+def test_rankings_trim_input_history_before_factor_compute(monkeypatch):
+    import src.orchestrator.rankings as rankings_mod
+
+    daily = pd.DataFrame([
+        {
+            "ts_code": "600001.SH",
+            "trade_date": "20210101",
+            "close": 1.0,
+            "pe_ttm": 1.0,
+            "pb": 1.0,
+            "turnover_rate": 1.0,
+        },
+        {
+            "ts_code": "600001.SH",
+            "trade_date": "20240102",
+            "close": 2.0,
+            "pe_ttm": 1.0,
+            "pb": 1.0,
+            "turnover_rate": 1.0,
+        },
+        {
+            "ts_code": "600002.SH",
+            "trade_date": "20240102",
+            "close": 3.0,
+            "pe_ttm": 2.0,
+            "pb": 1.0,
+            "turnover_rate": 1.0,
+        },
+    ])
+    index_daily = pd.DataFrame({
+        "trade_date": ["20210101", "20240102"],
+        "close": [100.0, 101.0],
+    })
+    captured = {}
+
+    def fake_compute_all_factors(daily_input, index_input, _fina_df, _expression_factors):
+        captured["daily_dates"] = set(daily_input["trade_date"].astype(str))
+        captured["index_dates"] = set(index_input["trade_date"].astype(str))
+        return pd.DataFrame({
+            "ts_code": ["600001.SH", "600002.SH"],
+            "trade_date": ["20240102", "20240102"],
+            "pe_inverse": [1.0, 0.5],
+        })
+
+    monkeypatch.setattr(rankings_mod, "compute_all_factors", fake_compute_all_factors)
+
+    result = build_rankings(
+        daily,
+        index_daily,
+        pd.DataFrame(),
+        [FactorWeightV1(factor_id="pe_inverse", weight=1.0)],
+        top_n=1,
+        trade_dates=["20240102"],
+        universe="all",
+    )
+
+    assert result["20240102"] == ["600001.SH"]
+    assert captured["daily_dates"] == {"20240102"}
+    assert captured["index_dates"] == {"20240102"}

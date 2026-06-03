@@ -11,9 +11,136 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import typer
 
 from src.live.snapshot import snapshots_from_daily_df
 from src.schemas.live import LiveAccountStateV1, LivePositionV1, TargetHoldingV1
+
+
+def test_trade_cmd_forwards_discovered_config_to_research(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    config_path = tmp_path / "gemstar.yaml"
+    config_path.write_text(
+        "strategies:\n"
+        "  - strategies/chinext_lstm_mf8/config.yaml\n"
+        "db_path: state.db\n"
+        "artifacts_dir: artifacts\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_run_research(path, _stop_event, ref_date=None):
+        captured["config_path"] = path
+        captured["ref_date"] = ref_date
+        return None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
+    with (
+        patch.object(mod, "_run_research", side_effect=fake_run_research),
+        patch.object(mod, "_latest_completed_run", return_value=None),
+        pytest.raises(typer.Exit),
+    ):
+        mod.trade_cmd(
+            once=True,
+            config_path=None,
+            top_n=1,
+            capital=100000.0,
+            active_interval=1,
+            idle_interval=1,
+            max_cycles=1,
+            notifications_path=str(tmp_path / "alerts.jsonl"),
+            ledger_path=str(tmp_path / "ledger.jsonl"),
+            status_dir=str(tmp_path / "status"),
+        )
+
+    assert captured["config_path"] == str(config_path.resolve())
+    assert captured["ref_date"]
+
+
+def test_trade_cmd_uses_project_config_when_launched_outside_repo(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    config_path = repo_dir / "gemstar.yaml"
+    config_path.write_text(
+        "strategies:\n"
+        "  - strategies/chinext_lstm_mf8/config.yaml\n"
+        "db_path: state.db\n"
+        "artifacts_dir: artifacts\n",
+        encoding="utf-8",
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    captured = {}
+
+    def fake_run_research(path, _stop_event, ref_date=None):
+        captured["config_path"] = path
+        captured["cwd"] = Path.cwd()
+        captured["ref_date"] = ref_date
+        return None
+
+    monkeypatch.chdir(outside)
+    monkeypatch.setattr(mod, "_project_config_path", lambda: config_path)
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
+    with (
+        patch.object(mod, "_run_research", side_effect=fake_run_research),
+        patch.object(mod, "_latest_completed_run", return_value=None),
+        pytest.raises(typer.Exit),
+    ):
+        mod.trade_cmd(
+            once=True,
+            config_path=None,
+            top_n=1,
+            capital=100000.0,
+            active_interval=1,
+            idle_interval=1,
+            max_cycles=1,
+            notifications_path=str(tmp_path / "alerts.jsonl"),
+            ledger_path=str(tmp_path / "ledger.jsonl"),
+            status_dir=str(tmp_path / "status"),
+        )
+
+    assert captured["config_path"] == str(config_path.resolve())
+    assert captured["cwd"] == repo_dir
+    assert captured["ref_date"]
+
+
+def test_trade_cmd_reuses_today_completed_run(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    captured = {"research_called": False}
+
+    def fake_run_research(*_args, **_kwargs):
+        captured["research_called"] = True
+        return "fresh-run"
+
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
+    with (
+        patch.object(mod, "_latest_completed_run", return_value="20260603-existing"),
+        patch.object(mod, "_run_research", side_effect=fake_run_research),
+        patch.object(mod, "_today_str", return_value="20260603"),
+        patch.object(mod, "_build_targets", return_value=([], [], {})),
+    ):
+        mod.trade_cmd(
+            once=True,
+            config_path=None,
+            top_n=1,
+            capital=100000.0,
+            active_interval=1,
+            idle_interval=1,
+            max_cycles=1,
+            notifications_path=str(tmp_path / "alerts.jsonl"),
+            ledger_path=str(tmp_path / "ledger.jsonl"),
+            status_dir=str(tmp_path / "status"),
+        )
+
+    assert captured["research_called"] is False
 
 
 @pytest.mark.skipif(
@@ -56,9 +183,10 @@ def test_trade_cmd_one_cycle(tmp_path, monkeypatch):
     })
     snapshots = snapshots_from_daily_df(daily_df)
 
-    monkeypatch.delenv("FEISHU_WEBHOOK_URL", raising=False)
-    monkeypatch.delenv("FEISHU_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
     with (
+        patch.object(mod, "_latest_completed_run", return_value=None),
         patch.object(mod, "_run_research", return_value=target_run),
         patch.object(mod, "_find_strategy_yaml", return_value=strategy_path),
         patch.object(
@@ -139,9 +267,10 @@ def test_trade_cmd_watches_current_positions_not_only_targets(tmp_path, monkeypa
         watched_symbols["symbols"] = set(symbols)
         return lambda: snapshots
 
-    monkeypatch.delenv("FEISHU_WEBHOOK_URL", raising=False)
-    monkeypatch.delenv("FEISHU_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
     with (
+        patch.object(mod, "_latest_completed_run", return_value=None),
         patch.object(mod, "_run_research", return_value="run-1"),
         patch.object(
             mod,
