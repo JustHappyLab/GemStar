@@ -344,7 +344,7 @@ task_created → approved → branch_created → implementation → tests_runnin
 - [ ] `DataQualityGate` 实现 freshness / completeness / PIT 三项检查
 - [ ] degraded 模式定义（哪些下游可继续，哪些必须停）
 - [ ] `Reporter` LLM prompt + 模板（输入限定为已验证工件）
-- [ ] IM 推送（先选 Telegram 或本地文件）
+- [ ] IM 推送（先选飞书或本地文件）
 - [ ] 端到端 daily run
 
 **验收**：连跑 5 个交易日不需手工干预，每日产出报告，状态库可查 run 历史。
@@ -442,7 +442,7 @@ Codex §16 列了 10 个开放问题。我的回答：
 4. **ResearchAnalyst 频率？** 周度。
 5. **核心 vs 可选数据？** 见 §7。
 6. **降级模式能否回测既有策略？** 可以；不能 promote 任何状态。
-7. **首选 IM 渠道？** Telegram（个人开发者最简）；企业微信留 Phase 6。
+7. **首选 IM 渠道？** 飞书（国内使用更顺手）；企业微信留 Phase 6。
 8. **策略 promote 硬门指标？** Sharpe ≥ 1.0、Calmar ≥ 0.8、分段 IR std ≤ 0.5、完成交易 ≥ 100、max_dd ≥ -0.30。
 9. **因子 active 硬门？** IC_IR ≥ 0.3、IC>0 比例 ≥ 0.55、coverage ≥ 0.95、与现有 active 因子相关性 ≤ 0.7。
 10. **EngineerAgent 批准后的自治度？** 仅限 ticket 描述范围；超范围必须再批准；测试不通过不能合并；diff > 200 行需二次审。

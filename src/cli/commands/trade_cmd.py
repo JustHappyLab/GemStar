@@ -14,7 +14,7 @@ CALLING SPEC:
 SIDE EFFECTS:
     Subprocesses `gemstar run`. Reads cached parquet data and the run's
     leaderboard artifact. Appends notifications to alerts/live.jsonl and,
-    when TELEGRAM_BOT_TOKEN/CHAT_ID are set, posts to Telegram.
+    when FEISHU_WEBHOOK_URL is set, posts to Feishu.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from pathlib import Path
 
 import typer
 import yaml
+from rich.table import Table
 
 from src.cli.config import load_config
 from src.cli.output import console
@@ -39,10 +40,11 @@ from src.live.ledger import append_paper_trade, read_paper_trades
 from src.live.loop import run_live_loop
 from src.live.signal_engine import build_live_decisions
 from src.live.snapshot import snapshots_from_daily_df
+from src.live.status_report import build_trade_status_payload, write_trade_status
 from src.live.symbols import symbol_names_from_dataframe
+from src.notify.feishu import FeishuNotificationSink
 from src.notify.local_file import LocalFileNotificationSink
 from src.notify.message import NotificationMessageV1, format_symbol_labels
-from src.notify.telegram import TelegramNotificationSink
 from src.schemas.live import (
     LiveAccountStateV1,
     LiveDecisionV1,
@@ -82,6 +84,9 @@ def trade_cmd(
     ledger_path: str = typer.Option(
         "alerts/ledger.jsonl", "--ledger", help="Paper-trading ledger path (appends executed trades)."
     ),
+    status_dir: str = typer.Option(
+        "artifacts/current", "--status-dir", help="Directory for trade_status.json/md snapshots."
+    ),
 ) -> None:
     """One-command research → live monitor → notify.
 
@@ -105,7 +110,7 @@ def trade_cmd(
         account = tracker.load_account()
         console.print(
             f"  capital={account.total_value:.0f} positions={len(account.positions)} "
-            f"cash={account.cash:.0f}"
+            f"cash={account.cash:.0f} ledger={ledger_path}"
         )
 
         run_id = _run_research(config_path, stop_event)
@@ -124,7 +129,9 @@ def trade_cmd(
             _wait_until_tomorrow(stop_event)
             continue
 
-        targets, strategies, symbol_names = _build_targets(config, run_id, ref_date, top_n, capital)
+        targets, strategies, symbol_names = _build_targets(
+            config, run_id, ref_date, top_n, account.total_value
+        )
         if not targets:
             console.print(f"[yellow]运行 {run_id} 无可执行目标。[/yellow]")
             _emit(notifier, _alert(
@@ -137,7 +144,7 @@ def trade_cmd(
             _wait_until_tomorrow(stop_event)
             continue
 
-        symbols = sorted({t.ts_code for t in targets})
+        symbols = sorted({t.ts_code for t in targets} | {p.ts_code for p in account.positions})
         display_symbols = format_symbol_labels(symbols, symbol_names)
         console.print(
             f"[green]目标持仓就绪[/green] 策略={','.join(strategies)} "
@@ -154,6 +161,30 @@ def trade_cmd(
         ))
 
         snapshot_loader = _make_snapshot_loader(config, symbols)
+        snapshots = snapshot_loader()
+        marked_account = _mark_account_to_market(account, snapshots)
+        initial_decisions = build_live_decisions(
+            account=marked_account,
+            targets=targets,
+            snapshots=snapshots,
+            strategy_name=strategies[0] if strategies else "trade",
+        )
+        status_payload = build_trade_status_payload(
+            ref_date=ref_date,
+            run_id=run_id,
+            account=marked_account,
+            targets=targets,
+            snapshots=snapshots,
+            decisions=initial_decisions,
+            strategies=strategies,
+            symbol_names=symbol_names,
+            phase="targets_ready",
+        )
+        json_status_path, md_status_path = write_trade_status(status_dir, status_payload)
+        _print_status_summary(status_payload)
+        console.print(
+            f"[dim]status written: {md_status_path} / {json_status_path}[/dim]"
+        )
 
         # Wrap notifier so confirmed trades land in the ledger.
         notified_decisions: list[LiveDecisionV1] = []
@@ -161,9 +192,8 @@ def trade_cmd(
             notifier(notification)
             # Rebuild the source decision for ledger tracking.
             snapshots = snapshot_loader()
-            prices = {s.ts_code: s.last_price for s in snapshots}
             for d in build_live_decisions(
-                account=tracker.load_account(),
+                account=_mark_account_to_market(tracker.load_account(), snapshots),
                 targets=targets,
                 snapshots=snapshots,
                 strategy_name=strategies[0] if strategies else "trade",
@@ -190,6 +220,27 @@ def trade_cmd(
             if d.intent.action in ("buy", "add", "sell", "reduce"):
                 tracker.record(d, snapshots=snapshot_loader())
 
+        final_snapshots = snapshot_loader()
+        final_account = _mark_account_to_market(tracker.load_account(), final_snapshots)
+        final_decisions = build_live_decisions(
+            account=final_account,
+            targets=targets,
+            snapshots=final_snapshots,
+            strategy_name=strategies[0] if strategies else "trade",
+        )
+        final_payload = build_trade_status_payload(
+            ref_date=ref_date,
+            run_id=run_id,
+            account=final_account,
+            targets=targets,
+            snapshots=final_snapshots,
+            decisions=final_decisions,
+            strategies=strategies,
+            symbol_names=symbol_names,
+            phase="live_cycle_done",
+        )
+        write_trade_status(status_dir, final_payload)
+
         console.print(
             f"[green]Live cycle done.[/green] cycles={result.cycles} "
             f"decisions={result.decisions} notifications={result.notifications} "
@@ -204,28 +255,31 @@ def trade_cmd(
 
 
 def _build_notifier(jsonl_path: str):
-    """Return a notify(message) callable that fans out to Telegram + JSONL."""
+    """Return a notify(message) callable that fans out to Feishu + JSONL."""
     file_sink = LocalFileNotificationSink(jsonl_path)
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN") or ""
-    chat_id = os.getenv("TELEGRAM_CHAT_ID") or ""
-    telegram_sink: TelegramNotificationSink | None = None
-    if bot_token and chat_id:
+    webhook_url = os.getenv("FEISHU_WEBHOOK_URL") or ""
+    webhook_secret = os.getenv("FEISHU_WEBHOOK_SECRET") or ""
+    feishu_sink: FeishuNotificationSink | None = None
+    if webhook_url:
         try:
-            telegram_sink = TelegramNotificationSink(bot_token=bot_token, chat_id=chat_id)
-            console.print("[dim]Telegram notifications enabled.[/dim]")
+            feishu_sink = FeishuNotificationSink(
+                webhook_url=webhook_url,
+                secret=webhook_secret or None,
+            )
+            console.print("[dim]Feishu notifications enabled.[/dim]")
         except ValueError as exc:
-            console.print(f"[yellow]Telegram disabled: {exc}[/yellow]")
+            console.print(f"[yellow]Feishu disabled: {exc}[/yellow]")
     else:
-        console.print("[dim]Telegram disabled (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set); using JSONL only.[/dim]")
+        console.print("[dim]Feishu disabled (FEISHU_WEBHOOK_URL not set); using JSONL only.[/dim]")
 
     def _notify(message: NotificationMessageV1) -> None:
         file_sink.send(message)
-        if telegram_sink is None:
+        if feishu_sink is None:
             return
         try:
-            telegram_sink.send(message)
+            feishu_sink.send(message)
         except Exception as exc:
-            logger.warning("Telegram send failed: %s", exc)
+            logger.warning("Feishu send failed: %s", exc)
 
     return _notify
 
@@ -265,6 +319,74 @@ def _heartbeat(event: dict) -> None:
         f"cycle={event['cycle']} decisions={event['decisions']} "
         f"notifications={event['notifications']} sleep={event['sleep_seconds']}s[/dim]"
     )
+
+
+# ── status rendering ────────────────────────────────────────────
+
+
+def _mark_account_to_market(
+    account: LiveAccountStateV1,
+    snapshots: list[MarketSnapshotV1],
+) -> LiveAccountStateV1:
+    """Return account state with positions valued at latest snapshot prices."""
+    prices = {s.ts_code: s.last_price for s in snapshots}
+    positions: list[LivePositionV1] = []
+    market_value = 0.0
+    for pos in account.positions:
+        last_price = prices.get(pos.ts_code) or pos.last_price
+        value = pos.shares * last_price if last_price else pos.market_value
+        market_value += value
+        positions.append(
+            LivePositionV1(
+                ts_code=pos.ts_code,
+                shares=pos.shares,
+                avg_cost=pos.avg_cost,
+                last_price=last_price,
+                market_value=value,
+                bought_today=pos.bought_today,
+            )
+        )
+    return LiveAccountStateV1(
+        as_of=account.as_of,
+        cash=account.cash,
+        total_value=account.cash + market_value,
+        positions=positions,
+    )
+
+
+def _print_status_summary(payload: dict) -> None:
+    """Print current holdings, targets, and actions in one compact table."""
+    account = payload["account"]
+    console.print(
+        f"[green]账户状态[/green] total={account['total_value']:.0f} "
+        f"cash={account['cash']:.0f} position={account['invested_pct']:.1%}"
+    )
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("标的")
+    table.add_column("当前", justify="right")
+    table.add_column("目标", justify="right")
+    table.add_column("差额", justify="right")
+    table.add_column("最新价", justify="right")
+    table.add_column("浮盈亏", justify="right")
+    table.add_column("动作")
+    for row in payload.get("rows", []):
+        last_price = "-" if row["last_price"] is None else f"{row['last_price']:.2f}"
+        pnl = f"{row['unrealized_pnl']:.0f}"
+        if row["unrealized_pnl_pct"] is not None:
+            pnl += f" ({row['unrealized_pnl_pct']:.1%})"
+        table.add_row(
+            row["label"],
+            str(row["shares"]),
+            str(row["target_shares"]),
+            f"{row['diff_shares']:+d}",
+            last_price,
+            pnl,
+            row["action"],
+        )
+    if payload.get("rows"):
+        console.print(table)
+    else:
+        console.print("[dim]当前无持仓且无目标。[/dim]")
 
 
 # ── research orchestration ──────────────────────────────────────

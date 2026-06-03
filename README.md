@@ -1,6 +1,6 @@
 # GemStar
 
-自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 实时信号监控 → Telegram 中文通知。持仓感知，跨日跟踪。
+自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 实时信号监控 → 飞书中文通知。持仓感知，跨日跟踪。
 
 <p align="center">
   <img src="docs/images/pipeline-flow.svg" alt="GemStar Pipeline Flow" width="100%"/>
@@ -10,7 +10,7 @@
 
 ## Pipeline
 
-`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 实时监控信号 → Telegram 推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
+`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 实时监控信号 → 飞书推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
 
 14 状态有限状态机驱动，每日研究流程：
 
@@ -186,53 +186,23 @@ gemstar init
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
-| `TELEGRAM_BOT_TOKEN` | 否 | Telegram Bot token，用于接收实时告警通知 |
-| `TELEGRAM_CHAT_ID` | 否 | Telegram Chat ID，告警消息的接收目标 |
+| `FEISHU_WEBHOOK_URL` | 否 | 飞书自定义机器人 Webhook，用于接收实时告警通知 |
+| `FEISHU_WEBHOOK_SECRET` | 否 | 飞书自定义机器人签名密钥，开启签名校验时填写 |
 | `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
 
-#### Telegram 通知配置
+#### 飞书通知配置
 
-GemStar 支持通过 Telegram Bot 推送实时告警通知。配置步骤：
+GemStar 支持通过飞书自定义机器人推送实时告警通知。完整步骤见 [docs/feishu-integration.md](docs/feishu-integration.md)。
 
-**1. 创建 Telegram Bot**
-
-在 Telegram 中搜索 `@BotFather`，发送以下命令创建 Bot：
-
-```
-/newbot
-```
-
-按提示输入 Bot 名称（如 `GemStarAlert`）和用户名（如 `gemstar_alert_bot`）。创建成功后会获得一个 Bot Token（格式：`123456789:ABCdef...`）。
-
-**2. 获取 Chat ID**
-
-首先给你的 Bot 发一条消息（点击 Start 按钮），然后访问：
-
-```
-https://api.telegram.org/bot<你的Bot Token>/getUpdates
-```
-
-在返回的 JSON 中找到 `"chat":{"id": 123456789}`，这个数字就是你的 Chat ID。
-
-**3. 配置环境变量**
-
-在 `.env` 文件中添加：
+快速配置：
 
 ```bash
-TELEGRAM_BOT_TOKEN="你的Bot Token"
-TELEGRAM_CHAT_ID="你的Chat ID"
+FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/你的token"
+# 如果飞书机器人开启了签名校验，再配置：
+FEISHU_WEBHOOK_SECRET="你的签名密钥"
 ```
 
-**4. 测试配置**
-
-```bash
-# 发送测试消息
-curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-  -H "Content-Type: application/json" \
-  -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"GemStar 通知测试\"}"
-```
-
-配置完成后，Pipeline 运行时的告警和通知会自动推送到你的 Telegram。
+未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
 
 #### LLM Provider 配置
 
@@ -303,7 +273,7 @@ Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角�
 ### CLI 命令
 
 ```bash
-# 🚀 一键启动：研究 → 策略生成 → 回测 → 实时监控 → Telegram 通知
+# 🚀 一键启动：研究 → 策略生成 → 回测 → 实时监控 → 飞书通知
 gemstar trade
 
 # 指定本金（默认 10 万）
@@ -311,6 +281,8 @@ gemstar trade --capital 500000
 
 # 只跑一轮看效果
 gemstar trade --once
+
+# 状态快照会自动写入 artifacts/current/trade_status.md/json
 
 # 跟踪 leaderboard 前 5 个策略
 gemstar trade --top 5

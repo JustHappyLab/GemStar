@@ -779,7 +779,7 @@ GemStar/
 
 - [ ] 编写 Reporter prompt，实现 `reporter/prompt.py`
 - [ ] 实现 Leaderboard 计算（所有策略的指标汇总 + 排名）
-- [ ] 实现 IM 推送（先支持一种渠道，如 Telegram / 企业微信）
+- [ ] 实现 IM 推送（先支持一种渠道，如飞书 / 企业微信）
 - [ ] 验证: 完整流水线端到端运行
 
 **交付物**: 每日自动报告推送到 IM。
@@ -817,7 +817,7 @@ GemStar/
 | LLM API | Claude API (Sonnet) | 性价比好，中文能力强 |
 | Agent 框架 | Claude Code CLI | 已有文件读写、代码执行能力 |
 | 实验追踪 | SwanLab | 已集成 |
-| IM 推送 | 待定 (Telegram / 企业微信) | Phase 6 决定 |
+| IM 推送 | 待定 (飞书 / 企业微信) | Phase 6 决定 |
 | 调度 | Cron + Python | 简单可靠 |
 
 ---

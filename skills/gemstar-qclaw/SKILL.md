@@ -5,7 +5,7 @@ description: 通过 QClaw/微信查询 GemStar 量化交易提醒、最新信号
 
 # GemStar QClaw Skill
 
-Use this skill when the user asks in WeChat/QClaw about GemStar, trading alerts, live signals, paper ledger, target holdings, leaderboard, or whether GemStar has buy/sell guidance.
+Use this skill when the user asks in WeChat/QClaw about GemStar, current holdings, target holdings, trading alerts, live signals, paper ledger, leaderboard, or whether GemStar has buy/sell guidance.
 
 ## Repository
 
@@ -18,6 +18,26 @@ GemStar lives at:
 Run all GemStar commands from that directory.
 
 ## Primary Commands
+
+Current holdings, target holdings, and rebalance actions:
+
+```bash
+cd /Users/ken/workspace/GemStar
+test -f artifacts/current/trade_status.md && cat artifacts/current/trade_status.md
+```
+
+Use the bundled script when the current directory is unknown:
+
+```bash
+bash /Users/ken/workspace/GemStar/skills/gemstar-qclaw/scripts/gemstar-status.sh
+```
+
+Machine-readable current trade status:
+
+```bash
+cd /Users/ken/workspace/GemStar
+test -f artifacts/current/trade_status.json && cat artifacts/current/trade_status.json
+```
 
 Latest WeChat-friendly alerts:
 
@@ -67,8 +87,10 @@ This may take several minutes because it can run research, LLM roles, target gen
 ## Response Style
 
 - Return concise Chinese summaries suitable for WeChat.
+- For "当前持仓", "目标仓位", "今天建议", and "为什么买/卖", read `artifacts/current/trade_status.json` first; fall back to `trade_status.md`, then alerts.
 - Preserve stock code and Chinese name, e.g. `300750.SZ 宁德时代`.
 - If no alerts exist, say there are no GemStar alerts yet and include the checked path.
+- If no trade status exists, say GemStar has not generated `artifacts/current/trade_status.md` yet and suggest running `gemstar trade --once`.
 - If a command fails, report the command and the short error. Do not invent trading signals.
 
 ## Safety Rules

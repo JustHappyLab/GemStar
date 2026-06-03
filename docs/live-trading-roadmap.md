@@ -70,7 +70,7 @@ src/live/
 src/notify/
     message.py            # canonical notification payload
     local_file.py         # deterministic no-network notification sink
-    telegram.py           # optional network sink, later
+    feishu.py             # optional network sink
 
 src/cli/commands/live_cmd.py
     gemstar live plan
@@ -79,7 +79,7 @@ src/cli/commands/live_cmd.py
 ```
 
 The first implementation should use a local-file notification sink so tests do
-not need network access. Telegram or enterprise IM can be added after the core
+not need network access. Feishu or enterprise IM can be added after the core
 signal contract is stable.
 
 # Milestones
@@ -201,7 +201,7 @@ Verification:
 
 Expected effect:
 
-- GemStar can produce actionable alerts without depending on Telegram, WeChat,
+- GemStar can produce actionable alerts without depending on Feishu, WeChat,
   Feishu, or external network availability.
 
 Commit:
@@ -350,7 +350,7 @@ Commit:
 
 Change:
 
-- Add optional Telegram sink after local sink is stable.
+- Add optional Feishu sink after local sink is stable.
 - Config fields:
   - enabled
   - bot token env var
@@ -369,7 +369,7 @@ Expected effect:
 
 Commit:
 
-- `feat: add telegram notification sink`
+- `feat: add feishu notification sink`
 
 ## M10. Paper Ledger and Human Confirmation
 
