@@ -226,6 +226,8 @@ alerts/ledger.jsonl
 
 `trade_status.md/json` 包含当前持仓、目标持仓、调仓差额、浮盈亏、风险标记和本轮策略。飞书只负责主动提醒；完整状态以这些本地文件为准，也方便第三方 skill、脚本或 dashboard 读取。
 
+其中 `alerts/ledger.jsonl` 是 paper trading 持仓的 source of truth；`trade_status.md/json` 是当前快照，可由下一次 `gemstar trade --once --max-cycles 1` 重新生成。运行记录存放在 `state.db` 和 `artifacts/<run_id>/`，行情缓存存放在 `data/raw/`。完整约定见 [docs/state-storage.md](docs/state-storage.md)。
+
 当前 `trade` 的交易雷达默认读取本地行情缓存/快照生成建议，不会连接券商或自动实盘下单。
 
 #### 第三方 Skill 集成
