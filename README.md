@@ -204,6 +204,19 @@ FEISHU_WEBHOOK_SECRET="你的签名密钥"
 
 未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
 
+#### QClaw Skill 集成
+
+GemStar 内置 `skills/gemstar-qclaw`，可接入 QClaw/微信，用自然语言查询当前持仓、目标持仓、调仓差额、最新提醒和运行状态。安装步骤见 [docs/qclaw-skill-integration.md](docs/qclaw-skill-integration.md)。
+
+常用查询：
+
+```text
+GemStar 当前持仓是什么？
+GemStar 今天建议买卖什么？
+GemStar 目标仓位和当前仓位差多少？
+GemStar 最近 5 条提醒是什么？
+```
+
 #### LLM Provider 配置
 
 当前仍由 LLM 执行的角色统一使用 Claude Code CLI：
