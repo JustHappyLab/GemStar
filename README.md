@@ -195,7 +195,7 @@ uv run gemstar init
 | `TUSHARE_TOKEN` | 是 | Tushare Pro API token，用于拉取 A 股数据 |
 | `FEISHU_WEBHOOK_URL` | 否 | 飞书自定义机器人 Webhook，用于接收实时告警通知 |
 | `FEISHU_WEBHOOK_SECRET` | 否 | 飞书自定义机器人签名密钥，开启签名校验时填写 |
-| `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪（独立回测工具） |
+| `SWANLAB_API_KEY` | 否 | SwanLab 实验追踪，仅 `tools/tracking/swanlab_run.py` 需要 |
 
 #### 飞书通知配置
 

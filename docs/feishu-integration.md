@@ -1,6 +1,8 @@
 # GemStar 飞书接入指南
 
-GemStar 使用飞书自定义机器人发送交易提醒。这个接入方式适合个人或小团队：配置简单，不需要完整的企业自建应用，也不影响本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json` 状态记录。
+GemStar 使用飞书自定义机器人 Webhook 发送交易提醒。这个接入方式适合个人或小团队：配置简单，不需要完整的企业自建应用，也不影响本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json` 状态记录。
+
+官方参考：[飞书开放平台：自定义机器人使用指南](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot)
 
 ## 1. 获取飞书 Webhook Token
 
@@ -9,12 +11,16 @@ GemStar 使用的是“飞书群自定义机器人”。你需要从机器人配
 操作步骤：
 
 1. 打开飞书客户端，进入你想接收 GemStar 提醒的群。
-2. 点击右上角群设置。
-3. 找到“机器人”或“群机器人”入口。
-4. 点击“添加机器人”。
-5. 选择“自定义机器人”。
-6. 填写机器人名称，例如 `GemStar`。
-7. 添加成功后，飞书会显示一个 Webhook 地址，格式类似：
+2. 在群组右上角点击“更多”按钮，然后点击“设置”。
+3. 在右侧设置界面点击“群机器人”。
+4. 在“群机器人”界面点击“添加机器人”。
+5. 在“添加机器人”对话框里找到并点击“自定义机器人”。
+6. 设置机器人的头像、名称和描述，例如名称填 `GemStar`，然后点击“添加”。
+7. 添加成功后，飞书会显示 Webhook 地址。复制完整地址，并点击“完成”。
+
+![飞书自定义机器人添加步骤](images/feishu-custom-bot-steps.png)
+
+Webhook 地址格式类似：
 
 ```text
 https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -38,12 +44,16 @@ FEISHU_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx-xxxx-x
 
 飞书自定义机器人可以配置安全策略。建议开启“签名校验”，这样别人即使拿到群信息，也不能随便向你的群推消息。
 
-在自定义机器人设置页里：
+添加机器人后，后续可以从群聊里重新进入机器人详情页：
 
-1. 找到“安全设置”。
-2. 选择“签名校验”。
-3. 飞书会生成一段签名密钥，通常以 `SEC` 开头。
-4. 复制这段密钥，填入 `FEISHU_WEBHOOK_SECRET`。
+1. 在群组名称右侧点击机器人图标，打开机器人列表。
+2. 找到刚才创建的自定义机器人，点击进入配置页面。
+3. 也可以从群设置里打开机器人列表，再进入机器人详情页。
+4. 在“安全设置”区域选择“签名校验”。
+5. 飞书会生成一段签名密钥，通常以 `SEC` 开头。
+6. 复制这段密钥，填入 `FEISHU_WEBHOOK_SECRET`。
+
+![飞书自定义机器人签名校验](images/feishu-custom-bot-signature.png)
 
 例如：
 
@@ -52,6 +62,8 @@ FEISHU_WEBHOOK_SECRET="SECxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
 如果你没有开启签名校验，可以不配置 `FEISHU_WEBHOOK_SECRET`。但生产使用建议开启。
+
+GemStar 会自动按飞书要求生成 `timestamp` 和 `sign`，你不需要手写签名算法。
 
 ## 3. 配置环境变量
 
@@ -122,7 +134,28 @@ artifacts/current/trade_status.md
 
 如果没有配置 `FEISHU_WEBHOOK_URL`，GemStar 不会报错，只会使用本地 JSONL 和状态文件。
 
-## 7. 常见问题
+## 7. 当前能力边界
+
+当前版本使用的是飞书“自定义机器人 Webhook”，只负责向所在群推送消息。
+
+它适合：
+
+- 推送 GemStar 交易提醒。
+- 推送受限、买入、卖出、减仓、加仓等决策消息。
+- 低成本接入个人或小团队群聊。
+- 不需要飞书应用审核或公网回调服务。
+
+它不支持：
+
+- 响应用户在群里的问题。
+- 点击按钮后回写成交确认。
+- 获取群成员、用户信息或历史消息。
+- 私聊交互。
+- 跨多个群复用同一个自定义机器人。
+
+如果你需要“刷新状态”“确认成交”“查看原因”等按钮交互，需要升级为飞书企业自建应用机器人，并接入事件订阅和卡片回调。GemStar 当前还没有实现这部分。
+
+## 8. 常见问题
 
 **没有收到飞书消息**
 
