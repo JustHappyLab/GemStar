@@ -19,7 +19,7 @@ from src.schemas.metrics import BacktestResultV1
 from src.schemas.review import ReviewNotesV1
 from src.schemas.verdict import VerdictV1
 
-_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "review_verdict" / "prompt.txt").read_text()
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "role_skills" / "review_verdict" / "prompt.txt").read_text()
 
 
 def review_verdict(

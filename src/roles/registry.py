@@ -1,7 +1,7 @@
-"""RoleRegistry — loads role YAML configs, manages providers and skills.
+"""RoleRegistry — loads role YAML configs, manages providers and role skills.
 
 CALLING SPEC:
-    RoleRegistry(roles_dir="roles", skills_dir="skills")
+    RoleRegistry(roles_dir="roles", skills_dir="role_skills")
         .execute_role(name, context) -> AgentResult
         .get_role(name) -> RoleConfig
         .get_provider(name) -> AgentProvider
@@ -75,7 +75,7 @@ class RoleRegistry:
     def __init__(
         self,
         roles_dir: str | Path = "roles",
-        skills_dir: str | Path = "skills",
+        skills_dir: str | Path = "role_skills",
         event_callback: Callable[[RoleEvent], None] | None = None,
         overrides: dict[str, dict] | None = None,
     ) -> None:

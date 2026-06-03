@@ -113,7 +113,7 @@ def write_trade_status(status_dir: str | Path, payload: dict) -> tuple[Path, Pat
 
 
 def format_trade_status_markdown(payload: dict) -> str:
-    """Render a compact Markdown status report for humans and qclaw context."""
+    """Render a compact Markdown status report for humans and skill context."""
     account = payload["account"]
     lines = [
         "# GemStar Trade Status",
@@ -155,5 +155,5 @@ def format_trade_status_markdown(payload: dict) -> str:
                 risk=risk,
             )
         )
-    lines.extend(["", "## 说明", "", "本文件由 `gemstar trade` 自动生成，用于人工查看、qclaw skill 读取或 IM 推送摘要。", ""])
+    lines.extend(["", "## 说明", "", "本文件由 `gemstar trade` 自动生成，用于人工查看、第三方 skill 读取或 IM 推送摘要。", ""])
     return "\n".join(lines)

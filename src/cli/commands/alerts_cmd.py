@@ -64,7 +64,7 @@ def format_latest_notifications(
     messages: list[NotificationMessageV1],
     path: str | Path = "alerts/live.jsonl",
 ) -> str:
-    """Format latest alerts for chat-style channels like QClaw/WeChat."""
+    """Format latest alerts for chat-style skill hosts."""
     if not messages:
         return f"GemStar 暂无提醒（{Path(path)} 不存在或为空）。"
 

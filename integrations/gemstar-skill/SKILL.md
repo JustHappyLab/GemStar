@@ -1,11 +1,11 @@
 ---
-name: gemstar-qclaw
-description: 通过 QClaw/微信查询 GemStar 量化交易提醒、最新信号、目标持仓和运行状态；只允许查看或显式触发一次本地研究流程，禁止实盘下单。
+name: gemstar-skill
+description: 通过兼容 SKILL.md 协议的第三方智能体查询 GemStar 量化交易提醒、最新信号、目标持仓和运行状态；只允许查看或显式触发一次本地研究流程，禁止实盘下单。
 ---
 
-# GemStar QClaw Skill
+# GemStar Integration Skill
 
-Use this skill when the user asks in WeChat/QClaw about GemStar, current holdings, target holdings, trading alerts, live signals, paper ledger, leaderboard, or whether GemStar has buy/sell guidance.
+Use this skill when the user asks from a compatible skill host about GemStar, current holdings, target holdings, trading alerts, live signals, paper ledger, leaderboard, or whether GemStar has buy/sell guidance.
 
 ## Repository
 
@@ -29,7 +29,7 @@ test -f artifacts/current/trade_status.md && cat artifacts/current/trade_status.
 Use the bundled script when the current directory is unknown:
 
 ```bash
-bash /Users/ken/workspace/GemStar/skills/gemstar-qclaw/scripts/gemstar-status.sh
+bash /Users/ken/workspace/GemStar/integrations/gemstar-skill/scripts/gemstar-status.sh
 ```
 
 Machine-readable current trade status:
@@ -39,7 +39,7 @@ cd /Users/ken/workspace/GemStar
 test -f artifacts/current/trade_status.json && cat artifacts/current/trade_status.json
 ```
 
-Latest WeChat-friendly alerts:
+Latest chat-friendly alerts:
 
 ```bash
 cd /Users/ken/workspace/GemStar
@@ -49,7 +49,7 @@ uv run python -m src.cli.app alerts latest --limit 5
 Use the bundled script when the current directory is unknown:
 
 ```bash
-bash /Users/ken/workspace/GemStar/skills/gemstar-qclaw/scripts/gemstar-alerts.sh 5
+bash /Users/ken/workspace/GemStar/integrations/gemstar-skill/scripts/gemstar-alerts.sh 5
 ```
 
 Machine-readable latest alerts:
@@ -86,7 +86,7 @@ This may take several minutes because it can run research, LLM roles, target gen
 
 ## Response Style
 
-- Return concise Chinese summaries suitable for WeChat.
+- Return concise Chinese summaries suitable for chat.
 - For "当前持仓", "目标仓位", "今天建议", and "为什么买/卖", read `artifacts/current/trade_status.json` first; fall back to `trade_status.md`, then alerts.
 - Preserve stock code and Chinese name, e.g. `300750.SZ 宁德时代`.
 - If no alerts exist, say there are no GemStar alerts yet and include the checked path.
@@ -99,4 +99,4 @@ This may take several minutes because it can run research, LLM roles, target gen
 - Never call QMT, ptrade, broker APIs, or order entry tools.
 - Never modify strategy YAML, factor pool, credentials, or configuration from WeChat.
 - Do not treat GemStar status messages as investment advice; present them as system-generated alerts.
-- If the user asks to buy/sell through WeChat, refuse execution and suggest checking the GemStar alert details manually.
+- If the user asks to buy/sell through a chat host, refuse execution and suggest checking the GemStar alert details manually.

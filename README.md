@@ -40,7 +40,7 @@ REPORTING → COMPLETED
 ### 本地研究核心 + LLM Role 架构
 
 ```
-local deterministic modules        roles/*.yaml + skills/*/        src/llm/providers/
+local deterministic modules        roles/*.yaml + role_skills/*/   src/llm/providers/
 ├── scanner/event_scanner.py       ├── analyze_market              ├── base.py
 ├── research/analyst.py            ├── draft_strategy              └── claude_code_provider.py
 └── factors/miner.py               ├── review_verdict
@@ -50,7 +50,8 @@ local deterministic modules        roles/*.yaml + skills/*/        src/llm/provi
 
 - **Local deterministic modules** — 事件、研究工单、因子 proposal 由代码生成结构化对象，不依赖模型 JSON 输出
 - **Role** — YAML 配置，定义仍由 LLM 执行的 provider、skill、超时时间
-- **Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），用于仍由 LLM 执行的角色
+- **Role Skill** — 可复用的 SOP 单元（prompt + 流程文档 + 输出 schema），用于仍由 LLM 执行的角色
+- **Integration Skill** — 面向第三方兼容 `SKILL.md` 协议生态的对外查询入口，位于 `integrations/`
 - **Provider** — 统一的 agent 执行接口；当前实现为 `claude_code`
 
 <p align="center">
@@ -73,9 +74,9 @@ local deterministic modules        roles/*.yaml + skills/*/        src/llm/provi
 
 以下原 LLM role 已本地化，不再存在于 `roles/*.yaml`：`event_scanner`、`research_analyst`、`factor_miner`。
 
-#### Skill 目录
+#### Role Skill 目录
 
-每个 skill 目录包含三个文件：
+每个 role skill 目录位于 `role_skills/`，包含三个文件：
 
 | 文件 | 用途 |
 |------|------|
@@ -83,7 +84,7 @@ local deterministic modules        roles/*.yaml + skills/*/        src/llm/provi
 | `sop.md` | 标准操作流程文档（供人阅读） |
 | `schema.json` | 输出 JSON schema（用于校验 LLM 输出） |
 
-| Skill | 用途 |
+| Role Skill | 用途 |
 |-------|------|
 | analyze_market | 评估市场宏观状态（regime + style bias） |
 | draft_strategy | 从 research ticket 草拟策略 YAML |
@@ -114,7 +115,8 @@ GemStar/
 │   ├── backtest.py             # 独立回测 CLI（数据→训练→回测→报告）
 │   └── tracking/               # SwanLab 实验追踪
 ├── roles/                      # Role YAML 配置（仍由 LLM 执行的角色）
-├── skills/                     # Skill 目录（prompt.txt + sop.md + schema.json）
+├── role_skills/                # 内部 Role Skill（prompt.txt + sop.md + schema.json）
+├── integrations/               # 对外集成 Skill（兼容 SKILL.md 协议）
 ├── strategies/                 # 策略 YAML 配置
 ├── factors/                    # 因子池 (pool.json)
 ├── src/
@@ -204,9 +206,9 @@ FEISHU_WEBHOOK_SECRET="你的签名密钥"
 
 未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
 
-#### QClaw Skill 集成
+#### 第三方 Skill 集成
 
-GemStar 内置 `skills/gemstar-qclaw`，可接入 QClaw/微信，用自然语言查询当前持仓、目标持仓、调仓差额、最新提醒和运行状态。安装步骤见 [docs/qclaw-skill-integration.md](docs/qclaw-skill-integration.md)。
+GemStar 内置 `integrations/gemstar-skill`，可接入 QClaw、Codex 或其他兼容 `SKILL.md` 协议的生态，用自然语言查询当前持仓、目标持仓、调仓差额、最新提醒和运行状态。安装步骤见 [docs/skill-integration.md](docs/skill-integration.md)。
 
 常用查询：
 
@@ -333,7 +335,7 @@ gemstar scheduler status
 gemstar scheduler stop
 gemstar scheduler restart
 
-# 查看 pipeline 运行状态（JSON 输出，供 QClaw 解析）
+# 查看 pipeline 运行状态（JSON 输出，供第三方 skill 解析）
 gemstar -o json status
 
 # 列出历史运行

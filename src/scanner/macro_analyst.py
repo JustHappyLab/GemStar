@@ -20,7 +20,7 @@ from src.schemas.signal import MarketRegimeV1
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "analyze_market" / "prompt.txt").read_text(encoding="utf-8")
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "role_skills" / "analyze_market" / "prompt.txt").read_text(encoding="utf-8")
 
 
 def _compute_user_prompt(

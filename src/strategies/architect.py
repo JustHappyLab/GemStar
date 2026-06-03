@@ -21,7 +21,7 @@ from src.llm.adapter import LLMGenerate
 from src.schemas.research import ResearchTicketV1
 from src.schemas.strategy import StrategyConfigV1
 
-_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "skills" / "draft_strategy" / "prompt.txt").read_text()
+_SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent.parent / "role_skills" / "draft_strategy" / "prompt.txt").read_text()
 _UNIVERSE_ALIASES = {
     "a_share_full": "a_share",
     "full_a_share": "a_share",

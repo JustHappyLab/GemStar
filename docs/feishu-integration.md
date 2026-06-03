@@ -107,7 +107,7 @@ artifacts/current/trade_status.json
 artifacts/current/trade_status.md
 ```
 
-飞书只负责主动提醒；本地文件是事实底稿，适合给 qclaw skill、脚本或后续 dashboard 读取。
+飞书只负责主动提醒；本地文件是事实底稿，适合给第三方 skill、脚本或后续 dashboard 读取。
 
 ## 6. 推送内容
 
