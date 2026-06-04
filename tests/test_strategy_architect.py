@@ -107,6 +107,33 @@ backtest:
   capital: 100000.0
   rf_annual: 0.025
   volume_limit_pct: 0.25
+cost_multiplier: 1.0
+"""
+
+LSTM_TIMER_DRAFT = """\
+version: StrategyConfigV1
+name: ai_lstm_attempt
+hypothesis: LLM attempted to tune timing parameters
+source_idea: ticket_001
+universe: auto
+timer:
+  mode: lstm
+  seq_len: 20
+  horizon: 10
+  epochs: 500
+factors:
+  - factor_id: momentum_20d
+    weight: 0.6
+  - factor_id: roe
+    weight: 0.4
+top_n: 5
+rebalance: daily
+backtest:
+  start: "20220101"
+  end: "20260506"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
   cost_multiplier: 1.0
 """
 
@@ -305,3 +332,22 @@ factors:
         assert len(llm.calls) == 2
         assert "Previous strategy draft was rejected" in llm.calls[1]["prompt"]
         assert "version: StrategyConfigV1" in llm.calls[1]["prompt"]
+
+    def test_ai_generated_timer_is_normalized_to_full(self, tmp_path: Path) -> None:
+        """StrategyArchitect drafts cannot freely introduce timing models."""
+        pool_path = _make_pool_json(tmp_path)
+        output_dir = tmp_path / "drafts"
+
+        result = draft_strategy(
+            tickets=_make_tickets(),
+            pool_path=pool_path,
+            reference_date="2026-05-06",
+            llm_client=FakeLLM(LSTM_TIMER_DRAFT),
+            output_dir=output_dir,
+        )
+
+        config = StrategyConfigV1.from_yaml(result)
+        assert config.name == "ai_lstm_attempt"
+        assert config.timer.mode == "full"
+        assert config.timer.seq_len == 60
+        assert config.timer.horizon == 5

@@ -49,13 +49,14 @@ def _snapshot(limit_up: bool = False, limit_down: bool = False) -> MarketSnapsho
     )
 
 
-def _only_decision(account, targets, snapshots):
+def _only_decision(account, targets, snapshots, **kwargs):
     decisions = build_live_decisions(
         account=account,
         targets=targets,
         snapshots=snapshots,
         strategy_name="chinext_lstm_mf8",
         created_at=NOW,
+        **kwargs,
     )
     assert len(decisions) == 1
     return decisions[0]
@@ -114,3 +115,32 @@ def test_build_live_decisions_blocks_missing_snapshot():
     assert decision.intent.action == "blocked"
     assert decision.intent.reference_price is None
     assert decision.intent.risk_flags == ["missing_snapshot"]
+
+
+def test_build_live_decisions_blocks_stale_snapshot_without_notifying():
+    decision = _only_decision(
+        _account(0),
+        [_target(200)],
+        [_snapshot()],
+        required_trade_date="20260528",
+    )
+
+    assert decision.decision_id == "20260527-300750.SZ-blocked-200"
+    assert decision.intent.action == "blocked"
+    assert decision.intent.risk_flags == ["stale_snapshot"]
+    assert "20260527 != 20260528" in decision.intent.reason
+    assert decision.notify is False
+
+
+def test_build_live_decisions_suppresses_small_trade_value():
+    decision = _only_decision(
+        _account(0),
+        [_target(100)],
+        [_snapshot()],
+        min_trade_value=20_000.0,
+    )
+
+    assert decision.intent.action == "hold"
+    assert decision.intent.shares == 0
+    assert decision.intent.risk_flags == ["min_trade_value"]
+    assert decision.notify is False

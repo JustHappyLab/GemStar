@@ -173,6 +173,10 @@ def _normalize_strategy_draft(
     if isinstance(universe, str):
         normalized["universe"] = _UNIVERSE_ALIASES.get(universe, universe)
 
+    # StrategyArchitect drafts explore stock-selection sleeves only. Timing is
+    # governed by reviewed templates; see docs/timing-policy.md.
+    normalized["timer"] = {"mode": "full"}
+
     factors = _normalize_factors(normalized.get("factors"), pool)
     if not factors:
         raise ValueError(

@@ -56,6 +56,8 @@ from src.schemas.live import (
 
 logger = logging.getLogger(__name__)
 
+_LIVE_ALLOWED_STRATEGY_STATUSES = {"candidate", "paper", "active"}
+
 
 def trade_cmd(
     once: bool = typer.Option(
@@ -101,13 +103,23 @@ def trade_cmd(
         "--price-alert-pct",
         help="Notify when intraday price move from pre-close reaches this absolute pct; 0 disables.",
     ),
+    min_trade_value: float = typer.Option(
+        5000.0,
+        "--min-trade-value",
+        help="Minimum estimated CNY value for a live buy/add/reduce/sell notification.",
+    ),
+    auto_paper_execute: bool = typer.Option(
+        False,
+        "--auto-paper-execute",
+        help="Append notified executable trades to the paper ledger automatically.",
+    ),
 ) -> None:
     """One-command research → live monitor → notify.
 
     On the first run, starts a fresh paper account with --capital (default 100k CNY).
-    Every trade confirmed by the signal engine is appended to --ledger. On subsequent
-    runs, the account state is reconstructed from the ledger so you see cumulative
-    position-aware signals (buy/add/reduce/sell), not just fresh buys every time.
+    By default, notifications are advisory and do not mutate --ledger. Use
+    --auto-paper-execute to append notified executable trades automatically; subsequent
+    runs then reconstruct the account from the ledger so signals become position-aware.
     """
     resolved_config_path = _resolve_config_path(config_path)
     if resolved_config_path is not None:
@@ -116,6 +128,8 @@ def trade_cmd(
     fresh_research = fresh_research if isinstance(fresh_research, bool) else False
     snapshot_source = snapshot_source if isinstance(snapshot_source, str) else "auto"
     price_alert_pct = price_alert_pct if isinstance(price_alert_pct, (int, float)) else 0.0
+    min_trade_value = min_trade_value if isinstance(min_trade_value, (int, float)) else 5000.0
+    auto_paper_execute = auto_paper_execute if isinstance(auto_paper_execute, bool) else False
     notifier = _build_notifier(notifications_path)
     tracker = _LedgerTracker(ledger_path, capital)
 
@@ -199,6 +213,8 @@ def trade_cmd(
             targets=targets,
             snapshots=snapshots,
             strategy_name=strategies[0] if strategies else "trade",
+            min_trade_value=min_trade_value,
+            required_trade_date=ref_date,
         )
         status_payload = build_trade_status_payload(
             ref_date=ref_date,
@@ -217,10 +233,12 @@ def trade_cmd(
             f"[dim]status written: {md_status_path} / {json_status_path}[/dim]"
         )
 
-        # Wrap notifier so confirmed trades land in the ledger.
+        # Wrap notifier; ledger mutation is opt-in via --auto-paper-execute.
         notified_decisions: list[LiveDecisionV1] = []
         def _tracking_notify(notification: NotificationMessageV1) -> None:
             notifier(notification)
+            if not auto_paper_execute:
+                return
             # Rebuild the source decision for ledger tracking.
             snapshots = snapshot_loader()
             for d in build_live_decisions(
@@ -228,6 +246,8 @@ def trade_cmd(
                 targets=targets,
                 snapshots=snapshots,
                 strategy_name=strategies[0] if strategies else "trade",
+                min_trade_value=min_trade_value,
+                required_trade_date=ref_date,
             ):
                 if d.decision_id == notification.decision_id:
                     notified_decisions.append(d)
@@ -249,11 +269,14 @@ def trade_cmd(
                 threshold_pct=price_alert_pct,
                 symbol_names=symbol_names,
             ),
+            min_trade_value=min_trade_value,
+            required_trade_date=ref_date,
         )
-        # Record confirmed trades to ledger so the next cycle sees updated positions.
-        for d in notified_decisions:
-            if d.intent.action in ("buy", "add", "sell", "reduce"):
-                tracker.record(d, snapshots=snapshot_loader())
+        # Optional paper execution: advisory notifications should not mutate ledger.
+        if auto_paper_execute:
+            for d in notified_decisions:
+                if d.intent.action in ("buy", "add", "sell", "reduce"):
+                    tracker.record(d, snapshots=snapshot_loader())
 
         final_snapshots = snapshot_loader()
         final_account = _mark_account_to_market(tracker.load_account(), final_snapshots)
@@ -262,6 +285,8 @@ def trade_cmd(
             targets=targets,
             snapshots=final_snapshots,
             strategy_name=strategies[0] if strategies else "trade",
+            min_trade_value=min_trade_value,
+            required_trade_date=ref_date,
         )
         final_payload = build_trade_status_payload(
             ref_date=ref_date,
@@ -519,8 +544,14 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
         return [], [], {}
 
     entries = json.loads(leaderboard_path.read_text()).get("entries", [])
-    accepted = [e for e in entries if e.get("sharpe", 0.0) > 0][:top_n]
+    accepted = [e for e in entries if _is_live_eligible_entry(e)][:top_n]
     if not accepted:
+        skipped = len(entries)
+        if skipped:
+            console.print(
+                "[yellow]No live-eligible leaderboard entries "
+                f"(allowed statuses: {', '.join(sorted(_LIVE_ALLOWED_STRATEGY_STATUSES))}).[/yellow]"
+            )
         return [], [], {}
 
     daily_df, index_df, fina_df, stock_basic = _load_cached_market_data(config, ref_date)
@@ -559,14 +590,34 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
         if not strategy_top:
             continue
 
-        from src.live.planner import plan_live_targets
-        targets = plan_live_targets(
-            top_stocks=strategy_top,
-            prices=prices,
-            total_capital=capital_per_strategy,
-            position_pct=1.0,
-            reason=f"top from {strat_name} (rank #{entry.get('rank')})",
+        position_pct = _timer_position_pct(
+            yaml_path=yaml_path,
+            index_df=index_df,
+            trade_date=last_trade_date,
         )
+        reason = (
+            f"top from {strat_name} (rank #{entry.get('rank')}); "
+            f"timer position {position_pct:.0%}"
+        )
+        from src.live.planner import plan_live_targets
+        if position_pct <= 0:
+            targets = [
+                TargetHoldingV1(
+                    ts_code=code,
+                    target_weight=0.0,
+                    target_shares=0,
+                    reason=reason,
+                )
+                for code in strategy_top
+            ]
+        else:
+            targets = plan_live_targets(
+                top_stocks=strategy_top,
+                prices=prices,
+                total_capital=capital_per_strategy,
+                position_pct=position_pct,
+                reason=reason,
+            )
         all_targets.extend(targets)
         used_strategies.append(strat_name)
 
@@ -586,6 +637,14 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
         else:
             merged[t.ts_code] = t
     return list(merged.values()), used_strategies, symbol_names
+
+
+def _is_live_eligible_entry(entry: dict) -> bool:
+    """Return whether a leaderboard entry may drive live trade targets."""
+    return (
+        entry.get("status") in _LIVE_ALLOWED_STRATEGY_STATUSES
+        and float(entry.get("sharpe", 0.0) or 0.0) > 0
+    )
 
 
 def _find_strategy_yaml(strat_name: str, run_id: str, artifacts_dir: Path) -> Path | None:
@@ -630,6 +689,65 @@ def _rank_strategy(
         stock_basic=stock_basic,
     )
     return rankings.get(trade_date, [])
+
+
+def _timer_position_pct(yaml_path: Path, index_df, trade_date: str) -> float:
+    """Return the strategy timer's target exposure for a live trade date."""
+    import pandas as pd
+
+    from src.orchestrator.signals import build_signals
+    from src.schemas.strategy import StrategyConfigV1
+
+    try:
+        strategy = StrategyConfigV1.from_yaml(yaml_path)
+    except Exception as exc:
+        console.print(f"[yellow]  timer config failed for {Path(yaml_path).name}: {exc}; using 0%[/yellow]")
+        return 0.0
+
+    if strategy.timer.mode == "full":
+        return 1.0
+    if index_df is None or index_df.empty or "trade_date" not in index_df.columns:
+        console.print(f"[yellow]  timer data missing for {strategy.name}; using 0%[/yellow]")
+        return 0.0
+
+    timer_date = _latest_index_trade_date(index_df, trade_date)
+    if timer_date is None:
+        console.print(f"[yellow]  no index date available for {strategy.name} <= {trade_date}; using 0%[/yellow]")
+        return 0.0
+
+    try:
+        signals = build_signals(index_df, [timer_date], strategy.timer)
+    except Exception as exc:
+        console.print(f"[yellow]  timer failed for {strategy.name}: {exc}; using 0%[/yellow]")
+        return 0.0
+    if signals is None or signals.empty or "position" not in signals.columns:
+        console.print(f"[yellow]  timer produced no signal for {strategy.name}; using 0%[/yellow]")
+        return 0.0
+
+    rows = signals[signals["trade_date"].astype(str) == str(timer_date)]
+    if rows.empty:
+        console.print(f"[yellow]  timer missing {timer_date} signal for {strategy.name}; using 0%[/yellow]")
+        return 0.0
+    value = pd.to_numeric(rows["position"], errors="coerce").dropna()
+    if value.empty:
+        console.print(f"[yellow]  timer signal is not numeric for {strategy.name}; using 0%[/yellow]")
+        return 0.0
+    return max(0.0, min(1.0, float(value.iloc[-1])))
+
+
+def _latest_index_trade_date(index_df, trade_date: str) -> str | None:
+    """Return the latest index trade date not after the requested date."""
+    import pandas as pd
+
+    dates = pd.Series(index_df["trade_date"]).astype(str)
+    parsed = pd.to_datetime(dates, format="%Y%m%d", errors="coerce")
+    requested = pd.to_datetime(str(trade_date), format="%Y%m%d", errors="coerce")
+    if pd.isna(requested):
+        return None
+    candidates = dates[(parsed.notna()) & (parsed <= requested)]
+    if candidates.empty:
+        return None
+    return str(candidates.max())
 
 
 # ── data plumbing (read-only, cache-only) ──────────────────────

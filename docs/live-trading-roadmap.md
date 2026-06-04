@@ -249,6 +249,12 @@ Change:
   - ranked Top-N symbols
   - latest available prices
   - account total value
+- Live target generation must consume reviewed timer exposure and scale holdings
+  by it. Non-`full` timers fail closed to 0% exposure when their signal cannot
+  be produced.
+- AI-generated StrategyArchitect drafts remain stock-selection sleeves using
+  `timer.mode: full`; timing variants are introduced only as controlled,
+  backtested templates. See `docs/timing-policy.md`.
 
 Verification:
 

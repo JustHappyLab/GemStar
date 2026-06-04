@@ -32,6 +32,8 @@ def build_live_decisions(
     snapshots: list[MarketSnapshotV1],
     strategy_name: str,
     created_at: datetime | None = None,
+    min_trade_value: float = 0.0,
+    required_trade_date: str | None = None,
 ) -> list[LiveDecisionV1]:
     """Build one decision per target/position symbol."""
     now = created_at or datetime.now()
@@ -50,6 +52,8 @@ def build_live_decisions(
             snapshot=snapshot_map.get(ts_code),
             strategy_name=strategy_name,
             created_at=now,
+            min_trade_value=min_trade_value,
+            required_trade_date=required_trade_date,
         )
         for ts_code in symbols
     ]
@@ -63,12 +67,16 @@ def _decision_for_symbol(
     snapshot: MarketSnapshotV1 | None,
     strategy_name: str,
     created_at: datetime,
+    min_trade_value: float = 0.0,
+    required_trade_date: str | None = None,
 ) -> LiveDecisionV1:
-    action, shares, reason, risk_flags = _intent_fields(
+    action, shares, reason, risk_flags, notify_override = _intent_fields(
         current_shares=current_shares,
         target_shares=target_shares,
         target_reason=target_reason,
         snapshot=snapshot,
+        min_trade_value=min_trade_value,
+        required_trade_date=required_trade_date,
     )
     reference_price = snapshot.last_price if snapshot is not None else None
     trade_date = snapshot.trade_date if snapshot is not None else created_at.strftime("%Y%m%d")
@@ -87,7 +95,7 @@ def _decision_for_symbol(
             reason=reason,
             risk_flags=risk_flags,
         ),
-        notify=action != "hold",
+        notify=(action != "hold") if notify_override is None else notify_override,
     )
 
 
@@ -96,25 +104,46 @@ def _intent_fields(
     target_shares: int,
     target_reason: str,
     snapshot: MarketSnapshotV1 | None,
-) -> tuple[str, int, str, list[str]]:
+    min_trade_value: float = 0.0,
+    required_trade_date: str | None = None,
+) -> tuple[str, int, str, list[str], bool | None]:
     if snapshot is None:
-        return "blocked", 0, "missing market snapshot", ["missing_snapshot"]
+        return "blocked", 0, "missing market snapshot", ["missing_snapshot"], None
+
+    if required_trade_date and snapshot.trade_date != required_trade_date:
+        return (
+            "blocked",
+            0,
+            f"stale market snapshot: {snapshot.trade_date} != {required_trade_date}",
+            ["stale_snapshot"],
+            False,
+        )
 
     diff = target_shares - current_shares
     if abs(diff) < 100:
-        return "hold", 0, "target is within one trading lot of current position", []
+        return "hold", 0, "target is within one trading lot of current position", [], None
 
     if diff > 0:
         if snapshot.limit_up:
-            return "blocked", 0, "buy blocked because the stock is limit-up", ["limit_up"]
+            return "blocked", 0, "buy blocked because the stock is limit-up", ["limit_up"], None
         action = "buy" if current_shares == 0 else "add"
-        return action, diff, _join_reason("target shares exceed current shares", target_reason), []
+        if _below_min_trade_value(diff, snapshot.last_price, min_trade_value):
+            return "hold", 0, "trade value is below live minimum threshold", ["min_trade_value"], None
+        return action, diff, _join_reason("target shares exceed current shares", target_reason), [], None
 
     sell_shares = abs(diff)
     if snapshot.limit_down:
-        return "blocked", 0, "sell blocked because the stock is limit-down", ["limit_down"]
+        return "blocked", 0, "sell blocked because the stock is limit-down", ["limit_down"], None
     action = "sell" if target_shares == 0 else "reduce"
-    return action, sell_shares, _join_reason("target shares are below current shares", target_reason), []
+    if _below_min_trade_value(sell_shares, snapshot.last_price, min_trade_value):
+        return "hold", 0, "trade value is below live minimum threshold", ["min_trade_value"], None
+    return action, sell_shares, _join_reason("target shares are below current shares", target_reason), [], None
+
+
+def _below_min_trade_value(shares: int, price: float | None, min_trade_value: float) -> bool:
+    if min_trade_value <= 0 or price is None:
+        return False
+    return shares * price < min_trade_value
 
 
 def _join_reason(base: str, detail: str) -> str:

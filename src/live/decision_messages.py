@@ -36,6 +36,8 @@ _ACTION_VERBS = {
 
 _RISK_LABELS = {
     "missing_snapshot": "缺少实时行情",
+    "stale_snapshot": "行情日期过期",
+    "min_trade_value": "低于最低交易金额",
     "limit_up": "涨停，无法追买",
     "limit_down": "跌停，无法卖出",
 }
@@ -117,9 +119,11 @@ def _reason_text(reason: str) -> str:
         "target shares exceed current shares": "目标股数高于当前持仓",
         "target shares are below current shares": "目标股数低于当前持仓",
         "target is within one trading lot of current position": "目标仓位与当前持仓差异不足一手",
+        "trade value is below live minimum threshold": "估算交易金额低于实时提醒最低门槛",
         "buy blocked because the stock is limit-up": "买入受限：标的涨停",
         "sell blocked because the stock is limit-down": "卖出受限：标的跌停",
         "missing market snapshot": "缺少实时行情，无法判断是否可交易",
+        "stale market snapshot": "行情日期过期，暂停可执行交易提醒",
     }.get(base.strip(), base.strip())
     if not sep:
         return base_text

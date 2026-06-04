@@ -15,6 +15,8 @@ CALLING SPEC:
         active_interval=int,
         idle_interval=int,
         max_cycles=int | None,
+        min_trade_value=float,
+        required_trade_date=str | None,
     ) -> LiveLoopResult
 
 SIDE EFFECTS:
@@ -74,6 +76,8 @@ def run_live_loop(
     max_cycles: int | None = None,
     heartbeat_fn: HeartbeatFn | None = None,
     alert_fn: AlertFn | None = None,
+    min_trade_value: float = 0.0,
+    required_trade_date: str | None = None,
 ) -> LiveLoopResult:
     """Run the live radar loop until stopped or *max_cycles* is reached."""
     if max_cycles is not None and max_cycles <= 0:
@@ -98,6 +102,8 @@ def run_live_loop(
             snapshots=snapshots,
             strategy_name=strategy_name,
             created_at=now,
+            min_trade_value=min_trade_value,
+            required_trade_date=required_trade_date,
         )
         cycles += 1
         decisions_count += len(decisions)

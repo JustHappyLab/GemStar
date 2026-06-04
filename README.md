@@ -130,7 +130,7 @@ GemStar/
 │   │   ├── output.py           # table / json 统一输出
 │   │   └── commands/           # 子命令（run/trade/fetch/live/alerts/scheduler 等）
 │   ├── data/                   # Tushare 数据拉取 + 清洗
-│   ├── timer/                  # LSTM 择时（特征 / 模型 / 信号）
+│   ├── timer/                  # 受控择时模板 / LSTM 基线（特征 / 模型 / 信号）
 │   ├── ranker/                 # 多因子选股（因子 / 标准化 / 打分）
 │   ├── portfolio/              # 交易成本 + 仓位分配
 │   ├── engine/                 # 回测引擎 + 绩效指标
@@ -403,6 +403,16 @@ gemstar cleanup --dry-run          # 预览，不实际删除
 所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
 
 首次运行 `gemstar run` 会通过 Tushare API 拉取数据并缓存到 `data/raw/`（Parquet 格式），后续运行直接读取缓存。
+
+### 择时治理
+
+GemStar 将“选股”和“择时”分开治理：
+
+- AI StrategyArchitect 默认只生成选股 sleeve，策略草稿固定 `timer.mode: full`。
+- AI 不自由生成 LSTM/GRU 参数、窗口、阈值或再训练计划。
+- 择时通过受控模板进入比较，例如 `full`、`ma20_guard`、`ma60_guard`、`drawdown_guard`、`lstm_baseline`。
+- 非 `full` timer 必须先实现、回测、评审，再允许影响 live 目标持仓。
+- 详细规则见 `docs/timing-policy.md`。
 
 ### Universe 预设
 

@@ -37,6 +37,9 @@ Rules:
 - "name" should be descriptive and lowercase with underscores (e.g. "growth_momentum_v2").
 - "top_n" between 1 and 10.
 - "rebalance" must be "daily", "weekly", or "monthly".
+- StrategyArchitect drafts are stock-selection drafts. Always output `timer.mode: full`.
+- Do not invent or modify timing models, LSTM/GRU parameters, sequence lengths, horizons, thresholds, or retraining schedules.
+- Timing variants are controlled templates governed by `docs/timing-policy.md`; they are selected and promoted only after explicit implementation and backtest evidence.
 - Prefer "universe: auto" unless a ticket explicitly requires a board-specific universe.
 - If a specific universe is required, use one of: a_share_core, a_share_liquid, chinext_core, star_core, main_board_core.
 - If no tickets are provided, produce a reasonable baseline strategy using the available factors.

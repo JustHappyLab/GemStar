@@ -113,6 +113,24 @@ def test_run_live_loop_uses_idle_interval_outside_trading_time():
     assert result.cycles == 2
 
 
+def test_run_live_loop_suppresses_notifications_for_stale_required_date():
+    messages = []
+
+    result = run_live_loop(
+        account_loader=_account,
+        targets_loader=_targets,
+        snapshots_loader=_snapshots,
+        notify=messages.append,
+        strategy_name="chinext_lstm_mf8",
+        required_trade_date="20260528",
+        max_cycles=1,
+    )
+
+    assert messages == []
+    assert result.notifications == 0
+    assert result.decisions == 1
+
+
 def test_run_live_loop_formats_symbol_names_when_available():
     messages = []
 

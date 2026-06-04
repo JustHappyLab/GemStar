@@ -6,6 +6,7 @@ live cycle. Skips when the cached daily parquet has no rows.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -157,7 +158,22 @@ def test_trade_cmd_one_cycle(tmp_path, monkeypatch):
         reverse=True,
     )
     assert runs, "no completed runs found"
-    target_run = runs[0]
+    target_run = next(
+        (
+            run
+            for run in runs
+            if any(
+                entry.get("status") in mod._LIVE_ALLOWED_STRATEGY_STATUSES
+                and entry.get("sharpe", 0.0) > 0
+                for entry in json.loads(
+                    (Path("artifacts") / run / "leaderboard.json").read_text(encoding="utf-8")
+                ).get("entries", [])
+            )
+        ),
+        None,
+    )
+    if target_run is None:
+        pytest.skip("needs a completed run with live-eligible leaderboard entries")
 
     notif_path = tmp_path / "alerts.jsonl"
     strategy_path = tmp_path / "strategy.yaml"
@@ -196,7 +212,9 @@ def test_trade_cmd_one_cycle(tmp_path, monkeypatch):
             return_value=(daily_df, index_df, pd.DataFrame(), stock_basic),
         ),
         patch.object(mod, "_rank_strategy", return_value=["300750.SZ"]),
+        patch.object(mod, "_timer_position_pct", return_value=1.0),
         patch.object(mod, "_make_snapshot_loader", return_value=lambda: snapshots),
+        patch.object(mod, "_today_str", return_value="20260601"),
     ):
         mod.trade_cmd(
             once=True,
@@ -281,7 +299,8 @@ def test_trade_cmd_watches_current_positions_not_only_targets(tmp_path, monkeypa
         ),
         patch.object(mod, "_make_snapshot_loader", side_effect=fake_snapshot_loader),
         patch.object(mod._LedgerTracker, "load_account", return_value=account),
-        patch.object(mod._LedgerTracker, "record", return_value=None),
+        patch.object(mod._LedgerTracker, "record", return_value=None) as record_mock,
+        patch.object(mod, "_today_str", return_value="20260601"),
     ):
         mod.trade_cmd(
             once=True,
@@ -297,9 +316,237 @@ def test_trade_cmd_watches_current_positions_not_only_targets(tmp_path, monkeypa
         )
 
     assert watched_symbols["symbols"] == {"000001.SZ", "300750.SZ"}
+    record_mock.assert_not_called()
     status_md = (tmp_path / "status" / "trade_status.md").read_text(encoding="utf-8")
     assert "000001.SZ 平安银行" in status_md
     assert "sell" in status_md
+
+
+def test_build_targets_scales_exposure_by_timer_position(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "run-1"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "leaderboard.json").write_text(
+        '{"entries":[{"name":"strategy_a","rank":1,"sharpe":1.2,"status":"candidate"}]}',
+        encoding="utf-8",
+    )
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text("name: strategy_a\n", encoding="utf-8")
+    daily_df = pd.DataFrame([
+        {
+            "ts_code": "300750.SZ",
+            "trade_date": "20260604",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "pre_close": 99.0,
+            "vol": 1000.0,
+            "pe_ttm": 20.0,
+            "pb": 2.0,
+            "turnover_rate": 1.0,
+        },
+        {
+            "ts_code": "300059.SZ",
+            "trade_date": "20260604",
+            "open": 50.0,
+            "high": 51.0,
+            "low": 49.0,
+            "close": 50.0,
+            "pre_close": 49.0,
+            "vol": 1000.0,
+            "pe_ttm": 20.0,
+            "pb": 2.0,
+            "turnover_rate": 1.0,
+        },
+    ])
+    config = type("Config", (), {"artifacts_dir": str(artifacts)})()
+
+    monkeypatch.setattr(
+        mod,
+        "_load_cached_market_data",
+        lambda _config, _ref_date: (daily_df, pd.DataFrame({"trade_date": ["20260604"], "close": [1000.0]}), pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(mod, "_find_strategy_yaml", lambda *_args: strategy_path)
+    monkeypatch.setattr(mod, "_rank_strategy", lambda **_kwargs: ["300750.SZ", "300059.SZ"])
+    monkeypatch.setattr(mod, "_timer_position_pct", lambda **_kwargs: 0.5)
+
+    targets, strategies, _names = mod._build_targets(
+        config,
+        run_id,
+        "20260604",
+        top_n=1,
+        capital=100_000.0,
+    )
+
+    assert strategies == ["strategy_a"]
+    assert [target.ts_code for target in targets] == ["300750.SZ", "300059.SZ"]
+    assert [target.target_shares for target in targets] == [200, 500]
+    assert all("timer position 50%" in target.reason for target in targets)
+
+
+def test_build_targets_keeps_zero_share_targets_for_timer_exit(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "run-1"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "leaderboard.json").write_text(
+        '{"entries":[{"name":"strategy_a","rank":1,"sharpe":1.2,"status":"candidate"}]}',
+        encoding="utf-8",
+    )
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text("name: strategy_a\n", encoding="utf-8")
+    daily_df = pd.DataFrame([{
+        "ts_code": "300750.SZ",
+        "trade_date": "20260604",
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.0,
+        "pre_close": 99.0,
+        "vol": 1000.0,
+        "pe_ttm": 20.0,
+        "pb": 2.0,
+        "turnover_rate": 1.0,
+    }])
+    config = type("Config", (), {"artifacts_dir": str(artifacts)})()
+
+    monkeypatch.setattr(
+        mod,
+        "_load_cached_market_data",
+        lambda _config, _ref_date: (daily_df, pd.DataFrame({"trade_date": ["20260604"], "close": [1000.0]}), pd.DataFrame(), pd.DataFrame()),
+    )
+    monkeypatch.setattr(mod, "_find_strategy_yaml", lambda *_args: strategy_path)
+    monkeypatch.setattr(mod, "_rank_strategy", lambda **_kwargs: ["300750.SZ"])
+    monkeypatch.setattr(mod, "_timer_position_pct", lambda **_kwargs: 0.0)
+
+    targets, strategies, _names = mod._build_targets(
+        config,
+        run_id,
+        "20260604",
+        top_n=1,
+        capital=100_000.0,
+    )
+
+    assert strategies == ["strategy_a"]
+    assert len(targets) == 1
+    assert targets[0].ts_code == "300750.SZ"
+    assert targets[0].target_shares == 0
+    assert targets[0].target_weight == 0.0
+    assert "timer position 0%" in targets[0].reason
+
+
+def test_build_targets_ignores_rejected_leaderboard_entries(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "run-1"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "leaderboard.json").write_text(
+        '{"entries":[{"name":"strategy_a","rank":1,"sharpe":3.0,"status":"rejected"}]}',
+        encoding="utf-8",
+    )
+    config = type("Config", (), {"artifacts_dir": str(artifacts)})()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("rejected strategies must not load market data")
+
+    monkeypatch.setattr(mod, "_load_cached_market_data", fail_if_called)
+
+    targets, strategies, names = mod._build_targets(
+        config,
+        run_id,
+        "20260604",
+        top_n=1,
+        capital=100_000.0,
+    )
+
+    assert targets == []
+    assert strategies == []
+    assert names == {}
+
+
+def test_timer_position_uses_latest_available_index_date(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text(
+        "name: timer_ma\n"
+        "timer:\n"
+        "  mode: ma\n",
+        encoding="utf-8",
+    )
+    dates = pd.date_range("2026-04-20", periods=30, freq="B").strftime("%Y%m%d")
+    index_df = pd.DataFrame({
+        "trade_date": dates,
+        "close": [100.0 + idx for idx in range(len(dates))],
+    })
+
+    position = mod._timer_position_pct(
+        strategy_path,
+        index_df,
+        trade_date="20260604",
+    )
+
+    assert position == 1.0
+
+
+def test_timer_position_full_mode_does_not_require_index_data(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text(
+        "name: timer_full\n"
+        "timer:\n"
+        "  mode: full\n",
+        encoding="utf-8",
+    )
+
+    assert mod._timer_position_pct(strategy_path, pd.DataFrame(), "20260604") == 1.0
+
+
+def test_timer_position_non_full_fails_closed_without_index_data(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text(
+        "name: timer_lstm\n"
+        "timer:\n"
+        "  mode: lstm\n",
+        encoding="utf-8",
+    )
+
+    assert mod._timer_position_pct(strategy_path, pd.DataFrame(), "20260604") == 0.0
+
+
+def test_timer_position_fails_closed_when_signal_builder_errors(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+    from src.orchestrator import signals as signals_mod
+
+    strategy_path = tmp_path / "strategy.yaml"
+    strategy_path.write_text(
+        "name: timer_ma\n"
+        "timer:\n"
+        "  mode: ma\n",
+        encoding="utf-8",
+    )
+    index_df = pd.DataFrame({
+        "trade_date": ["20260603"],
+        "close": [1000.0],
+    })
+
+    def fail_build_signals(*_args, **_kwargs):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(signals_mod, "build_signals", fail_build_signals)
+
+    assert mod._timer_position_pct(strategy_path, index_df, "20260604") == 0.0
 
 
 def test_trade_snapshot_loader_prefers_realtime_during_trading(tmp_path, monkeypatch):

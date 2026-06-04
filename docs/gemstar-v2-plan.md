@@ -295,6 +295,13 @@ logs/collector_YYYYMMDD.log  # 运行日志
 
 **职责**: 根据信号 + 因子池，设计策略配置。
 
+**择时治理**:
+- StrategyArchitect 默认只生成选股 sleeve：因子、权重、股票池、`top_n`、调仓频率。
+- 自动生成的策略必须使用 `timer.mode: full`，不得自由生成 LSTM/GRU 参数、窗口、阈值或再训练计划。
+- 择时进入自动化比较时，必须走受控模板：例如 `full`、`ma20_guard`、`ma60_guard`、`drawdown_guard`、`lstm_baseline`。
+- AI 未来只能推荐已实现、已回测的择时模板，不能直接发明新 timer 配置。
+- 详细规范见 `docs/timing-policy.md`。
+
 **输入** (~3000 tokens):
 ```
 - Scanner 的信号摘要

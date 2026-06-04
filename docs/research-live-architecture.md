@@ -102,10 +102,18 @@ live inputs:
 ```text
 approved strategy YAML
   -> latest strategy-specific ranking
-  -> latest timer exposure
+  -> latest reviewed timer exposure
   -> target holdings JSON
   -> live radar consumes targets + account + snapshots
 ```
+
+Timing exposure is governed by `docs/timing-policy.md`:
+
+- StrategyArchitect drafts are stock-selection sleeves and use `timer.mode: full`.
+- Non-`full` timers must be hand-reviewed or selected from implemented timing
+  templates with backtest evidence.
+- Live target generation scales target holdings by timer exposure.
+- Non-`full` timing failures fail closed to 0% exposure.
 
 The handoff artifact should eventually be:
 
