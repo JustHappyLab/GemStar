@@ -454,6 +454,7 @@ def _leaderboard_notification(
         count for status, count in status_counts.items()
         if status in _LIVE_ALLOWED_STRATEGY_STATUSES
     )
+    llm_summary = _llm_generation_summary(Path(config.artifacts_dir) / run_id)
     lines = [
         f"日期：{ref_date}",
         f"运行：{run_id}",
@@ -461,10 +462,22 @@ def _leaderboard_notification(
         "状态分布：" + "、".join(
             f"{status}={count}" for status, count in sorted(status_counts.items())
         ),
+        (
+            "LLM策略生成："
+            f"草稿 {llm_summary['draft_count']}，"
+            f"通过 {llm_summary['candidate_count']}，"
+            f"拒绝 {llm_summary['rejected_count']}，"
+            f"未知 {llm_summary['unknown_count']}"
+        ),
         "性质：研究观察摘要，不是下单建议；交易信号仍需通过策略状态、行情日期、交易金额和择时门禁。",
-        "",
-        f"Top {len(top_entries)}：",
     ]
+    if llm_summary["top_reasons"]:
+        lines.extend(["", "主要拒绝原因："])
+        lines.extend(
+            f"- {reason}: {count}"
+            for reason, count in llm_summary["top_reasons"]
+        )
+    lines.extend(["", f"Top {len(top_entries)}："])
     for entry in top_entries:
         rank = entry.get("rank", "?")
         name = entry.get("name", "-")
@@ -503,6 +516,79 @@ def _fmt_pct(value) -> str:
         return f"{float(value):.2%}"
     except (TypeError, ValueError):
         return "n/a"
+
+
+def _llm_generation_summary(run_dir: Path) -> dict:
+    draft_dir = run_dir / "drafts"
+    draft_paths = sorted(draft_dir.glob("*.yaml")) if draft_dir.is_dir() else []
+    summary = {
+        "draft_count": len(draft_paths),
+        "candidate_count": 0,
+        "rejected_count": 0,
+        "unknown_count": 0,
+        "top_reasons": [],
+    }
+    reason_counts: dict[str, int] = {}
+
+    for draft_path in draft_paths:
+        strategy_name = _draft_strategy_name(draft_path) or draft_path.stem
+        verdict = _load_json(run_dir / f"verdict_{strategy_name}.json")
+        if verdict is None:
+            validation = _load_json(run_dir / f"validation_{draft_path.stem}.json")
+            if validation is None:
+                summary["unknown_count"] += 1
+                continue
+            verdict = validation
+
+        state = verdict.get("recommended_state")
+        if state in _LIVE_ALLOWED_STRATEGY_STATUSES:
+            summary["candidate_count"] += 1
+            continue
+
+        summary["rejected_count"] += 1
+        for reason in _verdict_reasons(verdict):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    summary["top_reasons"] = sorted(
+        reason_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[:3]
+    return summary
+
+
+def _draft_strategy_name(draft_path: Path) -> str | None:
+    try:
+        data = yaml.safe_load(draft_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    name = data.get("name")
+    return str(name) if name else None
+
+
+def _load_json(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _verdict_reasons(verdict: dict) -> list[str]:
+    issues = verdict.get("blocking_issues")
+    if isinstance(issues, list) and issues:
+        return [str(issue) for issue in issues[:3]]
+    gates = verdict.get("hard_gates")
+    if isinstance(gates, list):
+        failed = [
+            f"{gate.get('name', 'unknown')} failed"
+            for gate in gates
+            if isinstance(gate, dict) and gate.get("passed") is False
+        ]
+        if failed:
+            return failed[:3]
+    return ["rejected"]
 
 
 def _notification_already_sent(path: str | Path, message_id: str) -> bool:

@@ -216,7 +216,7 @@ FEISHU_WEBHOOK_SECRET="你的签名密钥"
 ```
 
 未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
-每日 leaderboard 摘要默认在 `08:30` 推送，它是研究观察信息，不是下单建议；买卖/加减仓提醒仍必须通过策略状态、行情日期、交易金额和择时门禁。
+每日 leaderboard 摘要默认在 `08:30` 推送，它是研究观察信息，不是下单建议；摘要会展示 LLM 草稿数、通过数和主要拒绝原因，但只读取已有 artifacts，不额外调用模型。买卖/加减仓提醒仍必须通过策略状态、行情日期、交易金额和择时门禁。
 
 #### 交易状态文件
 
@@ -344,6 +344,9 @@ gemstar run --date 20260503
 
 # 启用 LLM 策略生成
 gemstar run --date 20260503 --llm
+
+# 控制 LLM 生成预算，默认最多 5 轮
+# gemstar.yaml: strategy_generation.max_iterations: 5
 
 # 指定策略
 gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml

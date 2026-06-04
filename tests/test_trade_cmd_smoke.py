@@ -152,6 +152,18 @@ def test_trade_cmd_emits_leaderboard_even_without_trade_targets(tmp_path, monkey
     artifacts = tmp_path / "artifacts"
     run_dir = artifacts / run_id
     run_dir.mkdir(parents=True)
+    draft_dir = run_dir / "drafts"
+    draft_dir.mkdir()
+    (draft_dir / "strategy_a_20260604.yaml").write_text(
+        "version: StrategyConfigV1\n"
+        "name: strategy_a\n"
+        "timer:\n"
+        "  mode: full\n"
+        "factors:\n"
+        "  - factor_id: momentum_20d\n"
+        "    weight: 1\n",
+        encoding="utf-8",
+    )
     config_path = tmp_path / "gemstar.yaml"
     config_path.write_text(
         "strategies: []\n"
@@ -173,6 +185,14 @@ def test_trade_cmd_emits_leaderboard_even_without_trade_targets(tmp_path, monkey
                     "status": "rejected",
                 }
             ]
+        }),
+        encoding="utf-8",
+    )
+    (run_dir / "verdict_strategy_a.json").write_text(
+        json.dumps({
+            "strategy_id": "strategy_a",
+            "recommended_state": "rejected",
+            "blocking_issues": ["max_drawdown failed"],
         }),
         encoding="utf-8",
     )
@@ -206,6 +226,8 @@ def test_trade_cmd_emits_leaderboard_even_without_trade_targets(tmp_path, monkey
     leaderboard = next(message for message in messages if message["action"] == "leaderboard")
     assert leaderboard["message_id"] == f"leaderboard-20260604-{run_id}"
     assert "研究观察摘要，不是下单建议" in leaderboard["body"]
+    assert "LLM策略生成：草稿 1，通过 0，拒绝 1，未知 0" in leaderboard["body"]
+    assert "- max_drawdown failed: 1" in leaderboard["body"]
     assert "#1 strategy_a [rejected]" in leaderboard["body"]
 
 

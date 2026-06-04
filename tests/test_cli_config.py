@@ -37,6 +37,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert "src/engine/**" in cfg.engineering.forbidden_paths
     assert "src/ranker/**" in cfg.engineering.engineer.allowed_paths
     assert "src/data/**" in cfg.engineering.bugfix.allowed_paths
+    assert cfg.strategy_generation.max_iterations == 5
     assert cfg.strategies == []
 
 

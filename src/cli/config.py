@@ -53,7 +53,7 @@ llm:
 # ─── 策略生成 ──────────────────────────────────────────────
 strategy_generation:
   target_count: 3                   # 目标候选策略数
-  max_iterations: 10                # 最大迭代次数
+  max_iterations: 5                 # 最大迭代次数（控制 LLM token 预算）
   cooldown_seconds: 300             # 每轮冷却（秒）
 
 # ─── 工程自愈安全边界 ─────────────────────────────────────
@@ -204,7 +204,7 @@ class StrategyGenConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_count: int = 3
-    max_iterations: int = 10
+    max_iterations: int = 5
     cooldown_seconds: int = 300
 
 
