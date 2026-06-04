@@ -1,5 +1,9 @@
 # GemStar
 
+<p align="center">
+  <img src="docs/images/gemstar-icon-concept.png" alt="GemStar icon concept" width="180"/>
+</p>
+
 自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 交易雷达监控 → 飞书中文通知。持仓感知，跨日跟踪。
 
 <p align="center">

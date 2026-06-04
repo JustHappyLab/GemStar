@@ -5,6 +5,7 @@ import threading
 
 from src.live.loop import run_live_loop
 from src.live.decision_messages import notification_from_decision
+from src.notify.message import NotificationMessageV1
 from src.schemas.live import (
     LiveAccountStateV1,
     LiveDecisionV1,
@@ -226,3 +227,49 @@ def test_run_live_loop_emits_heartbeat_events():
         "sleep_seconds": 15,
         "is_trading_day": True,
     }]
+
+
+def test_run_live_loop_dedupes_extra_alert_messages():
+    messages = []
+
+    def account_with_target_position() -> LiveAccountStateV1:
+        return LiveAccountStateV1(
+            cash=80_000.0,
+            total_value=100_000.0,
+            positions=[{
+                "ts_code": "300750.SZ",
+                "shares": 200,
+                "avg_cost": 100.0,
+                "last_price": 100.5,
+                "market_value": 20_100.0,
+            }],
+        )
+
+    def alert_fn(_account, _targets, _snapshots, now):
+        return [
+            NotificationMessageV1(
+                message_id="price-20260527-300750.SZ-up-300",
+                created_at=now,
+                severity="warning",
+                title="[涨跌提醒] 300750.SZ +3.00%",
+                body="price alert",
+                action="price_alert",
+                symbols=["300750.SZ"],
+            )
+        ]
+
+    result = run_live_loop(
+        account_loader=account_with_target_position,
+        targets_loader=_targets,
+        snapshots_loader=_snapshots,
+        notify=messages.append,
+        strategy_name="chinext_lstm_mf8",
+        sleep_fn=lambda seconds: None,
+        max_cycles=2,
+        alert_fn=alert_fn,
+    )
+
+    assert len(messages) == 1
+    assert messages[0].action == "price_alert"
+    assert result.notifications == 1
+    assert result.deduped == 1

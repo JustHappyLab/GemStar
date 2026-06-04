@@ -4,7 +4,11 @@ import pandas as pd
 import pytest
 
 from src.live.signal_engine import build_live_decisions
-from src.live.snapshot import snapshots_from_daily_df, snapshots_from_file
+from src.live.snapshot import (
+    snapshots_from_daily_df,
+    snapshots_from_file,
+    snapshots_from_realtime_df,
+)
 from src.schemas.live import LiveAccountStateV1, TargetHoldingV1
 
 
@@ -84,3 +88,44 @@ def test_snapshots_from_file_reads_csv(tmp_path):
 
     assert len(snapshots) == 2
     assert snapshots[0].source == "csv_fixture"
+
+
+def test_snapshots_from_realtime_df_normalizes_tushare_quotes():
+    df = pd.DataFrame([{
+        "code": "000001",
+        "date": "2026-06-04",
+        "time": "10:15:30",
+        "price": "11.20",
+        "open": "11.00",
+        "high": "11.30",
+        "low": "10.90",
+        "pre_close": "10.00",
+        "volume": "12345",
+    }])
+
+    snapshots = snapshots_from_realtime_df(
+        df,
+        ts_codes=["000001.SZ"],
+        source="tushare_realtime",
+    )
+
+    assert len(snapshots) == 1
+    snapshot = snapshots[0]
+    assert snapshot.ts_code == "000001.SZ"
+    assert snapshot.trade_date == "20260604"
+    assert snapshot.timestamp.isoformat() == "2026-06-04T10:15:30"
+    assert snapshot.last_price == 11.2
+    assert snapshot.pre_close == 10.0
+    assert snapshot.volume == 12345.0
+    assert snapshot.source == "tushare_realtime"
+
+
+def test_snapshots_from_realtime_df_skips_zero_price_rows():
+    df = pd.DataFrame([{
+        "code": "000001",
+        "date": "2026-06-04",
+        "price": "0",
+        "pre_close": "10.00",
+    }])
+
+    assert snapshots_from_realtime_df(df, ts_codes=["000001.SZ"]) == []

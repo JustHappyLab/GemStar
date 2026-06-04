@@ -47,6 +47,15 @@ class LiveLoopResult:
 
 HeartbeatFn = Callable[[dict], None]
 NotifyFn = Callable[[NotificationMessageV1], None]
+AlertFn = Callable[
+    [
+        LiveAccountStateV1,
+        list[TargetHoldingV1],
+        list[MarketSnapshotV1],
+        datetime,
+    ],
+    list[NotificationMessageV1],
+]
 
 
 def run_live_loop(
@@ -64,6 +73,7 @@ def run_live_loop(
     idle_interval: int = 300,
     max_cycles: int | None = None,
     heartbeat_fn: HeartbeatFn | None = None,
+    alert_fn: AlertFn | None = None,
 ) -> LiveLoopResult:
     """Run the live radar loop until stopped or *max_cycles* is reached."""
     if max_cycles is not None and max_cycles <= 0:
@@ -79,10 +89,13 @@ def run_live_loop(
 
     while not stop.is_set():
         now = now_fn()
+        account = account_loader()
+        targets = targets_loader()
+        snapshots = snapshots_loader()
         decisions = build_live_decisions(
-            account=account_loader(),
-            targets=targets_loader(),
-            snapshots=snapshots_loader(),
+            account=account,
+            targets=targets,
+            snapshots=snapshots,
             strategy_name=strategy_name,
             created_at=now,
         )
@@ -98,6 +111,16 @@ def run_live_loop(
             notify(notification_from_decision(decision, symbol_names=symbol_names))
             seen_decision_ids.add(decision.decision_id)
             notifications_count += 1
+
+        if alert_fn is not None:
+            for message in alert_fn(account, targets, snapshots, now):
+                message_id = message.message_id
+                if message_id in seen_decision_ids:
+                    deduped_count += 1
+                    continue
+                notify(message)
+                seen_decision_ids.add(message_id)
+                notifications_count += 1
 
         is_trading_day = trading_day_fn(now)
         sleep_seconds = next_poll_seconds(

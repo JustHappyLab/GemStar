@@ -173,12 +173,22 @@ nav .container {
 }
 
 .nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 1.25rem;
   color: var(--cyan);
   text-decoration: none;
   letter-spacing: -0.5px;
+}
+
+.nav-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px var(--cyan-dim));
 }
 
 .nav-brand span {
@@ -241,6 +251,15 @@ nav .container {
   margin: 0 auto;
 }
 
+.hero-logo {
+  display: block;
+  width: min(220px, 54vw);
+  height: auto;
+  margin: 0 auto 28px;
+  filter: drop-shadow(0 0 28px var(--cyan-dim)) drop-shadow(0 0 34px var(--green-dim));
+  animation: fade-in 0.8s ease-out both;
+}
+
 .hero-badge {
   display: inline-flex;
   align-items: center;
@@ -252,7 +271,7 @@ nav .container {
   color: var(--text-secondary);
   margin-bottom: 32px;
   background: var(--bg-card);
-  animation: fade-in 0.8s ease-out;
+  animation: fade-in 0.8s ease-out 0.05s both;
 }
 
 .hero-badge .dot {
@@ -278,7 +297,7 @@ nav .container {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: fade-in 0.8s ease-out 0.1s both;
+  animation: fade-in 0.8s ease-out 0.15s both;
 }
 
 .hero-tagline {
@@ -287,7 +306,7 @@ nav .container {
   color: var(--cyan);
   font-weight: 500;
   margin-bottom: 24px;
-  animation: fade-in 0.8s ease-out 0.2s both;
+  animation: fade-in 0.8s ease-out 0.25s both;
 }
 
 .hero-subtitle {
@@ -296,7 +315,7 @@ nav .container {
   max-width: 600px;
   margin: 0 auto 40px;
   line-height: 1.8;
-  animation: fade-in 0.8s ease-out 0.3s both;
+  animation: fade-in 0.8s ease-out 0.35s both;
 }
 
 .hero-subtitle .arrow {
@@ -309,7 +328,7 @@ nav .container {
   gap: 16px;
   justify-content: center;
   flex-wrap: wrap;
-  animation: fade-in 0.8s ease-out 0.4s both;
+  animation: fade-in 0.8s ease-out 0.45s both;
 }
 
 .btn {
@@ -361,7 +380,7 @@ nav .container {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  animation: fade-in 0.8s ease-out 0.5s both;
+  animation: fade-in 0.8s ease-out 0.55s both;
   text-align: left;
 }
 
@@ -1522,6 +1541,8 @@ footer a:hover {
 @media (max-width: 480px) {
   .container { padding: 0 16px; }
 
+  .hero-logo { width: min(180px, 58vw); }
+
   .cap-card { padding: 24px; }
 
   .gate-cards {
@@ -1555,7 +1576,10 @@ footer a:hover {
 <!-- Nav -->
 <nav>
   <div class="container">
-    <a href="#" class="nav-brand">GemStar</a>
+    <a href="#" class="nav-brand">
+      <img src="docs/images/gemstar-icon-concept.png" alt="" class="nav-logo">
+      GemStar
+    </a>
     <ul class="nav-links">
       <li><a href="#pipeline">Pipeline</a></li>
       <li><a href="#roles">Roles</a></li>
@@ -1575,6 +1599,7 @@ footer a:hover {
 <section class="hero" id="hero">
   <div class="container">
     <div class="hero-content">
+      <img src="docs/images/gemstar-icon-concept.png" alt="GemStar icon concept" class="hero-logo">
       <div class="hero-badge">
         <span class="dot"></span>
         本地确定性研究核心 + Claude Code 策略生成

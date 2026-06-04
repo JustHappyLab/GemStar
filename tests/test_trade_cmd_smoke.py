@@ -6,6 +6,7 @@ live cycle. Skips when the cached daily parquet has no rows.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,7 +15,7 @@ import pytest
 import typer
 
 from src.live.snapshot import snapshots_from_daily_df
-from src.schemas.live import LiveAccountStateV1, LivePositionV1, TargetHoldingV1
+from src.schemas.live import LiveAccountStateV1, LivePositionV1, MarketSnapshotV1, TargetHoldingV1
 
 
 def test_trade_cmd_forwards_discovered_config_to_research(tmp_path, monkeypatch):
@@ -263,7 +264,8 @@ def test_trade_cmd_watches_current_positions_not_only_targets(tmp_path, monkeypa
     ]
     watched_symbols = {}
 
-    def fake_snapshot_loader(_config, symbols):
+    def fake_snapshot_loader(_config, symbols, snapshot_source="auto"):
+        del snapshot_source
         watched_symbols["symbols"] = set(symbols)
         return lambda: snapshots
 
@@ -298,3 +300,102 @@ def test_trade_cmd_watches_current_positions_not_only_targets(tmp_path, monkeypa
     status_md = (tmp_path / "status" / "trade_status.md").read_text(encoding="utf-8")
     assert "000001.SZ 平安银行" in status_md
     assert "sell" in status_md
+
+
+def test_trade_snapshot_loader_prefers_realtime_during_trading(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    cache_dir = tmp_path / "data"
+    cache_dir.mkdir()
+    pd.DataFrame([
+        {
+            "ts_code": "000001.SZ",
+            "trade_date": "20260603",
+            "open": 10.0,
+            "high": 10.5,
+            "low": 9.8,
+            "close": 10.0,
+            "pre_close": 9.9,
+            "vol": 1000.0,
+        },
+        {
+            "ts_code": "300750.SZ",
+            "trade_date": "20260603",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "pre_close": 99.0,
+            "vol": 1000.0,
+        },
+    ]).to_parquet(cache_dir / "daily_all_20240603_20260603.parquet", index=False)
+    config = type("Config", (), {"data_cache_dir": str(cache_dir)})()
+    realtime = [
+        MarketSnapshotV1(
+            ts_code="000001.SZ",
+            trade_date="20260604",
+            last_price=10.8,
+            pre_close=10.0,
+            source="tushare_realtime",
+        )
+    ]
+
+    monkeypatch.setattr(mod, "is_trading_time", lambda _now: True)
+    monkeypatch.setattr(mod, "_load_realtime_snapshots", lambda _symbols: realtime)
+
+    snapshots = mod._make_snapshot_loader(
+        config,
+        ["000001.SZ", "300750.SZ"],
+        snapshot_source="auto",
+    )()
+    by_code = {snapshot.ts_code: snapshot for snapshot in snapshots}
+
+    assert by_code["000001.SZ"].last_price == 10.8
+    assert by_code["000001.SZ"].source == "tushare_realtime"
+    assert by_code["300750.SZ"].last_price == 100.0
+    assert by_code["300750.SZ"].source == "daily_cache"
+
+
+def test_price_alert_fn_only_uses_realtime_snapshots():
+    from src.cli.commands import trade_cmd as mod
+
+    alert_fn = mod._make_price_alert_fn(
+        threshold_pct=0.03,
+        symbol_names={"000001.SZ": "平安银行"},
+    )
+    account = LiveAccountStateV1(
+        cash=90_000.0,
+        total_value=100_000.0,
+        positions=[
+            LivePositionV1(
+                ts_code="000001.SZ",
+                shares=100,
+                avg_cost=10.0,
+                last_price=10.0,
+                market_value=1000.0,
+            )
+        ],
+    )
+    snapshots = [
+        MarketSnapshotV1(
+            ts_code="000001.SZ",
+            trade_date="20260604",
+            last_price=10.4,
+            pre_close=10.0,
+            source="tushare_realtime",
+        ),
+        MarketSnapshotV1(
+            ts_code="300750.SZ",
+            trade_date="20260604",
+            last_price=104.0,
+            pre_close=100.0,
+            source="daily_cache",
+        ),
+    ]
+
+    messages = alert_fn(account, [], snapshots, datetime(2026, 6, 4, 10, 0, 0))
+
+    assert len(messages) == 1
+    assert messages[0].title == "[涨跌提醒] 000001.SZ 平安银行 +4.00%"
+    assert messages[0].action == "price_alert"
+    assert messages[0].symbol_names == {"000001.SZ": "平安银行"}

@@ -39,12 +39,13 @@ from src.cli.output import console
 from src.live.ledger import append_paper_trade, read_paper_trades
 from src.live.loop import run_live_loop
 from src.live.signal_engine import build_live_decisions
-from src.live.snapshot import snapshots_from_daily_df
+from src.live.market_clock import is_trading_time
+from src.live.snapshot import snapshots_from_daily_df, snapshots_from_realtime_df
 from src.live.status_report import build_trade_status_payload, write_trade_status
 from src.live.symbols import symbol_names_from_dataframe
 from src.notify.feishu import FeishuNotificationSink
 from src.notify.local_file import LocalFileNotificationSink
-from src.notify.message import NotificationMessageV1, format_symbol_labels
+from src.notify.message import NotificationMessageV1, format_symbol_label, format_symbol_labels
 from src.schemas.live import (
     LiveAccountStateV1,
     LiveDecisionV1,
@@ -90,6 +91,16 @@ def trade_cmd(
     fresh_research: bool = typer.Option(
         False, "--fresh-research", help="Force a fresh research run even when today's completed run exists."
     ),
+    snapshot_source: str = typer.Option(
+        "auto",
+        "--snapshot-source",
+        help="Market snapshot source: auto, realtime, or cache.",
+    ),
+    price_alert_pct: float = typer.Option(
+        0.0,
+        "--price-alert-pct",
+        help="Notify when intraday price move from pre-close reaches this absolute pct; 0 disables.",
+    ),
 ) -> None:
     """One-command research → live monitor → notify.
 
@@ -103,6 +114,8 @@ def trade_cmd(
         os.chdir(resolved_config_path.parent)
     config = load_config(resolved_config_path)
     fresh_research = fresh_research if isinstance(fresh_research, bool) else False
+    snapshot_source = snapshot_source if isinstance(snapshot_source, str) else "auto"
+    price_alert_pct = price_alert_pct if isinstance(price_alert_pct, (int, float)) else 0.0
     notifier = _build_notifier(notifications_path)
     tracker = _LedgerTracker(ledger_path, capital)
 
@@ -178,7 +191,7 @@ def trade_cmd(
             symbol_names=symbol_names,
         ))
 
-        snapshot_loader = _make_snapshot_loader(config, symbols)
+        snapshot_loader = _make_snapshot_loader(config, symbols, snapshot_source=snapshot_source)
         snapshots = snapshot_loader()
         marked_account = _mark_account_to_market(account, snapshots)
         initial_decisions = build_live_decisions(
@@ -232,6 +245,10 @@ def trade_cmd(
             idle_interval=idle_interval,
             max_cycles=max_cycles,
             heartbeat_fn=_heartbeat,
+            alert_fn=_make_price_alert_fn(
+                threshold_pct=price_alert_pct,
+                symbol_names=symbol_names,
+            ),
         )
         # Record confirmed trades to ledger so the next cycle sees updated positions.
         for d in notified_decisions:
@@ -697,14 +714,18 @@ def _load_cached_fina(cache_dir: str):
     return pd.concat(frames, ignore_index=True)
 
 
-def _make_snapshot_loader(config, symbols: list[str]):
+def _make_snapshot_loader(config, symbols: list[str], snapshot_source: str = "auto"):
     """Build a loader that returns market snapshots for the watched symbols."""
     import pandas as pd
 
     cache_dir = Path(config.data_cache_dir)
     symbol_set = set(symbols)
+    source = snapshot_source.lower().strip()
+    if source not in {"auto", "realtime", "cache"}:
+        raise typer.BadParameter("--snapshot-source must be one of: auto, realtime, cache")
+    state = {"warned_realtime_error": False}
 
-    def _load() -> list[MarketSnapshotV1]:
+    def _load_cached() -> list[MarketSnapshotV1]:
         latest_path = _latest_daily_parquet(cache_dir)
         if latest_path is None:
             return []
@@ -713,7 +734,135 @@ def _make_snapshot_loader(config, symbols: list[str]):
             df = df[df["ts_code"].isin(symbol_set)]
         return snapshots_from_daily_df(df)
 
+    def _load() -> list[MarketSnapshotV1]:
+        cached = _load_cached()
+        if source == "cache":
+            return cached
+        if source == "auto" and not is_trading_time(datetime.now()):
+            return cached
+
+        try:
+            realtime = _load_realtime_snapshots(symbols)
+        except Exception as exc:
+            if not state["warned_realtime_error"]:
+                console.print(f"[yellow]Realtime snapshots unavailable, using cache: {exc}[/yellow]")
+                state["warned_realtime_error"] = True
+            return cached
+
+        if not realtime:
+            if source == "realtime" and not state["warned_realtime_error"]:
+                console.print("[yellow]Realtime snapshots returned no rows, using cache.[/yellow]")
+                state["warned_realtime_error"] = True
+            return cached
+
+        by_code = {s.ts_code: s for s in cached}
+        by_code.update({s.ts_code: s for s in realtime})
+        return [by_code[code] for code in sorted(by_code)]
+
     return _load
+
+
+def _load_realtime_snapshots(symbols: list[str]) -> list[MarketSnapshotV1]:
+    """Fetch realtime quotes through Tushare and normalize to snapshots."""
+    import pandas as pd
+    import tushare as ts
+
+    if not symbols:
+        return []
+
+    frames = []
+    ts_code_arg = ",".join(symbols)
+    realtime_quote = getattr(ts, "realtime_quote", None)
+    if realtime_quote is not None:
+        try:
+            df = realtime_quote(ts_code=ts_code_arg, src="sina")
+            if df is not None and not df.empty:
+                frames.append(df)
+        except Exception:
+            if not hasattr(ts, "get_realtime_quotes"):
+                raise
+
+    if not frames and hasattr(ts, "get_realtime_quotes"):
+        plain_codes = [_plain_stock_code(code) for code in symbols]
+        df = ts.get_realtime_quotes(plain_codes)
+        if df is not None and not df.empty:
+            frames.append(df)
+
+    if not frames:
+        return []
+    realtime_df = pd.concat(frames, ignore_index=True)
+    return snapshots_from_realtime_df(
+        realtime_df,
+        ts_codes=symbols,
+        source="tushare_realtime",
+    )
+
+
+def _plain_stock_code(ts_code: str) -> str:
+    return ts_code.split(".", 1)[0].strip()
+
+
+def _make_price_alert_fn(
+    *,
+    threshold_pct: float,
+    symbol_names: dict[str, str] | None = None,
+):
+    """Build an optional realtime price-move notification producer."""
+    threshold = abs(float(threshold_pct or 0.0))
+    if threshold <= 0:
+        return None
+    threshold_bps = max(1, int(round(threshold * 10000)))
+
+    def _alerts(
+        account: LiveAccountStateV1,
+        targets: list[TargetHoldingV1],
+        snapshots: list[MarketSnapshotV1],
+        now: datetime,
+    ) -> list[NotificationMessageV1]:
+        watched = {p.ts_code for p in account.positions} | {t.ts_code for t in targets}
+        messages: list[NotificationMessageV1] = []
+        for snapshot in snapshots:
+            if snapshot.ts_code not in watched:
+                continue
+            if "realtime" not in snapshot.source:
+                continue
+            if not snapshot.pre_close:
+                continue
+            move = (snapshot.last_price - snapshot.pre_close) / snapshot.pre_close
+            if abs(move) < threshold:
+                continue
+
+            direction = "up" if move > 0 else "down"
+            label = format_symbol_label(snapshot.ts_code, symbol_names)
+            severity = "critical" if snapshot.limit_up or snapshot.limit_down else "warning"
+            messages.append(
+                NotificationMessageV1(
+                    message_id=(
+                        f"price-{snapshot.trade_date}-{snapshot.ts_code}-"
+                        f"{direction}-{threshold_bps}"
+                    ),
+                    created_at=now,
+                    severity=severity,
+                    title=f"[涨跌提醒] {label} {move:+.2%}",
+                    body=(
+                        f"标的：{label}\n"
+                        f"最新价：{snapshot.last_price:.2f}\n"
+                        f"昨收：{snapshot.pre_close:.2f}\n"
+                        f"盘中涨跌幅：{move:+.2%}\n"
+                        f"提醒阈值：{threshold:.2%}\n"
+                        f"行情源：{snapshot.source}\n"
+                        f"快照时间：{snapshot.timestamp.isoformat(timespec='seconds')}"
+                    ),
+                    action="price_alert",
+                    symbols=[snapshot.ts_code],
+                    symbol_names={snapshot.ts_code: symbol_names[snapshot.ts_code]}
+                    if symbol_names and symbol_names.get(snapshot.ts_code)
+                    else {},
+                )
+            )
+        return messages
+
+    return _alerts
 
 
 def _latest_daily_parquet(cache_dir: Path) -> Path | None:
