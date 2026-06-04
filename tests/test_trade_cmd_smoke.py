@@ -145,6 +145,111 @@ def test_trade_cmd_reuses_today_completed_run(tmp_path, monkeypatch):
     assert captured["research_called"] is False
 
 
+def test_trade_cmd_emits_leaderboard_even_without_trade_targets(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "20260604-run"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    config_path = tmp_path / "gemstar.yaml"
+    config_path.write_text(
+        "strategies: []\n"
+        f"db_path: {tmp_path / 'state.db'}\n"
+        f"artifacts_dir: {artifacts}\n",
+        encoding="utf-8",
+    )
+    (run_dir / "leaderboard.json").write_text(
+        json.dumps({
+            "entries": [
+                {
+                    "name": "strategy_a",
+                    "rank": 1,
+                    "sharpe": 1.25,
+                    "cagr": 0.18,
+                    "max_drawdown": -0.08,
+                    "alpha": 0.06,
+                    "rank_change": "new",
+                    "status": "rejected",
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
+    monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
+    monkeypatch.setattr(mod, "_wait_until_or_now", lambda *_args: True)
+    with (
+        patch.object(mod, "_latest_completed_run", return_value=run_id),
+        patch.object(mod, "_run_research", return_value=run_id),
+        patch.object(mod, "_today_str", return_value="20260604"),
+        patch.object(mod, "_build_targets", return_value=([], [], {})),
+    ):
+        mod.trade_cmd(
+            once=True,
+            config_path=str(config_path),
+            top_n=1,
+            capital=100000.0,
+            active_interval=1,
+            idle_interval=1,
+            max_cycles=1,
+            notifications_path=str(tmp_path / "alerts.jsonl"),
+            ledger_path=str(tmp_path / "ledger.jsonl"),
+            status_dir=str(tmp_path / "status"),
+            leaderboard_notify_time="08:30",
+            leaderboard_notify_top=5,
+        )
+
+    lines = (tmp_path / "alerts.jsonl").read_text(encoding="utf-8").splitlines()
+    messages = [json.loads(line) for line in lines]
+    assert any(message["action"] == "leaderboard" for message in messages)
+    leaderboard = next(message for message in messages if message["action"] == "leaderboard")
+    assert leaderboard["message_id"] == f"leaderboard-20260604-{run_id}"
+    assert "研究观察摘要，不是下单建议" in leaderboard["body"]
+    assert "#1 strategy_a [rejected]" in leaderboard["body"]
+
+
+def test_daily_leaderboard_notification_dedupes_existing_message(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "20260604-run"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "leaderboard.json").write_text(
+        json.dumps({
+            "entries": [{
+                "name": "strategy_a",
+                "rank": 1,
+                "sharpe": 1.25,
+                "cagr": 0.18,
+                "max_drawdown": -0.08,
+                "alpha": 0.06,
+                "status": "rejected",
+            }]
+        }),
+        encoding="utf-8",
+    )
+    notifications_path = tmp_path / "alerts.jsonl"
+    notifications_path.write_text(
+        json.dumps({"message_id": f"leaderboard-20260604-{run_id}"}) + "\n",
+        encoding="utf-8",
+    )
+    messages = []
+    config = type("Config", (), {"artifacts_dir": str(artifacts)})()
+
+    mod._emit_daily_leaderboard(
+        notifier=messages.append,
+        config=config,
+        run_id=run_id,
+        ref_date="20260604",
+        top_n=10,
+        notifications_path=notifications_path,
+    )
+
+    assert messages == []
+
+
 @pytest.mark.skipif(
     not Path("artifacts").is_dir() or not any(Path("artifacts").glob("*/leaderboard.json")),
     reason="needs an existing run with leaderboard.json",

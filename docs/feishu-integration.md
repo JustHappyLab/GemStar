@@ -111,6 +111,20 @@ uv run gemstar trade --once
 uv run gemstar trade
 ```
 
+长期运行时，`gemstar trade` 默认会在每天 `08:30` 推送一次最新 leaderboard 摘要。这个摘要是研究观察信息，即使当天没有可交易信号也会发送；真正的买卖/加减仓提醒仍必须通过策略状态、行情日期、交易金额和择时门禁。
+
+可以按需调整：
+
+```bash
+uv run gemstar trade --leaderboard-notify-time 08:30 --leaderboard-notify-top 10
+```
+
+如果不想发送每日 leaderboard 摘要，可以传空字符串：
+
+```bash
+uv run gemstar trade --leaderboard-notify-time ""
+```
+
 每次运行都会同时写入：
 
 ```text
@@ -128,9 +142,9 @@ artifacts/current/trade_status.md
 - 告警级别
 - 标题
 - 生成时间
-- 交易建议正文
-- 标的代码和名称
-- 决策 ID
+- 正文。交易提醒会包含操作、参考价、估算金额、理由和风险；leaderboard 摘要会包含 run id、状态分布和 Top 策略指标
+- 标的代码和名称。leaderboard 摘要没有具体标的时会显示为空
+- 决策 ID。非交易摘要没有决策 ID
 
 如果没有配置 `FEISHU_WEBHOOK_URL`，GemStar 不会报错，只会使用本地 JSONL 和状态文件。
 
@@ -141,6 +155,7 @@ artifacts/current/trade_status.md
 它适合：
 
 - 推送 GemStar 交易提醒。
+- 推送每日 leaderboard 观察摘要。
 - 推送受限、买入、卖出、减仓、加仓等决策消息。
 - 低成本接入个人或小团队群聊。
 - 不需要飞书应用审核或公网回调服务。

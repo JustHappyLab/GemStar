@@ -203,7 +203,7 @@ uv run gemstar init
 
 #### 飞书通知配置
 
-GemStar 支持通过飞书自定义机器人推送交易提醒。完整步骤见 [docs/feishu-integration.md](docs/feishu-integration.md)。
+GemStar 支持通过飞书自定义机器人推送交易提醒和每日 leaderboard 观察摘要。完整步骤见 [docs/feishu-integration.md](docs/feishu-integration.md)。
 
 如果你还没有飞书机器人 token，先看 [飞书接入指南](docs/feishu-integration.md)：里面写了如何在飞书群添加自定义机器人、复制 Webhook URL、区分 token 和签名密钥。
 
@@ -216,6 +216,7 @@ FEISHU_WEBHOOK_SECRET="你的签名密钥"
 ```
 
 未配置飞书时，GemStar 仍会写入本地 `alerts/live.jsonl` 和 `artifacts/current/trade_status.md/json`。
+每日 leaderboard 摘要默认在 `08:30` 推送，它是研究观察信息，不是下单建议；买卖/加减仓提醒仍必须通过策略状态、行情日期、交易金额和择时门禁。
 
 #### 交易状态文件
 
@@ -332,6 +333,9 @@ gemstar trade --fresh-research
 
 # 跟踪 leaderboard 前 5 个策略
 gemstar trade --top 5
+
+# 每天 08:30 推送 leaderboard 观察摘要（默认开启，默认 Top 10）
+gemstar trade --leaderboard-notify-time 08:30 --leaderboard-notify-top 10
 
 # ─── 以下是内部子命令 ──────────────────────────────
 

@@ -113,6 +113,16 @@ def trade_cmd(
         "--auto-paper-execute",
         help="Append notified executable trades to the paper ledger automatically.",
     ),
+    leaderboard_notify_time: str = typer.Option(
+        "08:30",
+        "--leaderboard-notify-time",
+        help="Daily HH:MM time to send the latest leaderboard summary; empty disables.",
+    ),
+    leaderboard_notify_top: int = typer.Option(
+        10,
+        "--leaderboard-notify-top",
+        help="Number of leaderboard entries to include in the daily summary notification.",
+    ),
 ) -> None:
     """One-command research → live monitor → notify.
 
@@ -130,6 +140,12 @@ def trade_cmd(
     price_alert_pct = price_alert_pct if isinstance(price_alert_pct, (int, float)) else 0.0
     min_trade_value = min_trade_value if isinstance(min_trade_value, (int, float)) else 5000.0
     auto_paper_execute = auto_paper_execute if isinstance(auto_paper_execute, bool) else False
+    leaderboard_notify_time = (
+        leaderboard_notify_time if isinstance(leaderboard_notify_time, str) else "08:30"
+    )
+    leaderboard_notify_top = (
+        leaderboard_notify_top if isinstance(leaderboard_notify_top, int) else 10
+    )
     notifier = _build_notifier(notifications_path)
     tracker = _LedgerTracker(ledger_path, capital)
 
@@ -173,6 +189,18 @@ def trade_cmd(
                 raise typer.Exit(1)
             _wait_until_tomorrow(stop_event)
             continue
+
+        if leaderboard_notify_time.strip():
+            if not _wait_until_or_now(leaderboard_notify_time, stop_event):
+                break
+            _emit_daily_leaderboard(
+                notifier=notifier,
+                config=config,
+                run_id=run_id,
+                ref_date=ref_date,
+                top_n=leaderboard_notify_top,
+                notifications_path=notifications_path,
+            )
 
         targets, strategies, symbol_names = _build_targets(
             config, run_id, ref_date, top_n, account.total_value
@@ -379,6 +407,120 @@ def _heartbeat(event: dict) -> None:
         f"cycle={event['cycle']} decisions={event['decisions']} "
         f"notifications={event['notifications']} sleep={event['sleep_seconds']}s[/dim]"
     )
+
+
+def _emit_daily_leaderboard(
+    *,
+    notifier,
+    config,
+    run_id: str,
+    ref_date: str,
+    top_n: int,
+    notifications_path: str | Path | None = None,
+) -> None:
+    """Emit a daily non-trading leaderboard summary notification."""
+    message = _leaderboard_notification(config, run_id, ref_date, top_n=max(1, top_n))
+    if message is None:
+        return
+    if notifications_path and _notification_already_sent(notifications_path, message.message_id):
+        console.print(f"[dim]Leaderboard notification already sent: {message.message_id}[/dim]")
+        return
+    _emit(notifier, message)
+
+
+def _leaderboard_notification(
+    config,
+    run_id: str,
+    ref_date: str,
+    top_n: int = 10,
+    created_at: datetime | None = None,
+) -> NotificationMessageV1 | None:
+    leaderboard_path = Path(config.artifacts_dir) / run_id / "leaderboard.json"
+    if not leaderboard_path.exists():
+        return None
+
+    entries = json.loads(leaderboard_path.read_text(encoding="utf-8")).get("entries", [])
+    if not entries:
+        return None
+
+    created = created_at or datetime.now()
+    top_entries = entries[:max(1, top_n)]
+    status_counts: dict[str, int] = {}
+    for entry in entries:
+        status = str(entry.get("status", "unknown"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    live_count = sum(
+        count for status, count in status_counts.items()
+        if status in _LIVE_ALLOWED_STRATEGY_STATUSES
+    )
+    lines = [
+        f"日期：{ref_date}",
+        f"运行：{run_id}",
+        f"策略数：{len(entries)}，交易准入：{live_count}",
+        "状态分布：" + "、".join(
+            f"{status}={count}" for status, count in sorted(status_counts.items())
+        ),
+        "性质：研究观察摘要，不是下单建议；交易信号仍需通过策略状态、行情日期、交易金额和择时门禁。",
+        "",
+        f"Top {len(top_entries)}：",
+    ]
+    for entry in top_entries:
+        rank = entry.get("rank", "?")
+        name = entry.get("name", "-")
+        status = entry.get("status", "unknown")
+        sharpe = _fmt_float(entry.get("sharpe"))
+        cagr = _fmt_pct(entry.get("cagr"))
+        max_drawdown = _fmt_pct(entry.get("max_drawdown"))
+        alpha = _fmt_pct(entry.get("alpha"))
+        change = entry.get("rank_change", "")
+        lines.append(
+            f"#{rank} {name} [{status}] "
+            f"Sharpe {sharpe} / CAGR {cagr} / DD {max_drawdown} / Alpha {alpha}"
+            + (f" / {change}" if change else "")
+        )
+
+    return NotificationMessageV1(
+        message_id=f"leaderboard-{ref_date}-{run_id}",
+        created_at=created,
+        severity="info",
+        title=f"GemStar 策略排行榜 ({ref_date})",
+        body="\n".join(lines),
+        action="leaderboard",
+        symbols=[],
+    )
+
+
+def _fmt_float(value) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _fmt_pct(value) -> str:
+    try:
+        return f"{float(value):.2%}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _notification_already_sent(path: str | Path, message_id: str) -> bool:
+    notifications_path = Path(path)
+    if not notifications_path.exists():
+        return False
+    try:
+        with notifications_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("message_id") == message_id:
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 # ── status rendering ────────────────────────────────────────────
@@ -1099,6 +1241,27 @@ class _LedgerTracker:
 
 def _today_str() -> str:
     return date.today().strftime("%Y%m%d")
+
+
+def _wait_until_or_now(target_time: str, stop_event: threading.Event) -> bool:
+    """Wait until HH:MM today; return immediately if the time has passed."""
+    try:
+        hour, minute = map(int, target_time.split(":", 1))
+        target = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+    except ValueError:
+        console.print(f"[yellow]Invalid --leaderboard-notify-time={target_time!r}; skip leaderboard notification.[/yellow]")
+        return True
+
+    now = datetime.now()
+    if now >= target:
+        return True
+
+    seconds = (target - now).total_seconds()
+    while seconds > 0 and not stop_event.is_set():
+        chunk = min(60.0, seconds)
+        stop_event.wait(chunk)
+        seconds -= chunk
+    return not stop_event.is_set()
 
 
 def _wait_until_tomorrow(stop_event: threading.Event) -> None:

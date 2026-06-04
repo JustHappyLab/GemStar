@@ -420,6 +420,10 @@ Every milestone must prove three things:
 - Do not let LLM output directly place trades or mutate account state.
 - Keep deterministic trading math in pure, tested functions.
 - Treat missing data as a blocked/hold decision, not as permission to trade.
+- Keep daily research notifications separate from executable trade alerts:
+  send a scheduled leaderboard summary for observability, but require strategy
+  status, fresh market data, timing, and minimum trade value gates before any
+  buy/add/reduce/sell notification.
 - Prefer explicit user confirmation for anything that changes real money state.
 
 # Definition of Done for the First Live MVP
