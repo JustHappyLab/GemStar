@@ -198,7 +198,10 @@ def test_trade_cmd_emits_leaderboard_even_without_trade_targets(tmp_path, monkey
     )
     monkeypatch.setenv("FEISHU_WEBHOOK_URL", "")
     monkeypatch.setenv("FEISHU_WEBHOOK_SECRET", "")
-    monkeypatch.setattr(mod, "_wait_until_or_now", lambda *_args: True)
+    def fail_wait(*_args):
+        raise AssertionError("--once should not wait for leaderboard notification time")
+
+    monkeypatch.setattr(mod, "_wait_until_or_now", fail_wait)
     with (
         patch.object(mod, "_latest_completed_run", return_value=run_id),
         patch.object(mod, "_run_research", return_value=run_id),
@@ -773,3 +776,215 @@ def test_price_alert_fn_only_uses_realtime_snapshots():
     assert messages[0].title == "[涨跌提醒] 000001.SZ 平安银行 +4.00%"
     assert messages[0].action == "price_alert"
     assert messages[0].symbol_names == {"000001.SZ": "平安银行"}
+
+
+def test_load_cached_market_data_uses_latest_window_not_after_ref_date(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    cache_dir = tmp_path / "raw"
+    cache_dir.mkdir()
+    pd.DataFrame({
+        "ts_code": ["300001.SZ"],
+        "name": ["A"],
+        "list_date": ["20200101"],
+        "delist_date": [None],
+    }).to_parquet(cache_dir / "stock_basic_a_share.parquet", index=False)
+    pd.DataFrame({
+        "ts_code": ["300001.SZ"],
+        "trade_date": ["20260604"],
+        "open": [10.0],
+        "high": [11.0],
+        "low": [9.0],
+        "close": [10.5],
+        "pre_close": [10.0],
+        "vol": [1000.0],
+        "amount": [10000.0],
+    }).to_parquet(cache_dir / "daily_all_20240604_20260604.parquet", index=False)
+    pd.DataFrame({
+        "ts_code": ["300001.SZ"],
+        "trade_date": ["20260604"],
+        "pe_ttm": [20.0],
+        "pb": [2.0],
+        "turnover_rate": [1.5],
+    }).to_parquet(cache_dir / "daily_basic_20240604_20260604.parquet", index=False)
+    pd.DataFrame({
+        "trade_date": ["20260604"],
+        "close": [1000.0],
+    }).to_parquet(cache_dir / "index_daily_399006.SZ_20240604_20260604.parquet", index=False)
+    pd.DataFrame({
+        "ts_code": ["300001.SZ"],
+        "ann_date": ["20260430"],
+        "end_date": ["20260331"],
+        "roe": [10.0],
+        "revenue_yoy": [20.0],
+        "netprofit_yoy": [30.0],
+    }).to_parquet(cache_dir / "fina_300001_SZ.parquet", index=False)
+    pd.DataFrame({
+        "ts_code": ["300001.SZ"],
+        "end_date": ["20260331"],
+        "actual_date": ["20260430"],
+    }).to_parquet(cache_dir / "disclosure_date_300001_SZ.parquet", index=False)
+    config = type(
+        "Config",
+        (),
+        {
+            "data_cache_dir": str(cache_dir),
+            "strategies": [],
+            "benchmark": "399006.SZ",
+        },
+    )()
+
+    daily_df, index_df, fina_df, stock_basic = mod._load_cached_market_data(config, "20260605")
+
+    assert daily_df["trade_date"].tolist() == ["20260604"]
+    assert daily_df["pe_ttm"].tolist() == [20.0]
+    assert index_df["trade_date"].tolist() == ["20260604"]
+    assert stock_basic["ts_code"].tolist() == ["300001.SZ"]
+    assert fina_df["ts_code"].tolist() == ["300001.SZ"]
+    assert "disclosure_date" in fina_df.columns
+
+
+def test_latest_daily_parquet_uses_window_end_date(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    cache_dir = tmp_path / "raw"
+    cache_dir.mkdir()
+    older = cache_dir / "daily_all_20240604_20260604.parquet"
+    newer = cache_dir / "daily_all_20210101_20260605.parquet"
+    older.write_text("older", encoding="utf-8")
+    newer.write_text("newer", encoding="utf-8")
+
+    assert mod._latest_daily_parquet(cache_dir) == newer
+
+
+def test_leaderboard_alert_fn_emits_when_notify_time_is_due(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    run_id = "20260604-alert"
+    artifacts = tmp_path / "artifacts"
+    run_dir = artifacts / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "leaderboard.json").write_text(
+        json.dumps({
+            "entries": [
+                {
+                    "name": "strategy_a",
+                    "rank": 1,
+                    "sharpe": 1.2,
+                    "cagr": 0.2,
+                    "max_drawdown": 0.1,
+                    "alpha": 0.05,
+                    "rank_change": "new",
+                    "status": "candidate",
+                }
+            ]
+        }),
+        encoding="utf-8",
+    )
+    config = type("Config", (), {"artifacts_dir": str(artifacts)})()
+    alerts = tmp_path / "alerts.jsonl"
+    alert_fn = mod._make_leaderboard_alert_fn(
+        config=config,
+        run_id=run_id,
+        ref_date="20260604",
+        top_n=10,
+        notify_time="08:30",
+        notifications_path=alerts,
+    )
+
+    early = alert_fn(None, [], [], datetime(2026, 6, 4, 8, 29))
+    due = alert_fn(None, [], [], datetime(2026, 6, 4, 8, 30))
+
+    assert early == []
+    assert len(due) == 1
+    assert due[0].action == "leaderboard"
+
+
+def test_premarket_plan_alert_fn_emits_summary_for_stale_snapshots(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    account = LiveAccountStateV1(
+        cash=90_000.0,
+        total_value=100_000.0,
+        positions=[
+            LivePositionV1(
+                ts_code="000001.SZ",
+                shares=600,
+                avg_cost=10.0,
+                last_price=10.0,
+                market_value=6000.0,
+            )
+        ],
+    )
+    targets = [
+        TargetHoldingV1(
+            ts_code="000001.SZ",
+            target_weight=0.0,
+            target_shares=0,
+            reason="top from strategy_a",
+        ),
+        TargetHoldingV1(
+            ts_code="300001.SZ",
+            target_weight=0.2,
+            target_shares=200,
+            reason="top from strategy_a",
+        ),
+    ]
+    snapshots = [
+        MarketSnapshotV1(
+            ts_code="000001.SZ",
+            trade_date="20260604",
+            last_price=10.0,
+            pre_close=9.8,
+            source="daily_cache",
+        ),
+        MarketSnapshotV1(
+            ts_code="300001.SZ",
+            trade_date="20260604",
+            last_price=40.0,
+            pre_close=39.0,
+            source="daily_cache",
+        ),
+    ]
+    alert_fn = mod._make_premarket_plan_alert_fn(
+        run_id="20260605-plan",
+        ref_date="20260605",
+        strategy_name="strategy_a",
+        symbol_names={"000001.SZ": "平安银行", "300001.SZ": "特锐德"},
+        min_trade_value=5000.0,
+        notifications_path=tmp_path / "alerts.jsonl",
+    )
+
+    messages = alert_fn(account, targets, snapshots, datetime(2026, 6, 5, 8, 45))
+
+    assert len(messages) == 1
+    message = messages[0]
+    assert message.message_id == "pretrade-plan-20260605-20260605-plan-20260604"
+    assert message.action == "pretrade_plan"
+    assert message.title == "GemStar 盘前计划 (20260605)"
+    assert "价格基准：20260604 收盘缓存价" in message.body
+    assert "不是可执行交易信号" in message.body
+    assert "300001.SZ 特锐德: 买入 200 股" in message.body
+    assert "000001.SZ 平安银行: 卖出 600 股" in message.body
+
+
+def test_premarket_plan_alert_fn_skips_current_day_snapshots(tmp_path):
+    from src.cli.commands import trade_cmd as mod
+
+    alert_fn = mod._make_premarket_plan_alert_fn(
+        run_id="20260605-plan",
+        ref_date="20260605",
+        strategy_name="strategy_a",
+        symbol_names={},
+        min_trade_value=0.0,
+        notifications_path=tmp_path / "alerts.jsonl",
+    )
+
+    messages = alert_fn(
+        LiveAccountStateV1(cash=100_000.0, total_value=100_000.0, positions=[]),
+        [TargetHoldingV1(ts_code="300001.SZ", target_weight=0.2, target_shares=200)],
+        [MarketSnapshotV1(ts_code="300001.SZ", trade_date="20260605", last_price=40.0)],
+        datetime(2026, 6, 5, 9, 35),
+    )
+
+    assert messages == []

@@ -345,6 +345,12 @@ gemstar run --date 20260503
 # 启用 LLM 策略生成
 gemstar run --date 20260503 --llm
 
+# 只验证手动策略，不触发 LLM 生成/评审
+gemstar run --date 20260503 --no-llm --strategy strategies/manual_earnings_quality_guard_v1.yaml
+
+# 当前手动策略先固定在 chinext_core 验证，避免全 A 财务数据补齐过慢；
+# 只有在 pass/candidate 稳定后，再考虑扩展到 a_share_core。
+
 # 控制 LLM 生成预算，默认最多 5 轮
 # gemstar.yaml: strategy_generation.max_iterations: 5
 

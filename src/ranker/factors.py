@@ -74,28 +74,22 @@ def compute_all_factors(
         fina['ann_date'] = pd.to_datetime(fina['ann_date'])
         fina['end_date'] = pd.to_datetime(fina['end_date'], errors='coerce')
         fina = fina.dropna(subset=['available_date'])
-        fina = fina.sort_values(['ts_code', 'available_date', 'end_date'])
-        fina = fina.drop_duplicates(['ts_code', 'available_date'], keep='last')
-        df = df.sort_values(['ts_code', 'trade_date'])
-
-        parts = []
-        for code, grp in df.groupby('ts_code'):
-            f = fina[fina['ts_code'] == code]
-            if f.empty:
-                merged = grp.copy()
-                for col in ['roe', 'revenue_yoy', 'netprofit_yoy']:
-                    merged[col] = None
-            else:
-                merged = pd.merge_asof(
-                    grp,
-                    f.drop(columns='ts_code'),
-                    left_on='trade_date',
-                    right_on='available_date',
-                    direction='backward',
-                )
-                merged.drop(columns=['ann_date', 'available_date', 'end_date'], inplace=True, errors='ignore')
-            parts.append(merged)
-        df = pd.concat(parts, ignore_index=True)
+        if fina.empty:
+            for col in ['roe', 'revenue_yoy', 'netprofit_yoy']:
+                df[col] = None
+        else:
+            fina = fina[fina['ts_code'].isin(df['ts_code'].unique())]
+            fina = fina.sort_values(['ts_code', 'available_date', 'end_date'])
+            fina = fina.drop_duplicates(['ts_code', 'available_date'], keep='last')
+            df = pd.merge_asof(
+                df.sort_values(['trade_date', 'ts_code']),
+                fina.sort_values(['available_date', 'ts_code']),
+                left_on='trade_date',
+                right_on='available_date',
+                by='ts_code',
+                direction='backward',
+            )
+            df.drop(columns=['ann_date', 'available_date', 'end_date'], inplace=True, errors='ignore')
     else:
         for c in ['roe', 'revenue_yoy', 'netprofit_yoy']:
             df[c] = None

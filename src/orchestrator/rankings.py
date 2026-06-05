@@ -20,7 +20,12 @@ import pandas as pd
 from src.ranker.factors import compute_all_factors
 from src.ranker.normalize import winsorize_mad, zscore_cross_section
 from src.ranker.scorer import compute_composite_score, rank_top_n
-from src.orchestrator.universe import UniverseResolution, filter_group_for_universe, resolve_universe_value
+from src.orchestrator.universe import (
+    UniverseResolution,
+    filter_frame_by_universe_prefix,
+    filter_group_for_universe,
+    resolve_universe_value,
+)
 from src.schemas.strategy import FactorWeightV1
 
 _FACTOR_LOOKBACK_DAYS = 370
@@ -70,6 +75,8 @@ def build_rankings(
         return {}
 
     weights = {f.factor_id: f.weight for f in factors}
+    resolution = resolve_universe_value(universe)
+    daily_df = filter_frame_by_universe_prefix(daily_df, resolution)
     daily_input, index_input = _filter_factor_inputs(
         daily_df,
         index_daily,
@@ -94,7 +101,6 @@ def build_rankings(
         return {}
 
     # Per-date cross-sectional normalization and scoring
-    resolution = resolve_universe_value(universe)
     rankings: dict[str, list[str]] = {}
     for date, group in factor_df.groupby("trade_date"):
         g = filter_group_for_universe(

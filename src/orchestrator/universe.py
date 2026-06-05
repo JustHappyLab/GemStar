@@ -124,6 +124,14 @@ def filter_group_for_universe(
     return filtered
 
 
+def filter_frame_by_universe_prefix(
+    df: pd.DataFrame,
+    resolution: UniverseResolution,
+) -> pd.DataFrame:
+    """Coarsely limit a multi-date frame to the universe's code prefix."""
+    return _filter_by_prefix(df, resolution.resolved)
+
+
 def eligible_codes_from_stock_basic(
     stock_basic: pd.DataFrame | None,
     trade_date: str,

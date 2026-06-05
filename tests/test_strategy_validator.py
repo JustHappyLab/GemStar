@@ -214,3 +214,16 @@ def test_verdict_is_json_serializable() -> None:
         assert parsed.strategy_id == "s_rt"
         assert parsed.version == "VerdictV1"
         assert parsed.blocking_issues == verdict.blocking_issues
+
+
+def test_manual_earnings_quality_guard_strategy_is_backtest_eligible() -> None:
+    """Manual focus strategy should remain schema/factor-pool eligible."""
+    repo_root = Path(__file__).resolve().parent.parent
+    verdict = validate_strategy(
+        repo_root / "strategies" / "manual_earnings_quality_guard_v1.yaml",
+        repo_root / "factors" / "pool.json",
+        strategy_id="manual_earnings_quality_guard_v1",
+    )
+
+    assert verdict.recommended_state == "candidate"
+    assert verdict.blocking_issues == []

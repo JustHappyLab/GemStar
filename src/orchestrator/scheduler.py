@@ -56,6 +56,9 @@ def wait_until(target_time: str, stop_event=None, check_interval: int = 30) -> b
     If the target time has already passed today, returns immediately.
     *stop_event*: optional threading.Event; if set, returns False early.
     """
+    if stop_event is not None and stop_event.is_set():
+        return False
+
     h, m = map(int, target_time.split(":"))
     now = datetime.now()
     target = now.replace(hour=h, minute=m, second=0, microsecond=0)

@@ -192,3 +192,51 @@ def test_rankings_trim_input_history_before_factor_compute(monkeypatch):
     assert result["20240102"] == ["600001.SH"]
     assert captured["daily_dates"] == {"20240102"}
     assert captured["index_dates"] == {"20240102"}
+
+
+def test_rankings_apply_universe_prefix_before_factor_compute(monkeypatch):
+    import src.orchestrator.rankings as rankings_mod
+
+    daily = pd.DataFrame([
+        {
+            "ts_code": "300001.SZ",
+            "trade_date": "20240102",
+            "close": 2.0,
+            "pe_ttm": 1.0,
+            "pb": 1.0,
+            "turnover_rate": 1.0,
+        },
+        {
+            "ts_code": "600001.SH",
+            "trade_date": "20240102",
+            "close": 3.0,
+            "pe_ttm": 2.0,
+            "pb": 1.0,
+            "turnover_rate": 1.0,
+        },
+    ])
+    index_daily = pd.DataFrame({"trade_date": ["20240102"], "close": [101.0]})
+    captured = {}
+
+    def fake_compute_all_factors(daily_input, index_input, _fina_df, _expression_factors):
+        captured["codes"] = set(daily_input["ts_code"].astype(str))
+        return pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "trade_date": ["20240102"],
+            "pe_inverse": [1.0],
+        })
+
+    monkeypatch.setattr(rankings_mod, "compute_all_factors", fake_compute_all_factors)
+
+    result = build_rankings(
+        daily,
+        index_daily,
+        pd.DataFrame(),
+        [FactorWeightV1(factor_id="pe_inverse", weight=1.0)],
+        top_n=1,
+        trade_dates=["20240102"],
+        universe="chinext_core",
+    )
+
+    assert result["20240102"] == ["300001.SZ"]
+    assert captured["codes"] == {"300001.SZ"}

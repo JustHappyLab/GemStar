@@ -190,9 +190,9 @@ def trade_cmd(
             _wait_until_tomorrow(stop_event)
             continue
 
-        if leaderboard_notify_time.strip():
-            if not _wait_until_or_now(leaderboard_notify_time, stop_event):
-                break
+        if leaderboard_notify_time.strip() and (
+            once or _leaderboard_time_due(datetime.now(), leaderboard_notify_time)
+        ):
             _emit_daily_leaderboard(
                 notifier=notifier,
                 config=config,
@@ -293,9 +293,27 @@ def trade_cmd(
             idle_interval=idle_interval,
             max_cycles=max_cycles,
             heartbeat_fn=_heartbeat,
-            alert_fn=_make_price_alert_fn(
-                threshold_pct=price_alert_pct,
-                symbol_names=symbol_names,
+            alert_fn=_combine_alert_fns(
+                _make_premarket_plan_alert_fn(
+                    run_id=run_id,
+                    ref_date=ref_date,
+                    strategy_name=strategies[0] if strategies else "trade",
+                    symbol_names=symbol_names,
+                    min_trade_value=min_trade_value,
+                    notifications_path=notifications_path,
+                ),
+                _make_price_alert_fn(
+                    threshold_pct=price_alert_pct,
+                    symbol_names=symbol_names,
+                ),
+                _make_leaderboard_alert_fn(
+                    config=config,
+                    run_id=run_id,
+                    ref_date=ref_date,
+                    top_n=leaderboard_notify_top,
+                    notify_time=leaderboard_notify_time,
+                    notifications_path=notifications_path,
+                ) if not once else None,
             ),
             min_trade_value=min_trade_value,
             required_trade_date=ref_date,
@@ -984,27 +1002,16 @@ def _latest_index_trade_date(index_df, trade_date: str) -> str | None:
 def _load_cached_market_data(config, ref_date: str):
     """Load daily / index / fina / stock_basic frames from caches.
 
-    Calls Tushare fetchers with a short window: when the parquet cache exists,
-    they return the cached frame; otherwise they fetch (one-time cost).
+    Live target construction must not block on remote data.  It uses the latest
+    complete cache window not after ref_date, so pre-open runs can reuse the
+    previous trading day's data.
     """
     import pandas as pd
-    from src.data.fetcher import (
-        init_tushare,
-        fetch_trade_calendar,
-        fetch_stock_basic,
-        fetch_index_daily,
-        fetch_daily_all,
-        fetch_daily_basic,
-        fetch_adj_factor,
-    )
     from src.orchestrator.benchmark import resolve_benchmark_for_strategies
     from src.schemas.strategy import StrategyConfigV1
 
     cache_dir = config.data_cache_dir
-    pro = init_tushare(config.tushare_token or None)
-
-    lookback = max(2, config.data.lookback_years)
-    start = (datetime.strptime(ref_date, "%Y%m%d") - timedelta(days=365 * lookback)).strftime("%Y%m%d")
+    cache_path = Path(cache_dir)
 
     # Pull configured strategies for benchmark resolution; ignore failures.
     strat_configs = []
@@ -1015,18 +1022,19 @@ def _load_cached_market_data(config, ref_date: str):
             continue
     benchmark_resolution = resolve_benchmark_for_strategies(config.benchmark, strat_configs)
 
-    fetch_trade_calendar(pro, start, ref_date, cache_dir=cache_dir)
-    stock_basic = fetch_stock_basic(pro, cache_dir=cache_dir)
+    stock_basic = _read_cache_file(cache_path / "stock_basic_a_share.parquet")
+    if stock_basic.empty:
+        stock_basic = _read_cache_file(cache_path / "stock_basic_chinext.parquet")
+
     index_df = pd.DataFrame()
     for candidate in benchmark_resolution.candidates:
-        df = fetch_index_daily(pro, candidate, start, ref_date, cache_dir=cache_dir)
+        df = _read_latest_window_cache(cache_path, f"index_daily_{candidate}", ref_date)
         if df is not None and not df.empty:
             index_df = df
             break
 
-    daily_all = fetch_daily_all(pro, start, ref_date, cache_dir=cache_dir)
-    daily_basic = fetch_daily_basic(pro, start, ref_date, cache_dir=cache_dir)
-    fetch_adj_factor(pro, start, ref_date, cache_dir=cache_dir)
+    daily_all = _read_latest_window_cache(cache_path, "daily_all", ref_date)
+    daily_basic = _read_latest_window_cache(cache_path, "daily_basic", ref_date)
 
     if daily_all is None or daily_all.empty:
         return None, None, None, None
@@ -1034,30 +1042,65 @@ def _load_cached_market_data(config, ref_date: str):
     # Reuse fina_indicator only if pre-cached on disk.
     fina_df = _load_cached_fina(cache_dir)
 
-    daily_merged = daily_all.merge(
-        daily_basic[["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]],
-        on=["ts_code", "trade_date"],
-        how="left",
-    )
+    basic_cols = ["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate"]
+    if daily_basic is None or daily_basic.empty:
+        for col in basic_cols:
+            if col not in daily_all.columns:
+                daily_all[col] = None
+        daily_merged = daily_all
+    else:
+        daily_merged = daily_all.merge(
+            daily_basic[basic_cols],
+            on=["ts_code", "trade_date"],
+            how="left",
+        )
     return daily_merged, index_df, fina_df, stock_basic
 
 
 def _load_cached_fina(cache_dir: str):
     """Best-effort load of any cached fina_indicator parquet bundle."""
     import pandas as pd
+    from src.data.fetcher import attach_disclosure_dates
 
     cache_path = Path(cache_dir)
     if not cache_path.is_dir():
         return pd.DataFrame()
     frames = []
-    for path in sorted(cache_path.glob("fina_indicator_*.parquet"))[-200:]:
+    for path in sorted(cache_path.glob("fina_*.parquet")):
         try:
-            frames.append(pd.read_parquet(path))
+            code_key = path.stem.removeprefix("fina_")
+            disclosure = cache_path / f"disclosure_date_{code_key}.parquet"
+            disclosure_df = pd.read_parquet(disclosure) if disclosure.exists() else pd.DataFrame()
+            frames.append(attach_disclosure_dates(pd.read_parquet(path), disclosure_df))
         except Exception:
             continue
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
+
+
+def _read_cache_file(path: Path):
+    import pandas as pd
+
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _read_latest_window_cache(cache_dir: Path, prefix: str, ref_date: str):
+    """Read the latest `{prefix}_{start}_{end}.parquet` with end <= ref_date."""
+    candidates: list[tuple[str, Path]] = []
+    for path in cache_dir.glob(f"{prefix}_*.parquet"):
+        end = path.stem.rsplit("_", 1)[-1]
+        if len(end) == 8 and end.isdigit() and end <= ref_date:
+            candidates.append((end, path))
+    if not candidates:
+        return _read_cache_file(cache_dir / f"{prefix}.parquet")
+    candidates.sort(key=lambda item: item[0])
+    return _read_cache_file(candidates[-1][1])
 
 
 def _make_snapshot_loader(config, symbols: list[str], snapshot_source: str = "auto"):
@@ -1211,11 +1254,202 @@ def _make_price_alert_fn(
     return _alerts
 
 
+def _combine_alert_fns(*alert_fns):
+    active = [fn for fn in alert_fns if fn is not None]
+
+    def _alerts(account, targets, snapshots, now: datetime) -> list[NotificationMessageV1]:
+        messages: list[NotificationMessageV1] = []
+        for fn in active:
+            messages.extend(fn(account, targets, snapshots, now))
+        return messages
+
+    return _alerts
+
+
+def _make_premarket_plan_alert_fn(
+    *,
+    run_id: str,
+    ref_date: str,
+    strategy_name: str,
+    symbol_names: dict[str, str] | None,
+    min_trade_value: float,
+    notifications_path: str | Path | None,
+):
+    def _alerts(
+        account: LiveAccountStateV1,
+        targets: list[TargetHoldingV1],
+        snapshots: list[MarketSnapshotV1],
+        now: datetime,
+    ) -> list[NotificationMessageV1]:
+        message = _premarket_plan_notification(
+            account=account,
+            targets=targets,
+            snapshots=snapshots,
+            run_id=run_id,
+            ref_date=ref_date,
+            strategy_name=strategy_name,
+            symbol_names=symbol_names,
+            min_trade_value=min_trade_value,
+            created_at=now,
+        )
+        if message is None:
+            return []
+        if notifications_path and _notification_already_sent(notifications_path, message.message_id):
+            return []
+        return [message]
+
+    return _alerts
+
+
+def _premarket_plan_notification(
+    *,
+    account: LiveAccountStateV1,
+    targets: list[TargetHoldingV1],
+    snapshots: list[MarketSnapshotV1],
+    run_id: str,
+    ref_date: str,
+    strategy_name: str,
+    symbol_names: dict[str, str] | None,
+    min_trade_value: float,
+    created_at: datetime,
+) -> NotificationMessageV1 | None:
+    if not targets or not snapshots:
+        return None
+
+    snapshot_dates = sorted({str(s.trade_date) for s in snapshots if str(s.trade_date) < ref_date})
+    if not snapshot_dates:
+        return None
+    snapshot_date = snapshot_dates[-1]
+
+    snapshot_map = {s.ts_code: s for s in snapshots if str(s.trade_date) == snapshot_date}
+    current_shares = {p.ts_code: p.shares for p in account.positions}
+    target_shares = {t.ts_code: t.target_shares for t in targets}
+    symbols = sorted(set(current_shares) | set(target_shares))
+
+    rows: list[tuple[str, str, int, float, float]] = []
+    for code in symbols:
+        diff = target_shares.get(code, 0) - current_shares.get(code, 0)
+        if abs(diff) < 100:
+            continue
+        snapshot = snapshot_map.get(code)
+        if snapshot is None:
+            continue
+        amount = abs(diff) * snapshot.last_price
+        if min_trade_value > 0 and amount < min_trade_value:
+            continue
+        action = _plan_action(diff, current_shares.get(code, 0), target_shares.get(code, 0))
+        rows.append((code, action, diff, snapshot.last_price, amount))
+
+    if not rows:
+        return None
+
+    rows.sort(key=lambda item: item[4], reverse=True)
+    buy_like = [row for row in rows if row[2] > 0]
+    sell_like = [row for row in rows if row[2] < 0]
+    message_id = f"pretrade-plan-{ref_date}-{run_id}-{snapshot_date}"
+    lines = [
+        f"日期：{ref_date}",
+        f"运行：{run_id}",
+        f"策略：{strategy_name}",
+        f"价格基准：{snapshot_date} 收盘缓存价",
+        "性质：盘前调仓计划，不是可执行交易信号；开盘后仍需通过实时行情日期、交易金额、涨跌停和 T+1 门禁。",
+        "",
+        f"计划动作：买入/加仓 {len(buy_like)}，卖出/减仓 {len(sell_like)}",
+    ]
+    lines.extend(_plan_lines("买入/加仓", buy_like, symbol_names))
+    lines.extend(_plan_lines("卖出/减仓", sell_like, symbol_names))
+    return NotificationMessageV1(
+        message_id=message_id,
+        created_at=created_at,
+        severity="info",
+        title=f"GemStar 盘前计划 ({ref_date})",
+        body="\n".join(lines),
+        action="pretrade_plan",
+        symbols=[row[0] for row in rows],
+        symbol_names={
+            code: name
+            for code, name in (symbol_names or {}).items()
+            if code in {row[0] for row in rows}
+        },
+    )
+
+
+def _plan_action(diff: int, current: int, target: int) -> str:
+    if diff > 0:
+        return "买入" if current == 0 else "加仓"
+    return "卖出" if target == 0 else "减仓"
+
+
+def _plan_lines(
+    title: str,
+    rows: list[tuple[str, str, int, float, float]],
+    symbol_names: dict[str, str] | None,
+    *,
+    limit: int = 8,
+) -> list[str]:
+    if not rows:
+        return []
+    lines = ["", f"{title} Top {min(limit, len(rows))}："]
+    for code, action, diff, price, amount in rows[:limit]:
+        label = format_symbol_label(code, symbol_names)
+        lines.append(
+            f"- {label}: {action} {abs(diff)} 股，参考价 {price:.2f}，估算 {amount:,.0f}"
+        )
+    if len(rows) > limit:
+        lines.append(f"- 其余 {len(rows) - limit} 只见 trade_status.md")
+    return lines
+
+
+def _make_leaderboard_alert_fn(
+    *,
+    config,
+    run_id: str,
+    ref_date: str,
+    top_n: int,
+    notify_time: str,
+    notifications_path: str | Path | None,
+):
+    def _alerts(_account, _targets, _snapshots, now: datetime) -> list[NotificationMessageV1]:
+        if not notify_time.strip() or not _leaderboard_time_due(now, notify_time):
+            return []
+        message = _leaderboard_notification(
+            config,
+            run_id,
+            ref_date,
+            top_n=max(1, top_n),
+            created_at=now,
+        )
+        if message is None:
+            return []
+        if notifications_path and _notification_already_sent(notifications_path, message.message_id):
+            return []
+        return [message]
+
+    return _alerts
+
+
+def _leaderboard_time_due(now: datetime, target_time: str) -> bool:
+    try:
+        hour, minute = map(int, target_time.split(":", 1))
+    except ValueError:
+        return False
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return now >= target
+
+
 def _latest_daily_parquet(cache_dir: Path) -> Path | None:
     if not cache_dir.is_dir():
         return None
-    candidates = sorted(cache_dir.glob("daily_all_*.parquet"))
-    return candidates[-1] if candidates else None
+    candidates: list[tuple[str, str, Path]] = []
+    for path in cache_dir.glob("daily_all_*.parquet"):
+        parts = path.stem.rsplit("_", 2)
+        if len(parts) < 3:
+            continue
+        start, end = parts[-2], parts[-1]
+        if len(start) == 8 and start.isdigit() and len(end) == 8 and end.isdigit():
+            candidates.append((end, start, path))
+    candidates.sort()
+    return candidates[-1][2] if candidates else None
 
 
 # ── ledger-backed account tracker ─────────────────────────────

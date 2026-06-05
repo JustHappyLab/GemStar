@@ -177,6 +177,23 @@
       "status": "candidate"
     },
     {
+      "name": "low_volatility_20d_v1",
+      "source": "manual_risk_overlay",
+      "computation": "Negative 20-day realized volatility; higher score means lower recent volatility",
+      "expression": "-ts_std((close / pre_close) - 1, 20)",
+      "hypothesis": "Adding a low-volatility overlay to earnings-quality selection should reduce drawdown without replacing the core fundamental signal.",
+      "ic_mean": null,
+      "ic_ir": null,
+      "ic_positive_rate": null,
+      "coverage": null,
+      "direction": "positive",
+      "horizon": "1d",
+      "universe": "a_share_core",
+      "last_updated": "2026-06-04",
+      "discovered_in_run": "manual-earnings-quality-guard",
+      "status": "candidate"
+    },
+    {
       "name": "intraday_momentum_v1",
       "source": "factor_miner",
       "computation": "(close - open) / open",

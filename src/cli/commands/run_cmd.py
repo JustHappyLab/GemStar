@@ -25,6 +25,7 @@ _DEPRECATED_ROLE_OVERRIDES = {"event_scanner", "research_analyst", "factor_miner
 def run_cmd(
     date: str = typer.Option(None, "--date", "-d", help="Trading date (YYYYMMDD). Default: today."),
     llm: bool = typer.Option(False, "--llm", help="Enable LLM ideation stages."),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Disable LLM stages even when config enables them."),
     strategies: list[str] = typer.Option(None, "--strategy", "-s", help="Strategy YAML path(s)."),
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
@@ -51,7 +52,7 @@ def run_cmd(
         raise typer.Exit(1)
     strat_configs = [StrategyConfigV1.from_yaml(p) for p in strat_paths]
 
-    effective_llm = llm or config.llm.enabled
+    effective_llm = False if no_llm else (llm or config.llm.enabled)
 
     console.print(f"[cyan]GemStar run[/cyan] {run_id}")
     console.print(f"  Date: {ref_date}")
@@ -87,17 +88,37 @@ def run_cmd(
     codes = sorted(set().union(*(codes for codes in code_sets if codes)))
     if not codes:
         codes = stock_basic["ts_code"].tolist()
-    fina_frames = []
-    for i, code in enumerate(codes):
-        if (i + 1) % 200 == 0:
-            console.print(f"  fina: {i + 1}/{len(codes)}")
-        df = attach_disclosure_dates(
-            fetch_fina_indicator(pro, code, cache_dir=cache_dir),
-            fetch_disclosure_date(pro, code, cache_dir=cache_dir),
+    needs_fina = _strategies_need_fina(strat_configs)
+    if needs_fina:
+        fina_frames = []
+        cache_before = _financial_cache_count(cache_dir, codes)
+        console.print(
+            f"  fina cache: {cache_before['complete']}/{len(codes)} complete "
+            f"(fina={cache_before['fina']}, disclosure={cache_before['disclosure']})"
         )
-        if len(df) > 0:
-            fina_frames.append(df)
-    fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
+        fetched = 0
+        cached = 0
+        for i, code in enumerate(codes, start=1):
+            had_cache = _has_financial_cache(cache_dir, code)
+            df = attach_disclosure_dates(
+                fetch_fina_indicator(pro, code, cache_dir=cache_dir),
+                fetch_disclosure_date(pro, code, cache_dir=cache_dir),
+            )
+            if had_cache:
+                cached += 1
+            else:
+                fetched += 1
+            if len(df) > 0:
+                fina_frames.append(df)
+            if i == len(codes) or i % 50 == 0:
+                console.print(
+                    f"  fina: {i}/{len(codes)} "
+                    f"cached={cached} fetched={fetched} frames={len(fina_frames)}"
+                )
+        fina_all = pd.concat(fina_frames, ignore_index=True) if fina_frames else pd.DataFrame()
+    else:
+        console.print("  fina: skipped (selected strategies use no financial factors)")
+        fina_all = pd.DataFrame()
 
     # Merge daily OHLCV with basic data (pe_ttm, pb, turnover_rate) for ranker
     daily_merged = daily_all.merge(
@@ -153,6 +174,40 @@ def run_cmd(
 
 def _today_str() -> str:
     return date.today().strftime("%Y%m%d")
+
+
+def _strategies_need_fina(strategies: list["StrategyConfigV1"]) -> bool:
+    """Return whether any configured strategy needs fina_indicator data."""
+    fina_factors = {"roe", "revenue_yoy", "netprofit_yoy", "grossprofit_margin"}
+    return any(
+        factor.factor_id in fina_factors
+        for strategy in strategies
+        for factor in strategy.factors
+    )
+
+
+def _financial_cache_count(cache_dir: str, codes: list[str]) -> dict[str, int]:
+    fina = 0
+    disclosure = 0
+    complete = 0
+    for code in codes:
+        has_fina = _financial_cache_path(cache_dir, "fina", code).exists()
+        has_disclosure = _financial_cache_path(cache_dir, "disclosure_date", code).exists()
+        fina += int(has_fina)
+        disclosure += int(has_disclosure)
+        complete += int(has_fina and has_disclosure)
+    return {"fina": fina, "disclosure": disclosure, "complete": complete}
+
+
+def _has_financial_cache(cache_dir: str, code: str) -> bool:
+    return (
+        _financial_cache_path(cache_dir, "fina", code).exists()
+        and _financial_cache_path(cache_dir, "disclosure_date", code).exists()
+    )
+
+
+def _financial_cache_path(cache_dir: str, prefix: str, code: str) -> Path:
+    return Path(cache_dir) / f"{prefix}_{code.replace('.', '_')}.parquet"
 
 
 def _role_overrides(config) -> dict[str, dict] | None:

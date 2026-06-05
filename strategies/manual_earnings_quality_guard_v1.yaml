@@ -1,0 +1,30 @@
+version: StrategyConfigV1
+name: manual_earnings_quality_guard_v1
+hypothesis: "Manual earnings-quality strategy with a low-volatility overlay to reduce drawdown while preserving the core profitability and growth signal."
+source_idea: "Manual focus strategy based on earnings_quality_crosscheck from run 20260604-45918447; it passed Sharpe, Calmar, trade-count, and segment-stability gates but failed max_drawdown."
+universe: chinext_core
+universe_rationale: "Start with the ChiNext core universe so the manual strategy can validate faster on the project's primary growth-stock sleeve; risk control comes from the low-volatility overlay plus board-level narrowing."
+
+timer:
+  mode: full
+
+factors:
+  - factor_id: roe
+    weight: 0.20
+  - factor_id: revenue_yoy
+    weight: 0.20
+  - factor_id: netprofit_yoy
+    weight: 0.20
+  - factor_id: low_volatility_20d_v1
+    weight: 0.40
+
+top_n: 20
+rebalance: daily
+
+backtest:
+  start: "20220101"
+  end: "20260604"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0

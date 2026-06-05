@@ -118,6 +118,20 @@ def test_run_prints_effective_llm_from_config(tmp_path, monkeypatch):
     assert captured["role_overrides"]["macro_analyst"]["provider"] == "claude_code"
     assert captured["engineering_config"].enabled is False
 
+    captured.clear()
+    result = runner.invoke(app, [
+        "run",
+        "--config",
+        str(config_path),
+        "--date",
+        "20260503",
+        "--no-llm",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert "LLM:  off" in result.output
+    assert captured["llm_available"] is False
+
 
 def test_role_overrides_apply_global_llm_provider():
     """llm.provider is the default provider for run-time LLM roles."""
