@@ -235,9 +235,25 @@ alerts/ledger.jsonl
 
 当前 `trade` 的交易雷达默认读取本地行情缓存/快照生成建议，不会连接券商或自动实盘下单。
 
+#### 内置榜单策略
+
+主分支内置了当前用于冲击 leaderboard 的策略：
+
+```text
+strategies/leaderboard_quality_lowvol_v1/config.yaml
+```
+
+该策略使用 `chinext_core` universe，组合 `roe`、`revenue_yoy`、`netprofit_yoy` 和 `low_volatility_20d_v1` 四个因子，`top_n: 26`、日频调仓、满仓择时。它的目标是在保留创业板盈利质量暴露的同时，用低波动约束降低不稳定回撤段。
+
+可单独运行该策略参与研究流水线：
+
+```bash
+uv run gemstar run --strategy strategies/leaderboard_quality_lowvol_v1/config.yaml
+```
+
 #### 第三方 Skill 集成
 
-GemStar 内置 `integrations/gemstar-skill`，可接入 QClaw、Codex 或其他兼容 `SKILL.md` 协议的生态，用自然语言查询当前持仓、目标持仓、调仓差额、最新提醒和运行状态。安装步骤见 [docs/skill-integration.md](docs/skill-integration.md)。
+GemStar 内置 `integrations/gemstar-skill`，可接入 QClaw、Codex 或其他兼容 `SKILL.md` 协议的生态，用自然语言查询当前持仓、目标持仓、调仓差额、最新提醒、leaderboard 和内置策略状态。安装步骤见 [docs/skill-integration.md](docs/skill-integration.md)。
 
 常用查询：
 
@@ -246,6 +262,8 @@ GemStar 当前持仓是什么？
 GemStar 今天建议买卖什么？
 GemStar 目标仓位和当前仓位差多少？
 GemStar 最近 5 条提醒是什么？
+GemStar 当前内置榜单策略是什么？
+GemStar 最新 leaderboard 是什么？
 ```
 
 #### LLM Provider 配置
