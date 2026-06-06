@@ -1,0 +1,30 @@
+version: StrategyConfigV1
+name: leaderboard_quality_lowvol_v1
+hypothesis: A ChiNext quality basket with a strong low-volatility guard can keep the earnings-growth alpha of the current champion while reducing unstable drawdown segments enough to improve leaderboard Sharpe.
+source_idea: "Manual grid search on 20220101-20260604 against the current leaderboard champion; selected the best hard-gate-passing quality/low-volatility blend."
+universe: chinext_core
+universe_rationale: "The current candidate leader is strongest on ChiNext core. This strategy keeps the same board exposure and improves factor balance rather than expanding universe risk."
+
+timer:
+  mode: full
+
+factors:
+  - factor_id: roe
+    weight: 0.2428
+  - factor_id: revenue_yoy
+    weight: 0.1986
+  - factor_id: netprofit_yoy
+    weight: 0.1986
+  - factor_id: low_volatility_20d_v1
+    weight: 0.36
+
+top_n: 26
+rebalance: daily
+
+backtest:
+  start: "20220101"
+  end: "20260604"
+  capital: 100000.0
+  rf_annual: 0.025
+  volume_limit_pct: 0.25
+  cost_multiplier: 1.0
