@@ -32,6 +32,7 @@ import atexit
 import json
 import logging
 import os
+import re
 import signal
 import sqlite3
 import traceback
@@ -69,7 +70,7 @@ from src.schemas.engineering import EngineeringExecutionV1
 from src.schemas.metrics import BacktestResultV1
 from src.schemas.strategy import StrategyConfigV1
 from src.schemas.verdict import VerdictV1
-from src.orchestrator.rankings import build_rankings
+from src.orchestrator.rankings import build_factor_frame, build_rankings
 from src.orchestrator.signals import build_signals
 from src.orchestrator.universe import UniverseResolution, describe_resolution, resolve_strategy_universe
 from src.strategies.architect import draft_strategy
@@ -86,13 +87,28 @@ class _UnusedLLM:
 
 def _empty_regime(reference_date: str) -> "MarketRegimeV1":
     from src.schemas.signal import MarketRegimeV1
+    as_of_date = date(
+        int(reference_date[:4]),
+        int(reference_date[4:6]),
+        int(reference_date[6:8]),
+    )
     return MarketRegimeV1(
-        as_of_date=reference_date,
-        regime="unknown",
+        as_of_date=as_of_date,
+        regime="neutral",
         confidence=0.0,
         key_drivers=[],
         style_bias="unknown",
     )
+
+
+def _artifact_strategy_id(path: Path) -> str:
+    """Return a stable artifact id that does not collapse nested config.yaml files."""
+    try:
+        name = StrategyConfigV1.from_yaml(path).name
+    except Exception:
+        name = path.stem
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_")
+    return safe or path.stem
 
 
 def _log_generate_tickets_failure(exc: Exception, *, iteration: int | None = None) -> bool:
@@ -356,6 +372,7 @@ def run_daily_pipeline(
             for e in current_pool.candidates
             if e.expression
         ]
+        ranking_factor_cache: dict[tuple, pd.DataFrame] = {}
 
         # --- STRATEGY_IDEATION ---
         fsm.transition("strategy_ideation")
@@ -435,8 +452,9 @@ def run_daily_pipeline(
 
         # First pass: evaluate pre-existing strategies (no loop needed)
         for strat_path in strategies:
-            verdict_v = validate_strategy(strat_path, pool_path, strategy_id=strat_path.stem)
-            write_artifact(run_id, f"validation_{strat_path.stem}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
+            strategy_artifact_id = _artifact_strategy_id(strat_path)
+            verdict_v = validate_strategy(strat_path, pool_path, strategy_id=strategy_artifact_id)
+            write_artifact(run_id, f"validation_{strategy_artifact_id}", verdict_v.model_dump(), base_dir=artifacts_dir, step_id="strategy_validation")
             if verdict_v.recommended_state == "rejected":
                 _record_engineering_task(
                     task_from_validation_failure(
@@ -464,6 +482,7 @@ def run_daily_pipeline(
                     explicit_rankings=rankings,
                     auto_build=auto_build_strategy_inputs,
                     expression_factors=expression_factors,
+                    ranking_factor_cache=ranking_factor_cache,
                 )
             except Exception as exc:
                 task = task_from_exception(
@@ -489,7 +508,7 @@ def run_daily_pipeline(
                 continue
             _record_universe_resolution(
                 run_id,
-                strat_path.stem,
+                strategy_artifact_id,
                 universe_resolution,
                 universe_resolutions,
                 universe_notes,
@@ -522,7 +541,7 @@ def run_daily_pipeline(
                     continue
                 bt.run_id = run_id
                 backtest_results.append(bt)
-                write_artifact(run_id, f"backtest_{strat_path.stem}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
+                write_artifact(run_id, f"backtest_{strategy_artifact_id}", bt.model_dump(), base_dir=artifacts_dir, step_id="backtesting")
                 j = evaluate_rules(bt, strategy_id=bt.strategy_name)
                 j.run_id = run_id
                 verdicts.append(j)
@@ -611,6 +630,7 @@ def run_daily_pipeline(
                                 explicit_rankings=rankings,
                                 auto_build=auto_build_strategy_inputs,
                                 expression_factors=expression_factors,
+                                ranking_factor_cache=ranking_factor_cache,
                             )
                         except Exception as exc:
                             task = task_from_exception(
@@ -936,6 +956,7 @@ def _strategy_inputs(
     explicit_rankings: dict[str, list[str]] | None,
     auto_build: bool,
     expression_factors: list[tuple[str, str]] | None = None,
+    ranking_factor_cache: dict[tuple, pd.DataFrame] | None = None,
 ) -> tuple[pd.DataFrame | None, dict[str, list[str]] | None, UniverseResolution | None]:
     """Resolve signals/rankings for one strategy."""
     try:
@@ -959,6 +980,25 @@ def _strategy_inputs(
         fina_df = pd.DataFrame()
 
     signals = build_signals(index_df, trade_dates, config.timer)
+    strategy_expression_factors = _select_expression_factors(expression_factors, config.factors)
+    factor_df = None
+    if ranking_factor_cache is not None:
+        cache_key = _ranking_factor_cache_key(
+            resolution=resolution,
+            trade_dates=trade_dates,
+            expression_factors=strategy_expression_factors,
+        )
+        factor_df = ranking_factor_cache.get(cache_key)
+        if factor_df is None:
+            factor_df = build_factor_frame(
+                daily_df=daily_df,
+                index_daily=index_df,
+                fina_df=fina_df,
+                trade_dates=trade_dates,
+                universe=resolution,
+                expression_factors=strategy_expression_factors,
+            )
+            ranking_factor_cache[cache_key] = factor_df
     rankings = build_rankings(
         daily_df=daily_df,
         index_daily=index_df,
@@ -968,9 +1008,33 @@ def _strategy_inputs(
         trade_dates=trade_dates,
         universe=resolution,
         stock_basic=data.get("stock_basic"),
-        expression_factors=expression_factors,
+        expression_factors=strategy_expression_factors,
+        precomputed_factor_df=factor_df,
     )
     return signals, rankings, resolution
+
+
+def _ranking_factor_cache_key(
+    *,
+    resolution: UniverseResolution,
+    trade_dates: list[str],
+    expression_factors: list[tuple[str, str]] | None,
+) -> tuple:
+    """Identify reusable factor frames within one pipeline run."""
+    expression_key = tuple(expression_factors or ())
+    return (resolution.resolved, tuple(trade_dates), expression_key)
+
+
+def _select_expression_factors(
+    expression_factors: list[tuple[str, str]] | None,
+    factors: list[FactorWeightV1],
+) -> list[tuple[str, str]] | None:
+    """Keep only expression factors referenced by the strategy."""
+    if not expression_factors:
+        return expression_factors
+    needed = {f.factor_id for f in factors}
+    selected = [(name, expr) for name, expr in expression_factors if name in needed]
+    return selected or None
 
 
 def _strategy_trade_dates(

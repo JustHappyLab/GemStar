@@ -42,6 +42,7 @@ def build_rankings(
     universe: str | UniverseResolution = "auto",
     stock_basic: pd.DataFrame | None = None,
     expression_factors: list[tuple[str, str]] | None = None,
+    precomputed_factor_df: pd.DataFrame | None = None,
 ) -> dict[str, list[str]]:
     """Compute per-date stock rankings from factor scores.
 
@@ -76,16 +77,16 @@ def build_rankings(
 
     weights = {f.factor_id: f.weight for f in factors}
     resolution = resolve_universe_value(universe)
-    daily_df = filter_frame_by_universe_prefix(daily_df, resolution)
-    daily_input, index_input = _filter_factor_inputs(
-        daily_df,
-        index_daily,
-        trade_dates,
-        lookback_days=_FACTOR_LOOKBACK_DAYS,
-    )
-
-    # Compute cross-sectional factors (including any expression-based candidates)
-    factor_df = compute_all_factors(daily_input, index_input, fina_df, expression_factors)
+    factor_df = precomputed_factor_df
+    if factor_df is None:
+        factor_df = build_factor_frame(
+            daily_df=daily_df,
+            index_daily=index_daily,
+            fina_df=fina_df,
+            trade_dates=trade_dates,
+            universe=resolution,
+            expression_factors=expression_factors,
+        )
     if factor_df.empty:
         return {}
 
@@ -122,6 +123,30 @@ def build_rankings(
         rankings[str(date)] = top["ts_code"].tolist()
 
     return rankings
+
+
+def build_factor_frame(
+    *,
+    daily_df: pd.DataFrame,
+    index_daily: pd.DataFrame,
+    fina_df: pd.DataFrame,
+    trade_dates: list[str],
+    universe: str | UniverseResolution = "auto",
+    expression_factors: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
+    """Build reusable factor columns for a strategy universe/date window."""
+    if not trade_dates:
+        return pd.DataFrame()
+
+    resolution = resolve_universe_value(universe)
+    daily_df = filter_frame_by_universe_prefix(daily_df, resolution)
+    daily_input, index_input = _filter_factor_inputs(
+        daily_df,
+        index_daily,
+        trade_dates,
+        lookback_days=_FACTOR_LOOKBACK_DAYS,
+    )
+    return compute_all_factors(daily_input, index_input, fina_df, expression_factors)
 
 
 def _filter_factor_inputs(

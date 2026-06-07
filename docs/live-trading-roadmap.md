@@ -5,8 +5,8 @@ CALLING SPEC:
     investment assistant goal.
 
     Inputs:
-        - Existing daily research pipeline, strategies, factor ranker, timer,
-          portfolio allocation, scheduler, and data fetcher modules.
+        - Existing production/research pipeline split, strategies, factor
+          ranker, timer, portfolio allocation, scheduler, and data fetcher modules.
         - User objective: keep GemStar running continuously, compute strategy
           state, scan trading-session signals, and notify actionable buy/sell
           guidance.
@@ -20,8 +20,8 @@ CALLING SPEC:
 
 # Goal
 
-GemStar should evolve from a daily research pipeline into a personal A-share
-investment radar:
+GemStar should evolve from a batch production/research pipeline into a personal
+A-share investment radar:
 
 - Run continuously.
 - Compute and refresh strategy state outside trading hours.
@@ -45,10 +45,12 @@ GemStar already has reusable research infrastructure:
 - `src/orchestrator/`: daily FSM, artifacts, rankings, signals, scheduler.
 - `src/cli/commands/daemon_cmd.py`: background process pattern.
 
-But current runtime behavior is daily and batch-oriented:
+But the runtime behavior is now split between a deterministic production path
+and a separate research path:
 
 - `gemstar scheduler start` waits for configured fetch/run times.
-- `gemstar run` performs a daily research pipeline.
+- `gemstar run` performs the deterministic production pipeline.
+- `gemstar research` performs LLM-enabled exploration when explicitly requested.
 - Current `signals` are backtest inputs, not trading-session alerts.
 - No notification channel exists.
 - No live/paper position ledger exists.
@@ -420,7 +422,7 @@ Every milestone must prove three things:
 - Do not let LLM output directly place trades or mutate account state.
 - Keep deterministic trading math in pure, tested functions.
 - Treat missing data as a blocked/hold decision, not as permission to trade.
-- Keep daily research notifications separate from executable trade alerts:
+- Keep leaderboard/research-observation notifications separate from executable trade alerts:
   send a scheduled leaderboard summary for observability, but require strategy
   status, fresh market data, timing, and minimum trade value gates before any
   buy/add/reduce/sell notification.

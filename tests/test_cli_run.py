@@ -24,8 +24,8 @@ from src.cli.commands.run_cmd import _role_overrides
 runner = CliRunner()
 
 
-def test_run_prints_effective_llm_from_config(tmp_path, monkeypatch):
-    """gemstar run reports the same LLM flag that it passes to the pipeline."""
+def test_run_keeps_llm_off_unless_explicitly_enabled(tmp_path, monkeypatch):
+    """gemstar run is deterministic by default; research owns LLM exploration."""
     strategy_path = tmp_path / "strategy.yaml"
     strategy_path.write_text(yaml.dump({
         "version": "StrategyConfigV1",
@@ -113,24 +113,27 @@ def test_run_prints_effective_llm_from_config(tmp_path, monkeypatch):
     result = runner.invoke(app, ["run", "--config", str(config_path), "--date", "20260503"])
 
     assert result.exit_code == 0, result.output
-    assert "LLM:  on" in result.output
-    assert captured["llm_available"] is True
+    assert "LLM:  off" in result.output
+    assert captured["llm_available"] is False
     assert captured["role_overrides"]["macro_analyst"]["provider"] == "claude_code"
     assert captured["engineering_config"].enabled is False
 
-    captured.clear()
-    result = runner.invoke(app, [
-        "run",
-        "--config",
-        str(config_path),
-        "--date",
-        "20260503",
-        "--no-llm",
-    ])
 
-    assert result.exit_code == 0, result.output
-    assert "LLM:  off" in result.output
-    assert captured["llm_available"] is False
+def test_run_help_shows_only_daily_options():
+    result = runner.invoke(app, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "--date" in result.output
+    assert "--config" in result.output
+    assert "--llm" not in result.output
+    assert "--no-llm" not in result.output
+    assert "--strategy" not in result.output
+
+
+def test_run_rejects_removed_llm_option():
+    result = runner.invoke(app, ["run", "--llm"])
+
+    assert result.exit_code != 0
 
 
 def test_role_overrides_apply_global_llm_provider():

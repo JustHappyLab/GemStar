@@ -8,7 +8,7 @@ from src.cli.output import OutputFormat, console, get_output_format, set_output_
 
 app = typer.Typer(
     name="gemstar",
-    help="GemStar — AI-driven automated quantitative research framework.",
+    help="GemStar — deterministic trading radar with research strategy governance.",
     no_args_is_help=True,
 )
 
@@ -67,13 +67,15 @@ from src.cli.commands.live_cmd import live_once_cmd, live_start_cmd  # noqa: E40
 from src.cli.commands.trade_cmd import trade_cmd  # noqa: E402
 from src.cli.commands.alerts_cmd import alerts_latest_cmd  # noqa: E402
 from src.cli.commands.reset_cmd import reset_cmd  # noqa: E402
+from src.cli.commands.promote_strategy_cmd import promote_strategy_cmd  # noqa: E402
+from src.cli.commands.research_cmd import research_cmd  # noqa: E402
 
 app.command("init")(init_cmd)
 app.command("run")(run_cmd)
+app.command("research")(research_cmd)
 app.command("trade")(trade_cmd)
 app.command("fetch")(fetch_cmd)
 app.command("status")(status_cmd)
-app.command("run-status", hidden=True)(status_cmd)
 app.command("history")(history_cmd)
 app.command("roles")(roles_cmd)
 app.command("strategies")(strategies_cmd)
@@ -82,21 +84,19 @@ scheduler_app.command("start")(start_cmd)
 scheduler_app.command("status")(daemon_status_cmd)
 scheduler_app.command("stop")(stop_cmd)
 scheduler_app.command("restart")(restart_cmd)
-app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(scheduler_app, name="scheduler", hidden=True)
 engineering_app.command("run")(engineering_run_cmd)
-app.add_typer(engineering_app, name="engineering")
+app.add_typer(engineering_app, name="engineering", hidden=True)
 live_app.command("once")(live_once_cmd)
 live_app.command("start")(live_start_cmd)
-app.add_typer(live_app, name="live")
+app.add_typer(live_app, name="live", hidden=True)
 alerts_app.command("latest")(alerts_latest_cmd)
-app.add_typer(alerts_app, name="alerts")
-app.command("start", hidden=True)(start_cmd)
-app.command("stop", hidden=True)(stop_cmd)
-app.command("restart", hidden=True)(restart_cmd)
+app.add_typer(alerts_app, name="alerts", hidden=True)
 app.command("doctor")(doctor_cmd)
 app.command("cleanup")(cleanup_cmd)
 app.command("leaderboard")(leaderboard_cmd)
 app.command("reset")(reset_cmd)
+app.command("promote-strategy")(promote_strategy_cmd)
 
 
 if __name__ == "__main__":

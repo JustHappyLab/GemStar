@@ -4,7 +4,7 @@
   <img src="docs/images/gemstar-icon-concept.png" alt="GemStar icon concept" width="180"/>
 </p>
 
-自动化量化研究框架。一条命令完成：确定性事件扫描 → 本地研究工单 → 因子挖掘与验证 → 策略生成 → 回测评审 → 交易雷达监控 → 飞书中文通知。持仓感知，跨日跟踪。
+量化研究与交易雷达框架。GemStar 现在按两条线组织：生产链路保持确定性、稳定、低成本；研究链路用于探索新因子和新策略，LLM 只在手动开启时参与。持仓感知，跨日跟踪。
 
 <p align="center">
   <img src="docs/images/pipeline-flow.svg" alt="GemStar Pipeline Flow" width="100%"/>
@@ -14,9 +14,17 @@
 
 ## Pipeline
 
-`gemstar trade` 一条命令驱动全流程，每个交易日自动：研究市场 → 生成策略 → 回测评审 → 选出最优策略 → 生成交易目标与状态快照 → 飞书推送中文交易建议。持仓通过 paper trading ledger 跨日跟踪。
+`gemstar trade` 是生产链路：默认只运行 `strategies/registry.yaml` 中 `scope: production` 的正式策略，并强制关闭 LLM 策略生成。它会复用当天已完成 production run，或触发一次确定性的生产回测，然后生成交易目标、状态快照和飞书中文提醒。持仓通过 paper trading ledger 跨日跟踪。
 
-14 状态有限状态机驱动，每日研究流程。下方展示正常主路径；完整状态还包括 initialized、failed、degraded、manual_attention 等分支/终态：
+研究探索与生产交易分开治理：
+
+- `production`：正式策略，允许进入 `gemstar trade` 和 live targets。
+- `research`：LLM draft、全 A 实验、历史想法，只用于观察和离线研究。
+- `draft → candidate → paper → active → retired/rejected`：策略生命周期写在 `strategies/registry.yaml`。
+
+重训练成本较高的策略先留在 research 侧。例如 `chinext_lstm_mf8` 是历史 LSTM 基准，当前标记为 `research/paper`；等 timer 训练缓存或更快实现稳定后，再重新晋升生产链路。
+
+14 状态有限状态机驱动每日 pipeline。下方展示正常主路径；完整状态还包括 initialized、failed、degraded、manual_attention 等分支/终态：
 
 ```
 COLLECTING → QUALITY_CHECKING → FACTOR_MONITORING → STRATEGY_IDEATION →
@@ -31,12 +39,12 @@ REPORTING → COMPLETED
 | DataQualityGate | 数据完整性检查，输出 pass/degraded/abort |
 | FactorHealthMonitor | 基于 IC/IR 的因子健康度分析 |
 | FactorMiner | 本地模板生成新因子表达式，IC/方向/覆盖率验证后注册入池 |
-| MacroAnalyst | LLM 评估市场宏观状态（regime + style bias） |
+| MacroAnalyst | LLM 评估市场宏观状态（手动启用研究时使用） |
 | EventScanner | 本地规则扫描财报、成交量、动量等事件信号 |
 | ResearchAnalyst | 本地规则生成研究 ticket（假设 + 因子关联） |
-| StrategyArchitect | LLM 从 ticket 草拟策略 YAML |
+| StrategyArchitect | LLM 从 ticket 草拟策略 YAML（研究链路，不自动进入生产） |
 | RuleJudge | 规则引擎评估回测结果（gate 通过/拒绝） |
-| Reviewer | LLM 生成评审意见（解释 + 风险 + 置信度） |
+| Reviewer | LLM 生成评审意见（手动启用研究时使用） |
 | IncidentFSM | 7 状态故障分类与自愈流程 |
 | LiveRadar | 交易雷达监控，信号识别，T+1/涨跌停约束 |
 | PaperLedger | 追加式 JSONL 账本，跨日持仓跟踪 |
@@ -231,7 +239,7 @@ alerts/ledger.jsonl
 
 `trade_status.md/json` 包含当前持仓、目标持仓、调仓差额、浮盈亏、风险标记和本轮策略。飞书只负责主动提醒；完整状态以这些本地文件为准，也方便第三方 skill、脚本或 dashboard 读取。
 
-其中 `alerts/ledger.jsonl` 是 paper trading 持仓的 source of truth；`trade_status.md/json` 是当前快照，可由下一次 `gemstar trade --once --max-cycles 1` 重新生成。运行记录存放在 `state.db` 和 `artifacts/<run_id>/`，行情缓存存放在 `data/raw/`。完整约定见 [docs/state-storage.md](docs/state-storage.md)。
+其中 `alerts/ledger.jsonl` 是 paper trading 持仓的 source of truth；`trade_status.md/json` 是当前快照，可由下一次 `gemstar trade --once` 重新生成。运行记录存放在 `state.db` 和 `artifacts/<run_id>/`，行情缓存存放在 `data/raw/`。完整约定见 [docs/state-storage.md](docs/state-storage.md)。
 
 当前 `trade` 的交易雷达默认读取本地行情缓存/快照生成建议，不会连接券商或自动实盘下单。
 
@@ -245,10 +253,11 @@ strategies/leaderboard_quality_lowvol_v1/config.yaml
 
 该策略使用 `chinext_core` universe，组合 `roe`、`revenue_yoy`、`netprofit_yoy` 和 `low_volatility_20d_v1` 四个因子，`top_n: 26`、日频调仓、满仓择时。它的目标是在保留创业板盈利质量暴露的同时，用低波动约束降低不稳定回撤段。
 
-可单独运行该策略参与研究流水线：
+可用 registry 控制它是否进入生产或研究流水线；日常命令不再直接暴露单策略运行参数：
 
 ```bash
-uv run gemstar run --strategy strategies/leaderboard_quality_lowvol_v1/config.yaml
+gemstar strategies
+gemstar leaderboard --scope production
 ```
 
 #### 第三方 Skill 集成
@@ -292,8 +301,8 @@ GemStar 最新 leaderboard 是什么？
 
 ```yaml
 llm:
-  enabled: true               # 默认启用 LLM 阶段；也可用 gemstar run --llm 临时启用
-  provider: claude_code       # run-time LLM 角色的默认 provider
+  enabled: false              # 保留字段；是否启用探索由 gemstar research 决定
+  provider: claude_code       # LLM 角色的默认 provider
 
 engineering:
   enabled: false              # 工程自愈默认关闭
@@ -316,7 +325,7 @@ roles:
     model: sonnet
 ```
 
-`llm.enabled` 只表示是否启用宏观分析、策略草稿、评审等 LLM 阶段，不表示 Claude Code CLI 是否已登录；具体后端由 `llm.provider` / `roles.*.provider` 决定，目前只支持 `claude_code`。
+`llm.enabled` 保留为配置字段，但日常生产链路不会读取它来开启模型；是否启用宏观分析、策略草稿、评审等 LLM 阶段由入口决定：`gemstar run` / `gemstar trade` 始终关闭，`gemstar research` 显式开启。具体后端由 `llm.provider` / `roles.*.provider` 决定，目前只支持 `claude_code`。
 
 `engineering.provider` 是 `engineer` / `bugfix` 的默认 provider，目前只接受 `claude_code`。`roles.engineer.model` 或 `roles.bugfix.model` 可以单独覆盖模型。
 
@@ -328,14 +337,14 @@ Engineering 路径策略由代码硬校验，`forbidden_paths` 优先于各角�
 - strategy input / backtest 的局部代码异常 → `bugfix`
 - 普通坏策略（如空 factors）不会创建工程任务
 
-默认情况下，`engineering.enabled: true` 后 pipeline 会自动执行这些 task，并在执行后用路径策略校验 diff，禁止触碰 frozen core。`gemstar engineering run ... --dry-run` 仍可用于调试 prompt 或重放单个 task。
+默认情况下，`engineering.enabled: true` 后 pipeline 会自动执行这些 task，并在执行后用路径策略校验 diff，禁止触碰 frozen core。工程调试命令仍保留为内部入口，但不作为日常 CLI 使用方式。
 
-只跑不带 LLM 的 pipeline（`gemstar run` 且 `llm.enabled: false`）只需 Tushare token；启用宏观分析、策略生成和评审（`gemstar run --llm` 或 `llm.enabled: true`）则需安装并登录 Claude Code CLI。
+只跑生产 pipeline（`gemstar run` / `gemstar trade`）只需 Tushare token；手动探索（`gemstar research`）会启用宏观分析、策略生成和评审，需要安装并登录 Claude Code CLI。
 
 ### CLI 命令
 
 ```bash
-# 🚀 一键启动：研究 → 策略生成 → 回测 → 交易雷达 → 飞书通知
+# 生产交易雷达：正式策略 → 回测/榜单 → 交易目标 → 飞书通知
 gemstar trade
 
 # 指定本金（默认 10 万）
@@ -344,69 +353,27 @@ gemstar trade --capital 500000
 # 只跑一轮看效果
 gemstar trade --once
 
-# 当天已有 completed run 时会直接复用；如需强制重跑研究
-gemstar trade --fresh-research
+# 当天已有 completed run 时会直接复用；如需强制刷新生产 run
+gemstar trade --refresh
 
 # 状态快照会自动写入 artifacts/current/trade_status.md/json
 
 # 跟踪 leaderboard 前 5 个策略
 gemstar trade --top 5
 
-# 每天 08:30 推送 leaderboard 观察摘要（默认开启，默认 Top 10）
-gemstar trade --leaderboard-notify-time 08:30 --leaderboard-notify-top 10
+# ─── 研究与观察 ──────────────────────────────
 
-# ─── 以下是内部子命令 ──────────────────────────────
+# 启动当日生产/回测 pipeline；默认使用 production 策略，不启用 LLM
+gemstar run
 
-# 启动当日 pipeline（仅研究+回测，不启动交易雷达）
+# 手动探索时才开启 LLM 策略生成/评审
+gemstar research
+
+# 对指定日期运行生产 registry 策略，不触发 LLM 生成/评审
 gemstar run --date 20260503
-
-# 启用 LLM 策略生成
-gemstar run --date 20260503 --llm
-
-# 只验证手动策略，不触发 LLM 生成/评审
-gemstar run --date 20260503 --no-llm --strategy strategies/manual_earnings_quality_guard_v1.yaml
 
 # 当前手动策略先固定在 chinext_core 验证，避免全 A 财务数据补齐过慢；
 # 只有在 pass/candidate 稳定后，再考虑扩展到 a_share_core。
-
-# 控制 LLM 生成预算，默认最多 5 轮
-# gemstar.yaml: strategy_generation.max_iterations: 5
-
-# 指定策略
-gemstar run --date 20260503 --strategy strategies/chinext_lstm_mf8/config.yaml
-
-# 预览工程自愈 task 会发给 agent 的 prompt（不改代码）
-gemstar engineering run artifacts/<run_id>/engineering_task_x.json --dry-run
-
-# 手动执行工程自愈 task；要求 git worktree 干净，执行后校验 changed paths
-gemstar engineering run artifacts/<run_id>/engineering_task_x.json
-
-# 拉取数据
-gemstar fetch --start 20240101 --end 20260503
-
-# 启动自动调度（后台运行）
-gemstar scheduler start
-
-# 前台运行（调试用，Ctrl+C 退出）
-gemstar scheduler start --foreground
-
-# 查看调度器状态
-gemstar scheduler status
-
-# 停止 / 重启
-gemstar scheduler stop
-gemstar scheduler restart
-
-# 查看 pipeline 运行状态（JSON 输出，供第三方 skill 解析）
-gemstar -o json status
-
-# 列出历史运行
-gemstar history
-
-# 重置 paper 持仓和当前交易状态（自动备份）
-gemstar reset trade
-gemstar reset trade --include-alerts # 连通知历史也清掉
-gemstar reset all                    # 同时清空 run 记录和 artifacts，保留 data/raw
 
 # 查看可用角色 / 策略 / 因子
 gemstar roles
@@ -414,12 +381,22 @@ gemstar strategies
 gemstar factors
 
 # 查看策略排行榜
-gemstar leaderboard                # 最新一次 run
+gemstar leaderboard                # 最新一次 production 排行榜
 gemstar leaderboard --run 20260503-001
+gemstar leaderboard --scope production
+gemstar leaderboard --scope research
 
-# 交易雷达监控（底层命令，通常用 gemstar trade 代替）
-gemstar live once --account account.json --targets targets.json --snapshots snapshots.json
-gemstar live start --account account.json --targets targets.json --snapshots snapshots.json
+# 将一次研究 run 里的 draft 晋升为正式 production 策略
+gemstar promote-strategy --run 20260604-45918447 --strategy earnings_quality_neutral
+
+# ─── 维护 ──────────────────────────────
+
+# 拉取数据 / 查看状态 / 历史运行
+gemstar fetch --start 20240101 --end 20260503
+gemstar status
+gemstar history
+
+# 自动调度属于内部维护入口；日常使用优先 gemstar trade
 
 # 环境检查（Python / uv / .env / gemstar.yaml / LLM 认证）
 gemstar doctor
@@ -427,8 +404,6 @@ gemstar doctor
 # 清理失败或过期的运行记录
 gemstar cleanup                    # 清理 failed + manual_attention
 gemstar cleanup --stale            # 额外清理超过 2 小时的 running 记录
-gemstar cleanup --keep 5           # 保留最近 5 次运行
-gemstar cleanup --dry-run          # 预览，不实际删除
 ```
 
 所有命令支持 `--output json`（或 `-o json`）输出 JSON 格式，用于自动化集成。
@@ -474,7 +449,7 @@ GemStar 会根据 resolved universe 自动选择基准指数，并在报告的 `
 
 ### 自动调度
 
-`gemstar scheduler start` 替代 cron，后台运行，内置交易日感知和失败重试：
+GemStar 保留自动调度能力作为内部维护入口。日常运行优先使用 `gemstar trade`；需要无人值守时可启动 scheduler，后台运行，内置交易日感知和失败重试：
 
 ```bash
 # 后台启动
@@ -604,7 +579,7 @@ template proposals → evaluate_proposals (IC/方向/覆盖率验证) → regist
 
 ```bash
 # 在 pipeline 中自动执行；不再调用 factor_miner LLM role
-gemstar run --llm
+gemstar run
 
 # 或通过 Python API 调用
 from src.factors.miner import FactorMiner
@@ -612,11 +587,20 @@ from src.factors.miner import FactorMiner
 
 ### Leaderboard
 
-每次 pipeline 运行后自动生成策略排行榜，包含排名、Sharpe、CAGR、最大回撤、Alpha 和排名变化：
+每次 pipeline 运行后自动生成策略排行榜，包含排名、Sharpe、CAGR、最大回撤、Alpha 和排名变化。排行榜可以按策略治理范围查看：
+
+- `production`：正式策略，允许进入 `gemstar trade`。
+- `research`：实验策略和 LLM draft，仅用于观察。
+- `status`：来自规则评审，常见值为 `candidate` / `rejected`。
+
+LLM 生成的 draft 会参与当次 research leaderboard，但不会自动进入生产。确认值得跟踪后，用 `gemstar promote-strategy` 复制到 `strategies/<name>/config.yaml` 并写入 `strategies/registry.yaml`。
 
 ```bash
-gemstar leaderboard                # 最新一次 run 的排行榜
+gemstar leaderboard                # 最新一次 production 排行榜
 gemstar leaderboard --run 20260503-001
+gemstar leaderboard --scope production
+gemstar leaderboard --scope research
+gemstar promote-strategy --run 20260604-45918447 --strategy earnings_quality_neutral
 gemstar -o json leaderboard        # JSON 输出
 ```
 

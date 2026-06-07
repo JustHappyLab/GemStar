@@ -40,17 +40,30 @@ def roles_cmd() -> None:
 def strategies_cmd() -> None:
     """List strategy configs."""
     import yaml
+    from src.strategies.registry import load_strategy_registry
 
     fmt = get_output_format()
     strategies_dir = Path("strategies")
     entries = []
+    registry = load_strategy_registry()
+    registry_by_path = {}
+    if registry is not None:
+        registry_by_path = {entry.path: (name, entry) for name, entry in registry.strategies.items()}
+
     if strategies_dir.exists():
-        for d in sorted(strategies_dir.iterdir()):
-            config_file = d / "config.yaml"
+        config_files = sorted(strategies_dir.glob("*.yaml")) + sorted(strategies_dir.glob("*/config.yaml"))
+        for config_file in config_files:
+            if config_file.name == "registry.yaml":
+                continue
             if config_file.exists():
                 data = yaml.safe_load(config_file.read_text()) or {}
+                path = str(config_file)
+                registry_name, registry_entry = registry_by_path.get(path, (None, None))
                 entries.append({
-                    "name": data.get("name", d.name),
+                    "name": data.get("name", registry_name or config_file.stem),
+                    "scope": registry_entry.scope if registry_entry else "unregistered",
+                    "lifecycle": registry_entry.lifecycle if registry_entry else "",
+                    "source": registry_entry.source if registry_entry else "",
                     "universe": data.get("universe", "auto"),
                     "timer": data.get("timer", {}).get("mode", "?"),
                     "factors": len(data.get("factors", [])),

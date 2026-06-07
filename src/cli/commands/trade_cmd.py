@@ -46,6 +46,7 @@ from src.live.symbols import symbol_names_from_dataframe
 from src.notify.feishu import FeishuNotificationSink
 from src.notify.local_file import LocalFileNotificationSink
 from src.notify.message import NotificationMessageV1, format_symbol_label, format_symbol_labels
+from src.strategies.registry import load_strategy_registry, production_strategy_paths
 from src.schemas.live import (
     LiveAccountStateV1,
     LiveDecisionV1,
@@ -61,7 +62,7 @@ _LIVE_ALLOWED_STRATEGY_STATUSES = {"candidate", "paper", "active"}
 
 def trade_cmd(
     once: bool = typer.Option(
-        False, "--once", help="Run one research-then-watch cycle and exit."
+        False, "--once", help="Run one production-then-watch cycle and exit."
     ),
     config_path: str = typer.Option(
         None, "--config", "-c", help="Config file path."
@@ -73,69 +74,73 @@ def trade_cmd(
         100000.0, "--capital", help="Paper-trading capital used for sizing targets."
     ),
     active_interval: int = typer.Option(
-        30, "--active-interval", help="Polling seconds during trading sessions."
+        30, "--active-interval", help="Polling seconds during trading sessions.", hidden=True
     ),
     idle_interval: int = typer.Option(
-        300, "--idle-interval", help="Polling seconds outside trading sessions."
+        300, "--idle-interval", help="Polling seconds outside trading sessions.", hidden=True
     ),
     max_cycles: int | None = typer.Option(
-        None, "--max-cycles", help="Stop the live loop after N cycles (smoke tests)."
+        None, "--max-cycles", help="Stop the live loop after N cycles (smoke tests).", hidden=True
     ),
     notifications_path: str = typer.Option(
-        "alerts/live.jsonl", "--notifications", help="Append-only notification JSONL path."
+        "alerts/live.jsonl", "--notifications", help="Append-only notification JSONL path.", hidden=True
     ),
     ledger_path: str = typer.Option(
-        "alerts/ledger.jsonl", "--ledger", help="Paper-trading ledger path (appends executed trades)."
+        "alerts/ledger.jsonl", "--ledger", help="Paper-trading ledger path (appends executed trades).", hidden=True
     ),
     status_dir: str = typer.Option(
-        "artifacts/current", "--status-dir", help="Directory for trade_status.json/md snapshots."
+        "artifacts/current", "--status-dir", help="Directory for trade_status.json/md snapshots.", hidden=True
     ),
-    fresh_research: bool = typer.Option(
-        False, "--fresh-research", help="Force a fresh research run even when today's completed run exists."
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Force a fresh production run even when today's completed run exists."
     ),
     snapshot_source: str = typer.Option(
         "auto",
         "--snapshot-source",
         help="Market snapshot source: auto, realtime, or cache.",
+        hidden=True,
     ),
     price_alert_pct: float = typer.Option(
         0.0,
         "--price-alert-pct",
         help="Notify when intraday price move from pre-close reaches this absolute pct; 0 disables.",
+        hidden=True,
     ),
     min_trade_value: float = typer.Option(
         5000.0,
         "--min-trade-value",
         help="Minimum estimated CNY value for a live buy/add/reduce/sell notification.",
+        hidden=True,
     ),
     auto_paper_execute: bool = typer.Option(
         False,
         "--auto-paper-execute",
         help="Append notified executable trades to the paper ledger automatically.",
+        hidden=True,
     ),
     leaderboard_notify_time: str = typer.Option(
         "08:30",
         "--leaderboard-notify-time",
         help="Daily HH:MM time to send the latest leaderboard summary; empty disables.",
+        hidden=True,
     ),
     leaderboard_notify_top: int = typer.Option(
         10,
         "--leaderboard-notify-top",
         help="Number of leaderboard entries to include in the daily summary notification.",
+        hidden=True,
     ),
 ) -> None:
-    """One-command research → live monitor → notify.
+    """Run the production trading radar.
 
-    On the first run, starts a fresh paper account with --capital (default 100k CNY).
-    By default, notifications are advisory and do not mutate --ledger. Use
-    --auto-paper-execute to append notified executable trades automatically; subsequent
-    runs then reconstruct the account from the ledger so signals become position-aware.
+    Trade uses production strategies from strategies/registry.yaml, runs the
+    production pipeline with LLM off, and sends advisory notifications only.
     """
     resolved_config_path = _resolve_config_path(config_path)
     if resolved_config_path is not None:
         os.chdir(resolved_config_path.parent)
     config = load_config(resolved_config_path)
-    fresh_research = fresh_research if isinstance(fresh_research, bool) else False
+    refresh = refresh if isinstance(refresh, bool) else False
     snapshot_source = snapshot_source if isinstance(snapshot_source, str) else "auto"
     price_alert_pct = price_alert_pct if isinstance(price_alert_pct, (int, float)) else 0.0
     min_trade_value = min_trade_value if isinstance(min_trade_value, (int, float)) else 5000.0
@@ -164,10 +169,10 @@ def trade_cmd(
         )
 
         run_id = None
-        if not fresh_research:
+        if not refresh:
             run_id = _latest_completed_run(config.db_path, run_date=ref_date)
             if run_id:
-                console.print(f"[dim]Reusing completed research run {run_id}.[/dim]")
+                console.print(f"[dim]Reusing completed production run {run_id}.[/dim]")
 
         if run_id is None:
             run_id = _run_research(
@@ -710,7 +715,7 @@ def _run_research(
     if config_path:
         cmd.extend(["--config", str(Path(config_path).resolve())])
 
-    console.print(f"[cyan]Running daily research[/cyan] (this may take a while)...")
+    console.print("[cyan]Running production pipeline[/cyan] (LLM off; this may take a while)...")
     try:
         proc = subprocess.Popen(cmd)
         while proc.poll() is None:
@@ -790,6 +795,9 @@ def _build_targets(config, run_id: str, ref_date: str, top_n: int, capital: floa
         return [], [], {}
 
     entries = json.loads(leaderboard_path.read_text()).get("entries", [])
+    production_names = _production_strategy_names(config)
+    if production_names and any(e.get("name") in production_names for e in entries):
+        entries = [e for e in entries if e.get("name") in production_names]
     accepted = [e for e in entries if _is_live_eligible_entry(e)][:top_n]
     if not accepted:
         skipped = len(entries)
@@ -1015,7 +1023,7 @@ def _load_cached_market_data(config, ref_date: str):
 
     # Pull configured strategies for benchmark resolution; ignore failures.
     strat_configs = []
-    for strategy_path in config.strategies:
+    for strategy_path in production_strategy_paths(config.strategies):
         try:
             strat_configs.append(StrategyConfigV1.from_yaml(strategy_path))
         except Exception:
@@ -1055,6 +1063,28 @@ def _load_cached_market_data(config, ref_date: str):
             how="left",
         )
     return daily_merged, index_df, fina_df, stock_basic
+
+
+def _production_strategy_names(config) -> set[str]:
+    from src.schemas.strategy import StrategyConfigV1
+
+    registry = load_strategy_registry()
+    names: set[str] = set()
+    if registry is not None:
+        for entry in registry.strategies.values():
+            if entry.scope != "production":
+                continue
+            try:
+                names.add(StrategyConfigV1.from_yaml(entry.path).name)
+            except Exception:
+                names.add(Path(entry.path).stem)
+        return names
+    for strategy_path in getattr(config, "strategies", []):
+        try:
+            names.add(StrategyConfigV1.from_yaml(strategy_path).name)
+        except Exception:
+            names.add(Path(strategy_path).stem)
+    return names
 
 
 def _load_cached_fina(cache_dir: str):

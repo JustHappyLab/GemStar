@@ -84,14 +84,14 @@ gemstar live once \
   --targets targets.json \
   --snapshots snapshots.json \
   --notifications alerts/live.jsonl \
-  --strategy-name chinext_lstm_mf8
+  --strategy-name leaderboard_quality_lowvol_v1
 
 gemstar live start \
   --account account.json \
   --targets targets.json \
   --snapshots snapshots.json \
   --notifications alerts/live.jsonl \
-  --strategy-name chinext_lstm_mf8
+  --strategy-name leaderboard_quality_lowvol_v1
 ```
 
 # Handoff Contract

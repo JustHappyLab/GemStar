@@ -66,19 +66,6 @@ def test_scheduler_start_with_schedule_config(tmp_path, monkeypatch):
     assert "15:30" in result.output or "fetch" in result.output.lower() or result.exit_code == 0
 
 
-def test_root_start_alias_still_supported(tmp_path, monkeypatch):
-    """gemstar start remains as a compatibility alias for scheduler start."""
-    monkeypatch.chdir(tmp_path)
-    tmp_path.joinpath("gemstar.yaml").write_text(
-        "tushare_token: test\nschedule: null\n"
-    )
-    _reset_output_format()
-
-    result = runner.invoke(app, ["start"])
-    assert result.exit_code == 1
-    assert "schedule" in result.output.lower()
-
-
 def test_run_subcommand_forwards_config_path(monkeypatch, tmp_path):
     """Scheduler subprocesses must use the same custom config as the parent."""
     from src.cli.commands import daemon_cmd
@@ -93,9 +80,7 @@ def test_run_subcommand_forwards_config_path(monkeypatch, tmp_path):
 
     ok = daemon_cmd._run_subcommand(
         "run",
-        config=SimpleNamespace(llm=SimpleNamespace(enabled=True)),
         stop_event=None,
-        llm=True,
         config_path=str(tmp_path / "custom.yaml"),
     )
 
@@ -107,5 +92,16 @@ def test_run_subcommand_forwards_config_path(monkeypatch, tmp_path):
         "run",
         "--config",
         str(tmp_path / "custom.yaml"),
-        "--llm",
     ]
+
+
+def test_root_help_hides_internal_command_groups():
+    _reset_output_format()
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "trade" in result.output
+    assert "research" in result.output
+    assert "scheduler" not in result.output
+    assert "engineering" not in result.output
+    assert "live" not in result.output

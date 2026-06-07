@@ -1,6 +1,6 @@
 # GemStar Skill 安装指南
 
-GemStar 自带一个对外集成 skill，可安装到 QClaw、Codex 或其他兼容 `SKILL.md` 协议的宿主里，用自然语言查询当前持仓、目标持仓、最新提醒、策略排行榜和运行状态。这个 skill 只读取本地状态和提醒文件，或在用户明确要求时触发一次 `gemstar trade --once --max-cycles 1`，不会执行真实下单。
+GemStar 自带一个对外集成 skill，可安装到 QClaw、Codex 或其他兼容 `SKILL.md` 协议的宿主里，用自然语言查询当前持仓、目标持仓、最新提醒、策略排行榜和运行状态。这个 skill 只读取本地状态和提醒文件，或在用户明确要求时触发一次 `gemstar trade --once`，不会执行真实下单。
 
 ## 1. Skill 位置
 
@@ -88,14 +88,14 @@ bash /Users/ken/workspace/GemStar/integrations/gemstar-skill/scripts/gemstar-ale
 
 ```text
 GemStar has not generated artifacts/current/trade_status.md yet.
-Run: uv run python -m src.cli.app trade --once --max-cycles 1
+Run: uv run python -m src.cli.app trade --once
 ```
 
 这是正常的。先运行一次：
 
 ```bash
 cd /Users/ken/workspace/GemStar
-uv run gemstar trade --once --max-cycles 1
+uv run gemstar trade --once
 ```
 
 之后再运行 `gemstar-status.sh`，应该能看到 `artifacts/current/trade_status.md` 的内容。
@@ -117,7 +117,7 @@ GemStar 最新 leaderboard 是什么？
 - 问当前持仓、目标持仓、调仓差额时，宿主优先读取 `artifacts/current/trade_status.json` 或 `trade_status.md`。
 - 问最近提醒时，宿主读取 `alerts/live.jsonl` 或运行 `gemstar alerts latest`。
 - 问运行状态时，宿主运行 `gemstar status`。
-- 只有你明确说“现在刷新 GemStar”或“跑一次 GemStar”，宿主才可以执行 `gemstar trade --once --max-cycles 1`。
+- 只有你明确说“现在刷新 GemStar”或“跑一次 GemStar”，宿主才可以执行 `gemstar trade --once`。
 
 ## 7. 安全边界
 
@@ -173,5 +173,5 @@ artifacts/current/trade_status.json
 
 ```bash
 cd /Users/ken/workspace/GemStar
-uv run gemstar trade --once --max-cycles 1
+uv run gemstar trade --once
 ```

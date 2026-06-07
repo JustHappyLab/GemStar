@@ -44,10 +44,9 @@ artifacts_dir: artifacts            # 产物目录
 log_path: logs/gemstar.log          # scheduler 日志路径
 
 # ─── LLM 配置 ─────────────────────────────────────────────
-# 控制 pipeline 是否启用 LLM 策略生成阶段
-# gemstar run --llm 可临时覆盖
+# LLM 探索只由 gemstar research 显式触发；gemstar run/trade 不启用 LLM
 llm:
-  enabled: false                    # true = 默认启用 LLM 阶段
+  enabled: false                    # 保留为研究链路配置
   provider: claude_code             # 目前仅支持 claude_code
 
 # ─── 策略生成 ──────────────────────────────────────────────
@@ -108,6 +107,8 @@ roles: {}
 #    model: sonnet
 
 # ─── 策略 ─────────────────────────────────────────────────
+# 日常 production/research 治理由 strategies/registry.yaml 管理。
+# strategies 保留为没有 registry 时的兼容 fallback。
 strategies:
   - strategies/chinext_lstm_mf8/config.yaml
 """

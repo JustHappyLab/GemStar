@@ -12,6 +12,7 @@ import typer
 from src.cli.output import get_output_format
 from src.cli.config import load_config
 from src.cli.output import console, emit
+from src.strategies.registry import production_strategy_paths
 
 _LLM_RUN_ROLES = (
     "macro_analyst",
@@ -24,12 +25,19 @@ _DEPRECATED_ROLE_OVERRIDES = {"event_scanner", "research_analyst", "factor_miner
 
 def run_cmd(
     date: str = typer.Option(None, "--date", "-d", help="Trading date (YYYYMMDD). Default: today."),
-    llm: bool = typer.Option(False, "--llm", help="Enable LLM ideation stages."),
-    no_llm: bool = typer.Option(False, "--no-llm", help="Disable LLM stages even when config enables them."),
-    strategies: list[str] = typer.Option(None, "--strategy", "-s", help="Strategy YAML path(s)."),
     config_path: str = typer.Option(None, "--config", "-c", help="Config file path."),
 ) -> None:
-    """Run the daily research pipeline."""
+    """Run the deterministic production pipeline."""
+    execute_run(date=date, config_path=config_path, llm_available=False)
+
+
+def execute_run(
+    *,
+    date: str | None = None,
+    config_path: str | None = None,
+    llm_available: bool = False,
+) -> None:
+    """Execute the daily pipeline for CLI entrypoints."""
     from src.data.fetcher import (
         init_tushare, fetch_trade_calendar, fetch_stock_basic,
         fetch_index_daily, fetch_daily_all, fetch_daily_basic,
@@ -46,17 +54,17 @@ def run_cmd(
     run_id = f"{ref_date}-{uuid4().hex[:8]}"
 
     # --- Resolve strategies before fetching so the data window covers their backtests. ---
-    strat_paths = [Path(s) for s in (strategies or config.strategies)]
+    config_base_dir = Path(config_path).parent if config_path else Path.cwd()
+    configured_strategies = list(production_strategy_paths(config.strategies, base_dir=config_base_dir))
+    strat_paths = [Path(s) for s in configured_strategies]
     if not strat_paths:
-        console.print("[yellow]No strategies specified. Use --strategy or set strategies in gemstar.yaml[/yellow]")
+        console.print("[yellow]No production strategies found. Add entries to strategies/registry.yaml.[/yellow]")
         raise typer.Exit(1)
     strat_configs = [StrategyConfigV1.from_yaml(p) for p in strat_paths]
 
-    effective_llm = False if no_llm else (llm or config.llm.enabled)
-
     console.print(f"[cyan]GemStar run[/cyan] {run_id}")
     console.print(f"  Date: {ref_date}")
-    console.print(f"  LLM:  {'on' if effective_llm else 'off'}")
+    console.print(f"  LLM:  {'on' if llm_available else 'off'}")
 
     # --- Fetch data ---
     console.print("[cyan]Fetching data...[/cyan]")
@@ -150,7 +158,7 @@ def run_cmd(
         benchmark_nav=benchmark_nav,
         benchmark_info=benchmark_resolution.model_dump(),
         index_df=index_daily,
-        llm_available=effective_llm,
+        llm_available=llm_available,
         role_overrides=role_overrides,
         db_path=config.db_path,
         artifacts_dir=config.artifacts_dir,

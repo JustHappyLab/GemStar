@@ -7,6 +7,7 @@ live cycle. Skips when the cached daily parquet has no rows.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -62,6 +63,22 @@ def test_trade_cmd_forwards_discovered_config_to_research(tmp_path, monkeypatch)
     assert captured["ref_date"]
 
 
+def test_trade_help_keeps_advanced_options_hidden():
+    from typer.testing import CliRunner
+    from src.cli.app import app
+
+    result = CliRunner().invoke(app, ["trade", "--help"])
+
+    assert result.exit_code == 0
+    assert "--once" in result.output
+    assert "--capital" in result.output
+    assert "--refresh" in result.output
+    assert "--fresh-research" not in result.output
+    assert "--max-cycles" not in result.output
+    assert "--research-llm" not in result.output
+    assert "--leaderboard-notify-time" not in result.output
+
+
 def test_trade_cmd_uses_project_config_when_launched_outside_repo(tmp_path, monkeypatch):
     from src.cli.commands import trade_cmd as mod
 
@@ -110,6 +127,40 @@ def test_trade_cmd_uses_project_config_when_launched_outside_repo(tmp_path, monk
     assert captured["config_path"] == str(config_path.resolve())
     assert captured["cwd"] == repo_dir
     assert captured["ref_date"]
+
+
+def test_run_research_runs_production_pipeline_without_llm_flags(tmp_path, monkeypatch):
+    from src.cli.commands import trade_cmd as mod
+
+    captured = {}
+
+    class FakeProc:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        mod.subprocess,
+        "Popen",
+        lambda cmd: captured.setdefault("cmd", cmd) and FakeProc(),
+    )
+    monkeypatch.setattr(mod, "_latest_completed_run", lambda *_args, **_kwargs: "run-ok")
+    monkeypatch.setattr(
+        mod,
+        "load_config",
+        lambda *_args, **_kwargs: type("Config", (), {"db_path": "state.db"})(),
+    )
+
+    run_id = mod._run_research(
+        str(tmp_path / "gemstar.yaml"),
+        threading.Event(),
+        ref_date="20260607",
+    )
+
+    assert run_id == "run-ok"
+    assert "--llm" not in captured["cmd"]
+    assert "--no-llm" not in captured["cmd"]
 
 
 def test_trade_cmd_reuses_today_completed_run(tmp_path, monkeypatch):

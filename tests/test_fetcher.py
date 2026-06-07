@@ -9,7 +9,9 @@ from src.data.fetcher import (
     fetch_trade_calendar,
     fetch_stock_basic,
     fetch_index_daily,
+    fetch_daily_all,
     fetch_daily_basic,
+    fetch_adj_factor,
     fetch_fina_indicator,
 )
 from requests.exceptions import ChunkedEncodingError
@@ -57,6 +59,16 @@ class TestTradeCalendar:
             fetch_trade_calendar(pro, "20230101", "20230103", cache_dir=str(tmp_path))
             fetch_trade_calendar(pro, "20230101", "20230103", cache_dir=str(tmp_path))
         assert pro.trade_cal.call_count == 1
+
+    def test_subrange_uses_covering_cache(self, pro, tmp_path):
+        pd.DataFrame({
+            "cal_date": ["20230101", "20230102", "20230103"],
+        }).to_parquet(tmp_path / "trade_cal_20230101_20230131.parquet", index=False)
+
+        df = fetch_trade_calendar(pro, "20230102", "20230103", cache_dir=str(tmp_path))
+
+        assert df["cal_date"].tolist() == ["20230102", "20230103"]
+        assert pro.trade_cal.call_count == 0
 
 
 class TestRetryHelper:
@@ -138,6 +150,37 @@ class TestIndexDaily:
             df = fetch_index_daily(pro, "399006.SZ", "20230101", "20230102", cache_dir=str(tmp_path))
         assert df.iloc[0]["trade_date"] == "20230101"
 
+    def test_subrange_uses_covering_cache(self, pro, tmp_path):
+        pd.DataFrame({
+            "trade_date": ["20230101", "20230102", "20230103"],
+            "close": [1.0, 2.0, 3.0],
+        }).to_parquet(tmp_path / "index_daily_399006.SZ_20230101_20230131.parquet", index=False)
+
+        df = fetch_index_daily(pro, "399006.SZ", "20230102", "20230103", cache_dir=str(tmp_path))
+
+        assert df["trade_date"].tolist() == ["20230102", "20230103"]
+        assert pro.index_daily.call_count == 0
+
+
+class TestDailyAll:
+    def test_subrange_uses_covering_cache(self, pro, tmp_path):
+        pd.DataFrame({
+            "ts_code": ["300001.SZ", "300001.SZ", "300001.SZ"],
+            "trade_date": ["20230101", "20230102", "20230103"],
+            "open": [1.0, 1.0, 1.0],
+            "high": [1.0, 1.0, 1.0],
+            "low": [1.0, 1.0, 1.0],
+            "close": [1.0, 2.0, 3.0],
+            "pre_close": [1.0, 1.0, 2.0],
+            "vol": [100.0, 100.0, 100.0],
+            "amount": [1000.0, 1000.0, 1000.0],
+        }).to_parquet(tmp_path / "daily_all_20230101_20230131.parquet", index=False)
+
+        df = fetch_daily_all(pro, "20230102", "20230103", cache_dir=str(tmp_path))
+
+        assert df["trade_date"].tolist() == ["20230102", "20230103"]
+        assert pro.daily.call_count == 0
+
 
 class TestDailyBasic:
     def test_columns(self, pro, tmp_path):
@@ -146,6 +189,38 @@ class TestDailyBasic:
         with patch("src.data.fetcher._rate_limit"), patch("src.data.fetcher._split_monthly", return_value=[("20230101", "20230131")]):
             df = fetch_daily_basic(pro, "20230101", "20230131", cache_dir=str(tmp_path))
         assert list(df.columns) == expected_cols
+
+    def test_subrange_uses_covering_cache(self, pro, tmp_path):
+        expected_cols = ["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate", "total_mv", "circ_mv"]
+        pd.DataFrame({
+            "ts_code": ["300001.SZ", "300001.SZ", "300001.SZ"],
+            "trade_date": ["20230101", "20230102", "20230103"],
+            "pe_ttm": [1.0, 2.0, 3.0],
+            "pb": [1.0, 1.0, 1.0],
+            "turnover_rate": [1.0, 1.0, 1.0],
+            "total_mv": [10.0, 10.0, 10.0],
+            "circ_mv": [9.0, 9.0, 9.0],
+        }).to_parquet(tmp_path / "daily_basic_20230101_20230131.parquet", index=False)
+
+        df = fetch_daily_basic(pro, "20230102", "20230103", cache_dir=str(tmp_path))
+
+        assert list(df.columns) == expected_cols
+        assert df["trade_date"].tolist() == ["20230102", "20230103"]
+        assert pro.daily_basic.call_count == 0
+
+
+class TestAdjFactor:
+    def test_subrange_uses_covering_cache(self, pro, tmp_path):
+        pd.DataFrame({
+            "ts_code": ["300001.SZ", "300001.SZ", "300001.SZ"],
+            "trade_date": ["20230101", "20230102", "20230103"],
+            "adj_factor": [1.0, 1.1, 1.2],
+        }).to_parquet(tmp_path / "adj_factor_20230101_20230131.parquet", index=False)
+
+        df = fetch_adj_factor(pro, "20230102", "20230103", cache_dir=str(tmp_path))
+
+        assert df["trade_date"].tolist() == ["20230102", "20230103"]
+        assert pro.adj_factor.call_count == 0
 
 
 class TestFinaIndicator:

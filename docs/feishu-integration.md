@@ -94,7 +94,7 @@ curl -X POST "${FEISHU_WEBHOOK_URL}" \
 如果开启了签名校验，建议直接用 GemStar 测试，因为 GemStar 会自动生成飞书要求的 `timestamp` 和 `sign`：
 
 ```bash
-uv run gemstar trade --once --max-cycles 1
+uv run gemstar trade --once
 ```
 
 收到飞书消息后，说明 `FEISHU_WEBHOOK_URL` 和 `FEISHU_WEBHOOK_SECRET` 配置正确。
@@ -113,17 +113,7 @@ uv run gemstar trade
 
 长期运行时，`gemstar trade` 默认会在每天 `08:30` 推送一次最新 leaderboard 摘要。这个摘要是研究观察信息，即使当天没有可交易信号也会发送；它会展示 LLM 草稿数、通过数、拒绝数和主要拒绝原因，但只读取当天 artifacts，不额外调用模型。真正的买卖/加减仓提醒仍必须通过策略状态、行情日期、交易金额和择时门禁。
 
-可以按需调整：
-
-```bash
-uv run gemstar trade --leaderboard-notify-time 08:30 --leaderboard-notify-top 10
-```
-
-如果不想发送每日 leaderboard 摘要，可以传空字符串：
-
-```bash
-uv run gemstar trade --leaderboard-notify-time ""
-```
+通知时间和 Top 数使用默认值即可；如需调整，优先在配置层统一管理，避免把日常启动命令变成一长串参数。
 
 每次运行都会同时写入：
 

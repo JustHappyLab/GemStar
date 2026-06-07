@@ -10,6 +10,7 @@ import pandas as pd
 from src.cli.output import get_output_format
 from src.cli.config import load_config
 from src.cli.output import console, emit
+from src.strategies.registry import production_strategy_paths
 
 
 def fetch_cmd(
@@ -29,6 +30,7 @@ def fetch_cmd(
 
     fmt = get_output_format()
     config = load_config(Path(config_path) if config_path else None)
+    config_base_dir = Path(config_path).parent if config_path else Path.cwd()
     pro = init_tushare(config.tushare_token or None)
     cache_dir = config.data_cache_dir
 
@@ -49,7 +51,7 @@ def fetch_cmd(
 
     console.print("  Index daily...")
     strategy_configs = []
-    for strategy_path in config.strategies:
+    for strategy_path in production_strategy_paths(config.strategies, base_dir=config_base_dir):
         try:
             strategy_configs.append(StrategyConfigV1.from_yaml(strategy_path))
         except Exception:

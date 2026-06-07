@@ -86,10 +86,10 @@ Only run this when the user explicitly asks to refresh or run GemStar now:
 
 ```bash
 cd /Users/ken/workspace/GemStar
-uv run python -m src.cli.app trade --once --max-cycles 1
+uv run python -m src.cli.app trade --once
 ```
 
-This may take several minutes because it can run research, LLM roles, target generation, and one live cycle.
+This may take several minutes because it can run the deterministic production pipeline, target generation, and one live cycle. It does not invoke LLM research unless the user explicitly runs `gemstar research`.
 
 ## Response Style
 

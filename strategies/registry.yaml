@@ -1,0 +1,44 @@
+version: StrategyRegistryV1
+strategies:
+  chinext_lstm_mf8:
+    path: strategies/chinext_lstm_mf8/config.yaml
+    scope: research
+    lifecycle: paper
+    source: manual
+    notes: Legacy ChiNext LSTM benchmark; keep out of daily production runs until timer training is cached or optimized.
+  leaderboard_quality_lowvol_v1:
+    path: strategies/leaderboard_quality_lowvol_v1/config.yaml
+    scope: production
+    lifecycle: candidate
+    source: manual
+    notes: Manual quality/low-volatility leaderboard challenger.
+  manual_earnings_quality_guard_v1:
+    path: strategies/manual_earnings_quality_guard_v1.yaml
+    scope: production
+    lifecycle: candidate
+    source: manual
+    notes: Manual earnings-quality guard strategy.
+  fundamental_momentum_v1:
+    path: strategies/fundamental_momentum_v1.yaml
+    scope: research
+    lifecycle: draft
+    source: llm
+    notes: Broad A-share strategy; keep out of daily trade until performance is optimized.
+  momentum_volume_filtered_v1:
+    path: strategies/momentum_volume_filtered_v1.yaml
+    scope: research
+    lifecycle: draft
+    source: llm
+    notes: Broad A-share strategy; keep out of daily trade until performance is optimized.
+  netprofit_yoy_winsorized_v1:
+    path: strategies/netprofit_yoy_winsorized_v1.yaml
+    scope: research
+    lifecycle: draft
+    source: llm
+    notes: Broad A-share strategy; keep out of daily trade until performance is optimized.
+  smallcap_momentum_enhanced_v1:
+    path: strategies/smallcap_momentum_enhanced_v1.yaml
+    scope: research
+    lifecycle: draft
+    source: llm
+    notes: Broad A-share strategy; keep out of daily trade until performance is optimized.

@@ -36,7 +36,7 @@ def start_cmd(
 
     if _is_running():
         console.print("[yellow]Daemon is already running.[/yellow]")
-        console.print("Use [cyan]gemstar restart[/cyan] to restart, or [cyan]gemstar stop[/cyan] to stop.")
+        console.print("Use [cyan]gemstar scheduler restart[/cyan] to restart, or [cyan]gemstar scheduler stop[/cyan] to stop.")
         raise typer.Exit(1)
 
     log_path = Path(config.log_path)
@@ -196,7 +196,7 @@ def _print_summary(config) -> None:
     console.print(f"[cyan]GemStar scheduler[/cyan]")
     console.print(f"  Fetch: {config.schedule.fetch}")
     console.print(f"  Run:   {config.schedule.run}")
-    console.print(f"  LLM:   {'on' if config.llm.enabled else 'off'}")
+    console.print("  LLM:   off for scheduled production runs")
     console.print(f"  Scheduler prefetch: {'on' if config.data.scheduler_prefetch else 'off'}")
     console.print()
 
@@ -300,7 +300,7 @@ def _run_loop(config, stop_event: threading.Event, config_path: str | None = Non
         # Fetch data
         if config.data.scheduler_prefetch:
             logger.info("Fetching data...")
-            ok = _run_subcommand("fetch", config, stop_event, config_path=config_path)
+            ok = _run_subcommand("fetch", stop_event, config_path=config_path)
             if not ok:
                 logger.warning("Fetch failed, will retry with pipeline")
 
@@ -313,7 +313,7 @@ def _run_loop(config, stop_event: threading.Event, config_path: str | None = Non
         # Run pipeline with retries
         for attempt in range(1, _MAX_RETRIES + 1):
             logger.info("Running pipeline (attempt %d/%d)...", attempt, _MAX_RETRIES)
-            ok = _run_subcommand("run", config, stop_event, llm=config.llm.enabled, config_path=config_path)
+            ok = _run_subcommand("run", stop_event, config_path=config_path)
             if ok:
                 logger.info("Pipeline completed")
                 break
@@ -354,17 +354,13 @@ def _is_trading_day_cached(date_str: str, config, stop_event: threading.Event) -
 
 def _run_subcommand(
     subcmd: str,
-    config,
     stop_event: threading.Event,
-    llm: bool = False,
     config_path: str | None = None,
 ) -> bool:
     """Run a gemstar subcommand as a subprocess. Returns True on success."""
     cmd = [sys.executable, "-m", "src.cli.app", subcmd]
     if config_path:
         cmd.extend(["--config", config_path])
-    if llm:
-        cmd.append("--llm")
 
     try:
         result = subprocess.run(

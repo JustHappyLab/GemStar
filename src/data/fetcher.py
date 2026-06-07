@@ -29,6 +29,49 @@ def _read_cache(cache_dir: str, name: str) -> pd.DataFrame | None:
     return None
 
 
+def _read_range_cache(
+    cache_dir: str,
+    prefix: str,
+    start_date: str,
+    end_date: str,
+    *,
+    date_col: str = "trade_date",
+) -> pd.DataFrame | None:
+    cached = _read_cache(cache_dir, f"{prefix}_{start_date}_{end_date}")
+    if cached is not None:
+        return cached
+
+    candidates: list[tuple[int, Path]] = []
+    prefix_token = f"{prefix}_"
+    for path in Path(cache_dir).glob(f"{prefix}_*.parquet"):
+        stem = path.stem
+        if not stem.startswith(prefix_token):
+            continue
+        suffix = stem[len(prefix_token):]
+        parts = suffix.rsplit("_", 1)
+        if len(parts) != 2:
+            continue
+        cached_start, cached_end = parts
+        if (
+            len(cached_start) == 8
+            and len(cached_end) == 8
+            and cached_start <= start_date
+            and cached_end >= end_date
+        ):
+            span = int(cached_end) - int(cached_start)
+            candidates.append((span, path))
+
+    if not candidates:
+        return None
+
+    _, path = min(candidates, key=lambda item: item[0])
+    df = pd.read_parquet(path)
+    if date_col not in df.columns:
+        return df
+    dates = df[date_col].astype(str)
+    return df[(dates >= start_date) & (dates <= end_date)].reset_index(drop=True)
+
+
 def _write_cache(df: pd.DataFrame, cache_dir: str, name: str) -> None:
     p = _cache_path(cache_dir, name)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +201,7 @@ def init_tushare(token: str | None = None):
 
 def fetch_trade_calendar(pro, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"trade_cal_{start_date}_{end_date}"
-    cached = _read_cache(cache_dir, name)
+    cached = _read_range_cache(cache_dir, "trade_cal", start_date, end_date, date_col="cal_date")
     if cached is not None:
         return cached
     df = _call_with_retry(
@@ -202,7 +245,7 @@ def fetch_stock_basic(pro, cache_dir: str = "data/raw") -> pd.DataFrame:
 
 def fetch_index_daily(pro, ts_code: str, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"index_daily_{ts_code}_{start_date}_{end_date}"
-    cached = _read_cache(cache_dir, name)
+    cached = _read_range_cache(cache_dir, f"index_daily_{ts_code}", start_date, end_date)
     if cached is not None:
         return cached
     df = _call_with_retry(
@@ -220,7 +263,7 @@ def fetch_index_daily(pro, ts_code: str, start_date: str, end_date: str, cache_d
 
 def fetch_daily_all(pro, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"daily_all_{start_date}_{end_date}"
-    cached = _read_cache(cache_dir, name)
+    cached = _read_range_cache(cache_dir, "daily_all", start_date, end_date)
     if cached is not None:
         return cached
     cols = ["ts_code", "trade_date", "open", "high", "low", "close", "pre_close", "vol", "amount"]
@@ -249,7 +292,7 @@ def fetch_daily_all(pro, start_date: str, end_date: str, cache_dir: str = "data/
 
 def fetch_daily_basic(pro, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"daily_basic_{start_date}_{end_date}"
-    cached = _read_cache(cache_dir, name)
+    cached = _read_range_cache(cache_dir, "daily_basic", start_date, end_date)
     if cached is not None:
         return cached
     cols = ["ts_code", "trade_date", "pe_ttm", "pb", "turnover_rate", "total_mv", "circ_mv"]
@@ -272,7 +315,7 @@ def fetch_daily_basic(pro, start_date: str, end_date: str, cache_dir: str = "dat
 
 def fetch_adj_factor(pro, start_date: str, end_date: str, cache_dir: str = "data/raw") -> pd.DataFrame:
     name = f"adj_factor_{start_date}_{end_date}"
-    cached = _read_cache(cache_dir, name)
+    cached = _read_range_cache(cache_dir, "adj_factor", start_date, end_date)
     if cached is not None:
         return cached
     frames = []

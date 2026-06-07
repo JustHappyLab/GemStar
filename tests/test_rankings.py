@@ -240,3 +240,29 @@ def test_rankings_apply_universe_prefix_before_factor_compute(monkeypatch):
 
     assert result["20240102"] == ["300001.SZ"]
     assert captured["codes"] == {"300001.SZ"}
+
+
+def test_rankings_can_reuse_precomputed_factor_frame(monkeypatch):
+    import src.orchestrator.rankings as rankings_mod
+
+    def fail_compute_all_factors(*_args, **_kwargs):
+        raise AssertionError("factor frame should be reused")
+
+    monkeypatch.setattr(rankings_mod, "compute_all_factors", fail_compute_all_factors)
+
+    rankings = build_rankings(
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        [FactorWeightV1(factor_id="pe_inverse", weight=1.0)],
+        top_n=1,
+        trade_dates=["20240102"],
+        universe="all",
+        precomputed_factor_df=pd.DataFrame({
+            "ts_code": ["600001.SH", "600002.SH"],
+            "trade_date": ["20240102", "20240102"],
+            "pe_inverse": [1.0, 0.5],
+        }),
+    )
+
+    assert rankings["20240102"] == ["600001.SH"]

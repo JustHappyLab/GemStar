@@ -15,7 +15,13 @@ import pandas as pd
 import yaml
 
 from src.cli.config import EngineeringConfig
-from src.orchestrator.pipeline import run_daily_pipeline
+from src.orchestrator.pipeline import (
+    _empty_regime,
+    _select_expression_factors,
+    _strategy_inputs,
+    run_daily_pipeline,
+)
+from src.schemas.strategy import FactorWeightV1
 from src.schemas.engineering import EngineeringExecutionV1
 from tests.llm_fakes import FakeRoleRegistry
 
@@ -160,6 +166,96 @@ def _make_ic_df(dates: list[str]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+def test_empty_regime_is_valid_for_compact_reference_date():
+    """Fallback market regime accepts run-style YYYYMMDD reference dates."""
+    regime = _empty_regime("20260607")
+
+    assert regime.as_of_date == date(2026, 6, 7)
+    assert regime.regime == "neutral"
+    assert regime.confidence == 0.0
+
+
+def test_select_expression_factors_keeps_only_strategy_references():
+    selected = _select_expression_factors(
+        [
+            ("low_volatility_20d_v1", "expr1"),
+            ("unused_candidate_v1", "expr2"),
+        ],
+        [
+            FactorWeightV1(factor_id="roe", weight=0.5),
+            FactorWeightV1(factor_id="low_volatility_20d_v1", weight=0.5),
+        ],
+    )
+
+    assert selected == [("low_volatility_20d_v1", "expr1")]
+
+
+def test_select_expression_factors_returns_none_without_references():
+    selected = _select_expression_factors(
+        [("unused_candidate_v1", "expr")],
+        [FactorWeightV1(factor_id="roe", weight=1.0)],
+    )
+
+    assert selected is None
+
+
+def test_strategy_inputs_reuses_factor_frame_cache(tmp_path, monkeypatch):
+    strategy_path = _make_strategy_yaml(str(tmp_path), name="cache_test")
+    dates = ["20220103", "20220104"]
+    daily = pd.DataFrame([
+        {
+            "ts_code": "300001.SZ",
+            "trade_date": date_value,
+            "close": 10.0 + i,
+            "pe_ttm": 10.0,
+            "pb": 2.0,
+            "turnover_rate": 1.0,
+        }
+        for i, date_value in enumerate(dates)
+    ])
+    index = pd.DataFrame({"trade_date": dates, "close": [100.0, 101.0]})
+    data = {
+        "daily": daily,
+        "index_daily": index,
+        "trade_cal": pd.DataFrame({"cal_date": dates}),
+        "stock_basic": pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "name": ["A"],
+            "list_date": ["20200101"],
+            "delist_date": [None],
+        }),
+        "fina_indicator": pd.DataFrame(),
+    }
+    calls = {"factor_frame": 0}
+
+    def fake_build_factor_frame(**_kwargs):
+        calls["factor_frame"] += 1
+        return pd.DataFrame({
+            "ts_code": ["300001.SZ"],
+            "trade_date": ["20220103"],
+            "roe": [1.0],
+            "momentum_20d": [0.5],
+        })
+
+    monkeypatch.setattr("src.orchestrator.pipeline.build_factor_frame", fake_build_factor_frame)
+    cache: dict[tuple, pd.DataFrame] = {}
+
+    for _ in range(2):
+        _strategy_inputs(
+            strat_path=strategy_path,
+            data=data,
+            daily_df=daily,
+            index_df=index,
+            reference_date="20220104",
+            explicit_signals=None,
+            explicit_rankings=None,
+            auto_build=True,
+            ranking_factor_cache=cache,
+        )
+
+    assert calls["factor_frame"] == 1
+
 
 def test_full_pipeline_completes():
     """Full pipeline with valid data reaches COMPLETED status."""
